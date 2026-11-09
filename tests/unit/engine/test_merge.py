@@ -4,7 +4,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from gateway.engine.merge import merge
+from gateway.engine.merge import defer, merge
 from gateway.engine.types import EntityType, Span
 
 E = EntityType
@@ -12,6 +12,40 @@ E = EntityType
 
 def span(start: int, end: int, score: float = 1.0, kind: E = E.EMAIL, by: str = "a") -> Span:
     return Span(start, end, kind, score, by)
+
+
+# ------------------------------------------------------------------ defer (ADR 0023)
+
+DEFERS = {"shape": "valid"}
+
+
+def test_a_fallback_span_keeps_only_what_its_validating_recognizer_left() -> None:
+    text = "+374 77 123456 0010 Yerevan"  # pragma: allowlist secret
+    valid = span(0, 14, 0.95, E.PHONE, "valid")
+    shape = span(0, 19, 0.85, E.PHONE, "shape")
+    assert defer([valid, shape], DEFERS, text) == [valid, span(15, 19, 0.85, E.PHONE, "shape")]
+
+
+def test_a_fallback_span_inside_a_validated_one_is_dropped() -> None:
+    valid, shape = span(0, 14, 0.95, E.PHONE, "valid"), span(2, 10, 0.85, E.PHONE, "shape")
+    assert defer([valid, shape], DEFERS) == [valid]
+
+
+def test_overlapping_validated_spans_are_united_before_the_fallback_is_cut() -> None:
+    validated = [span(0, 10, by="valid"), span(5, 20, by="valid")]
+    shape = span(0, 25, 0.85, by="shape")
+    assert defer([*validated, shape], DEFERS) == [*validated, span(20, 25, 0.85, by="shape")]
+
+
+def test_a_fallback_span_nothing_overlaps_keeps_its_punctuation() -> None:
+    text = "call +999 1234 5678 now"  # pragma: allowlist secret
+    shape = span(5, 19, 0.85, E.PHONE, "shape")
+    assert defer([shape], DEFERS, text) == [shape]
+
+
+def test_spans_of_other_recognizers_pass_through_unchanged() -> None:
+    spans = [span(0, 10, by="valid"), span(0, 20, by="other"), span(30, 40, 0.85, by="shape")]
+    assert defer(spans, DEFERS) == spans
 
 
 def test_spans_below_their_threshold_are_dropped() -> None:

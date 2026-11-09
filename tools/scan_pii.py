@@ -38,7 +38,14 @@ _ENGINE_KINDS: dict[EntityType, tuple[Kind, Kind | None]] = {
     EntityType.SSN: ("ssn", "ssn"),
     EntityType.NATIONAL_ID: ("national_id", None),
 }
-_STRUCTURED_ONLY = EngineConfig(ner="off")
+# Checksum-validated values only (score 1.0, ADR 0011). The shape-only and keyword-gated
+# rules (ADR 0023) are for masking, where a miss leaks; in a commit gate every order
+# number and "ID 123456789" in a comment would block the commit.
+_VALIDATED = 1.0
+_STRUCTURED_ONLY = EngineConfig(
+    ner="off",
+    thresholds={EntityType.CREDIT_CARD: _VALIDATED, EntityType.NATIONAL_ID: _VALIDATED},
+)
 # Generated lock files are pages of hashes and versions (uv.lock is 450 KB, about 5 s
 # in the engine, 90% of a full scan). They keep the shape checks, not the engine pass.
 _SHAPE_ONLY_FILES = frozenset({"uv.lock"})

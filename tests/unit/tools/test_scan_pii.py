@@ -32,6 +32,19 @@ def test_luhn_invalid_number_is_not_flagged() -> None:
     assert find_pii(f"order {CARD_BAD_CHECKSUM}") == []
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "card HF50607EJ on file",  # pragma: allowlist secret  (ID card shape)
+        "ID number: XT58ACI3SX",  # pragma: allowlist secret  (keyword-gated)
+        "# The keyword itself (ID 123456789) is not part of the value.",  # pragma: allowlist secret
+    ],
+)
+def test_shape_only_and_keyword_gated_identifiers_do_not_block_a_commit(line: str) -> None:
+    # Masking reports them (ADR 0023); a commit gate keeps to checksum-validated values.
+    assert find_pii(line) == []
+
+
 def test_allowlist_pragma_skips_the_line() -> None:
     assert find_pii(f"x = '{SSN}'  # pragma: allowlist secret") == []
 

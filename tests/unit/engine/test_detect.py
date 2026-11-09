@@ -101,6 +101,87 @@ def test_one_megabyte_with_fifty_identifiers_is_fast_and_complete() -> None:
     assert len(spans) >= 50
 
 
+# ------------------------------------------------------------------ shape and context (ADR 0023)
+
+
+@pytest.mark.parametrize(
+    ("text", "value", "kind", "recognizer"),
+    [
+        (
+            "call +999 1234 5678 now",  # pragma: allowlist secret
+            "+999 1234 5678",  # pragma: allowlist secret
+            E.PHONE,
+            "phone_shape",
+        ),
+        (
+            "Tel: 111 222 3333 now",  # pragma: allowlist secret
+            "111 222 3333",  # pragma: allowlist secret
+            E.PHONE,
+            "phone_context",
+        ),
+        (
+            "card 4111111111111112 expired",  # pragma: allowlist secret
+            "4111111111111112",  # pragma: allowlist secret
+            E.CREDIT_CARD,
+            "credit_card_shape",
+        ),
+        (
+            "bring AB1234567 along",  # pragma: allowlist secret
+            "AB1234567",  # pragma: allowlist secret
+            E.PASSPORT,
+            "passport_shape",
+        ),
+        (
+            "card HF50607EJ on file",  # pragma: allowlist secret
+            "HF50607EJ",  # pragma: allowlist secret
+            E.NATIONAL_ID,
+            "id_card_shape",
+        ),
+        (
+            "driver's license: KELDA 770032 K9 706",  # pragma: allowlist secret
+            "KELDA 770032 K9 706",  # pragma: allowlist secret
+            E.DRIVER_LICENSE,
+            "id_document_context",
+        ),
+    ],
+)
+def test_shape_and_context_recognizers_run_in_detect(
+    text: str, value: str, kind: E, recognizer: str
+) -> None:
+    spans = detect(text, config=EngineConfig(ner="off"))
+    assert [(text[s.start : s.end], s.entity_type, s.recognizer) for s in spans] == [
+        (value, kind, recognizer)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("value", "recognizer"),
+    [
+        ("4111 1111 1111 1111", "credit_card"),  # pragma: allowlist secret
+        ("+7 912 345-67-89", "phone"),  # pragma: allowlist secret
+    ],
+)
+def test_a_validated_value_keeps_its_validating_recognizer(value: str, recognizer: str) -> None:
+    text = f"Phone or card: {value} today"
+    (span,) = detect(text, config=EngineConfig(ner="off"))
+    assert (text[span.start : span.end], span.recognizer) == (value, recognizer)
+
+
+def test_a_postcode_after_a_validated_phone_does_not_stretch_it() -> None:
+    text = "Petrosyan +374 77 123456 0010 Yerevan"  # pragma: allowlist secret
+    spans = detect(text, config=EngineConfig(ner="off"))
+    phone = "+374 77 123456"  # pragma: allowlist secret
+    assert (phone, E.PHONE, "phone") in [
+        (text[s.start : s.end], s.entity_type, s.recognizer) for s in spans
+    ]
+
+
+def test_every_recognizer_has_a_priority() -> None:
+    config = EngineConfig(gazetteer=Gazetteer({"Bluebird": E.CODENAME}))
+    names = {recognizer.name for recognizer in detect_module._recognizers(config)}  # noqa: SLF001
+    assert names <= set(detect_module.PRIORITY)
+
+
 # ------------------------------------------------------------------ NER routing (Phase 1b)
 
 import logging  # noqa: E402

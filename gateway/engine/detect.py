@@ -6,15 +6,21 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from gateway.engine.gliner_ner import DEFAULT_THRESHOLD, GlinerRecognizer, gliner_model_dir
-from gateway.engine.merge import merge
+from gateway.engine.merge import defer, merge
 from gateway.engine.ner import SPACY_MODEL_DIRS, ModelMissing, SpacyNerRecognizer, model_dir
-from gateway.engine.recognizers.credit_card import CREDIT_CARD
+from gateway.engine.recognizers.credit_card import CREDIT_CARD, CREDIT_CARD_SHAPE
 from gateway.engine.recognizers.dates import DATE
 from gateway.engine.recognizers.email import EMAIL
 from gateway.engine.recognizers.gazetteer import Gazetteer
 from gateway.engine.recognizers.iban import IBAN
+from gateway.engine.recognizers.id_documents import (
+    ID_CARD_SHAPE,
+    ID_DOCUMENT_CONTEXT,
+    PASSPORT_SHAPE,
+)
 from gateway.engine.recognizers.ip_address import IP_ADDRESS
 from gateway.engine.recognizers.phone import DEFAULT_REGIONS, PhoneRecognizer
+from gateway.engine.recognizers.phone_shape import PHONE_CONTEXT, PHONE_SHAPE
 from gateway.engine.recognizers.ru_inn import RU_INN
 from gateway.engine.recognizers.ru_snils import RU_SNILS
 from gateway.engine.recognizers.url_token import URL_WITH_TOKEN
@@ -26,7 +32,8 @@ from gateway.engine.types import EntityType, Recognizer, Span
 _log = logging.getLogger(__name__)
 
 # On a tie (same length, same score) the recognizer listed first wins. The
-# customer's own list comes first; checksummed types before shape-only ones.
+# customer's own list comes first; checksummed types before shape-only ones, and
+# the shape and keyword rules of ADR 0023 after every validating recognizer.
 PRIORITY = (
     "gazetteer",
     "iban",
@@ -39,10 +46,18 @@ PRIORITY = (
     "ip_address",
     "us_ssn",
     "date",
+    "phone_shape",
+    "phone_context",
+    "id_document_context",
+    "passport_shape",
+    "id_card_shape",
+    "credit_card_shape",
     "ner_en",
     "ner_ru",
     "gliner",
 )
+# Shape rules never stretch a value the validating recognizer found (ADR 0023).
+DEFERS_TO = {"phone_shape": "phone", "phone_context": "phone"}
 # "auto" routes each paragraph by script (gateway/engine/script.py); the rest force one.
 # Armenian ("hy") and undetermined ("und") text go to GLiNER (ADR 0015).
 LANGUAGES = ("auto", *SPACY_MODEL_DIRS, "hy", "und")
@@ -73,6 +88,12 @@ def _recognizers(config: EngineConfig) -> list[Recognizer]:
         IP_ADDRESS,
         PhoneRecognizer(config.phone_regions),
         DATE,
+        PHONE_SHAPE,
+        PHONE_CONTEXT,
+        ID_DOCUMENT_CONTEXT,
+        PASSPORT_SHAPE,
+        ID_CARD_SHAPE,
+        CREDIT_CARD_SHAPE,
     ]
     if config.gazetteer is not None:
         recognizers.insert(0, config.gazetteer)
@@ -178,6 +199,7 @@ def detect(text: str, lang: str = "auto", config: EngineConfig | None = None) ->
         return []
     view = clean_view(text)
     found = [span for recognizer in _recognizers(config) for span in recognizer.find(view.text)]
+    found = defer(found, DEFERS_TO, view.text)
     if config.ner == "auto":
         found.extend(_ner_spans(view.text, lang, config))
     spans = [_as_written(span, view) for span in found]

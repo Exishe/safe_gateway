@@ -1,4 +1,6 @@
-"""Payment card numbers: 13 to 19 digits, Luhn-valid, issuer prefix 2 to 6."""
+"""Payment card numbers: Luhn-valid, or Luhn-invalid in an exact card shape (ADR 0023)."""
+
+import re
 
 from gateway.engine.checksums import digits_of, luhn_valid
 from gateway.engine.digits import accepted_windows, digit_runs
@@ -26,3 +28,41 @@ class CreditCardRecognizer:
 
 
 CREDIT_CARD = CreditCardRecognizer()
+
+
+# ------------------------------------------------------------------ shape only (ADR 0023)
+
+SHAPE_SCORE = 0.55  # above the default threshold 0.5, below a Luhn-valid card's 1.0
+# Digit count -> first digits that make a card shape: 16 (Visa, Mastercard,
+# Discover, UnionPay), 15 (Amex), 19 (Visa, Discover, UnionPay, Maestro).
+_SHAPES = {16: "23456", 15: "3", 19: "3456"}
+# A whole number, never part of a longer run: contiguous, or grouped by four with
+# one separator used throughout and a last group of one to four digits.
+_CARD_SHAPE = re.compile(
+    r"(?<!\w)(?<!\d[ .\-])"
+    r"(?:\d{15,19}|\d{4}([ .\-])\d{4}(?:\1\d{4})*(?:\1\d{1,3})?)"
+    r"(?!\w)(?![ .\-]\d)"
+)
+
+
+class CreditCardShapeRecognizer:
+    """Luhn-invalid numbers of an exact card shape: mistyped or synthetic cards.
+
+    Scored 0.55, so they are masked by default; a customer who sees too many order
+    numbers masked raises the CREDIT_CARD threshold above 0.55.
+    """
+
+    name = "credit_card_shape"
+
+    def find(self, text: str) -> list[Span]:
+        found = []
+        for match in _CARD_SHAPE.finditer(text):
+            digits = digits_of(match.group())
+            if digits[0] in _SHAPES.get(len(digits), ""):
+                found.append(
+                    Span(match.start(), match.end(), EntityType.CREDIT_CARD, SHAPE_SCORE, self.name)
+                )
+        return found
+
+
+CREDIT_CARD_SHAPE = CreditCardShapeRecognizer()

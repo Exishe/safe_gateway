@@ -51,6 +51,48 @@ def _trimmed(text: str, start: int, end: int) -> tuple[int, int]:
     return start, end
 
 
+def _union(intervals: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
+    united: list[tuple[int, int]] = []
+    for start, end in sorted(intervals):
+        if united and start <= united[-1][1]:
+            united[-1] = (united[-1][0], max(united[-1][1], end))
+        else:
+            united.append((start, end))
+    return united
+
+
+def defer(
+    spans: Iterable[Span], defers_to: Mapping[str, str], text: str | None = None
+) -> list[Span]:
+    """Fallback spans cut down to what the recognizer they defer to did not find (ADR 0023).
+
+    `defers_to` maps a fallback recognizer to a validating one. Where libphonenumber
+    found "+374 77 123456", the phone shape "+374 77 123456 0010" keeps only "0010": the
+    validated value keeps its exact span and no digit a rule found is dropped. With
+    `text`, the parts lose non-alphanumeric edges, as merge() remainders do.
+    """
+    spans = list(spans)
+    covered: dict[str, _Covered] = {}
+    for name in set(defers_to.values()):
+        covered[name] = _Covered()
+        for start, end in _union((s.start, s.end) for s in spans if s.recognizer == name):
+            covered[name].add(start, end)
+    kept = []
+    for span in spans:
+        primary = defers_to.get(span.recognizer)
+        gaps = [] if primary is None else covered[primary].gaps(span.start, span.end)
+        if primary is None or gaps == [(span.start, span.end)]:
+            kept.append(span)
+            continue
+        for gap_start, gap_end in gaps:
+            start, end = (
+                (gap_start, gap_end) if text is None else _trimmed(text, gap_start, gap_end)
+            )
+            if start < end:
+                kept.append(Span(start, end, span.entity_type, span.score, span.recognizer))
+    return kept
+
+
 def merge(
     spans: Iterable[Span],
     thresholds: Mapping[EntityType, float] | None = None,
