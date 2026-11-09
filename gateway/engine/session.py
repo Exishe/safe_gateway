@@ -4,6 +4,7 @@ Memory only by default. Given an `EncryptedMappingStore`, each mapping is also k
 encrypted on disk so it survives a restart, and is removed with the session.
 """
 
+import math
 import secrets
 import threading
 import time
@@ -37,8 +38,9 @@ class SessionStore:
         clock: Callable[[], float] = time.monotonic,
         persist: EncryptedMappingStore | None = None,
     ) -> None:
-        if ttl_seconds <= 0:
-            msg = f"session ttl must be positive, got {ttl_seconds}"
+        # NaN compares false with everything, so `<= 0` alone would accept it and never expire.
+        if not math.isfinite(ttl_seconds) or ttl_seconds <= 0:
+            msg = f"session ttl must be a positive, finite number of seconds, got {ttl_seconds}"
             raise ValueError(msg)
         self.ttl_seconds = ttl_seconds
         self._clock = clock
@@ -51,6 +53,7 @@ class SessionStore:
         session_id = secrets.token_urlsafe(_ID_BYTES)
         mapping = Mapping() if mapping is None else mapping  # an empty Mapping is falsy
         with self._lock:
+            self._purge(self._clock())
             session = _Session(mapping, self._clock())
             self._sessions[session_id] = session
             self._save(session_id, session)
@@ -60,6 +63,7 @@ class SessionStore:
         """The session's mapping; using it restarts the idle timer."""
         with self._lock:
             now = self._clock()
+            self._purge(now)
             session = self._sessions.get(session_id) or self._restore(session_id, now)
             if session is None or self._expired(session, now):
                 self._drop(session_id)
@@ -72,6 +76,7 @@ class SessionStore:
     def save(self, session_id: str) -> None:
         """Write the session's current mapping to disk (no-op when memory-only)."""
         with self._lock:
+            self._purge(self._clock())
             session = self._sessions.get(session_id)
             if session is None:
                 raise SessionNotFound
@@ -83,19 +88,27 @@ class SessionStore:
 
     def purge_expired(self) -> int:
         with self._lock:
-            now = self._clock()
-            expired = [sid for sid, s in self._sessions.items() if self._expired(s, now)]
-            for session_id in expired:
-                self._drop(session_id)
-            return len(expired)
+            return self._purge(self._clock())
 
     def __contains__(self, session_id: object) -> bool:
         with self._lock:
+            self._purge(self._clock())
             return session_id in self._sessions
 
     def __len__(self) -> int:
         with self._lock:
+            self._purge(self._clock())
             return len(self._sessions)
+
+    def _purge(self, now: float) -> int:
+        """Drop every expired session, so no answer counts or keeps one (call under the lock).
+
+        Every public method runs this first: expiry must not wait for a get() on that id.
+        """
+        expired = [sid for sid, s in self._sessions.items() if self._expired(s, now)]
+        for session_id in expired:
+            self._drop(session_id)
+        return len(expired)
 
     def _expired(self, session: _Session, now: float) -> bool:
         return now - session.last_used > self.ttl_seconds

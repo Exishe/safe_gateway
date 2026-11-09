@@ -285,3 +285,15 @@ def test_a_failed_write_leaves_no_temp_file(
     with pytest.raises(OSError, match="disk full"):
         disk.save(SESSION_ID, make_mapping())
     assert list(disk.directory.iterdir()) == []
+
+
+def test_expiry_seen_by_contains_removes_the_stored_file_and_key(
+    disk: EncryptedMappingStore, keys: InMemoryKeyProvider
+) -> None:
+    now = [0.0]
+    store = SessionStore(ttl_seconds=60, clock=lambda: now[0], persist=disk)
+    session_id = store.create(make_mapping())
+    now[0] += 61
+    assert session_id not in store
+    assert files(disk) == []
+    assert keys.get(disk.key_id(session_id)) is None

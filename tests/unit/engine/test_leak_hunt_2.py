@@ -23,8 +23,8 @@ from gateway.engine.rehydrate import rehydrate
 from gateway.engine.session import SessionStore
 from gateway.engine.types import EntityType
 
-# Red-team findings (Phase 2), committed failing on purpose; the fix pass removes this.
-pytestmark = pytest.mark.xfail(strict=True, reason="mask/rehydrate red-team finding")
+# Red-team findings (Phase 2), committed failing on purpose; each fix removes its marker.
+FINDING = pytest.mark.xfail(strict=True, reason="mask/rehydrate red-team finding")
 
 NO_NER = EngineConfig(ner="off")
 SSN = "123-45-6780"  # pragma: allowlist secret
@@ -52,6 +52,7 @@ def note(tmp_path: Path) -> Path:
 # ------------------------------------------------------------------ (a) nothing detected leaks
 
 
+@FINDING
 def test_known_value_repeated_where_detection_misses_it() -> None:
     """The SSN is detected in message 1 and is in the mapping as [SSN_1], yet message 2
     went upstream as `Scan saved as ref123-45-6780.pdf`: mask only replaces the spans
@@ -62,6 +63,7 @@ def test_known_value_repeated_where_detection_misses_it() -> None:
     assert [text for text in masked if SSN in text] == []
 
 
+@FINDING
 def test_cli_output_and_json_map_on_the_same_path(note: Path, tmp_path: Path) -> None:
     """`safeguard mask note.txt -o out.txt --json-map out.txt` exited 0, and out.txt, the
     file meant to be sent upstream, held the map: every original value in clear. Only the
@@ -74,6 +76,7 @@ def test_cli_output_and_json_map_on_the_same_path(note: Path, tmp_path: Path) ->
     assert EMAIL not in written
 
 
+@FINDING
 def test_cli_json_map_written_into_an_existing_path(
     note: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -111,6 +114,7 @@ def test_cli_json_map_written_into_an_existing_path(
 # ------------------------------------------------------------------ (b, c, e) concurrency
 
 
+@FINDING
 def test_two_masks_into_one_session_mapping_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """Two requests mask into the same session's mapping from two worker threads. The
     store's lock guards only its dict; Mapping.placeholder_for reads the counter, builds
@@ -177,6 +181,7 @@ def test_nan_session_ttl_is_refused() -> None:
 # ------------------------------------------------------------------ (c) restore only what was meant
 
 
+@FINDING
 def test_unicode_digit_touching_an_unbracketed_token() -> None:
     """ADR 0014 point 3: rule 3 does not match when a word character touches either end.
     TOKEN is compiled with re.ASCII, so a full-width digit is not a word character to it:

@@ -88,3 +88,30 @@ def test_purge_removes_expired_sessions_only(store: SessionStore, clock: Clock) 
 def test_a_non_positive_ttl_is_refused(clock: Clock) -> None:
     with pytest.raises(ValueError, match="ttl"):
         SessionStore(ttl_seconds=0, clock=clock)
+
+
+@pytest.mark.parametrize("ttl", [float("nan"), float("inf"), float("-inf"), -1])
+def test_a_non_finite_or_negative_ttl_is_refused(ttl: float) -> None:
+    with pytest.raises(ValueError, match="ttl"):
+        SessionStore(ttl_seconds=ttl)
+
+
+def test_save_of_an_expired_session_refuses_and_forgets_it(
+    store: SessionStore, clock: Clock
+) -> None:
+    mapping = Mapping()
+    mapping.placeholder_for("Anna", EntityType.PERSON)
+    session_id = store.create(mapping)
+    clock.now += 61
+    with pytest.raises(SessionNotFound):
+        store.save(session_id)
+    assert len(mapping) == 0
+
+
+def test_create_drops_sessions_already_expired(store: SessionStore, clock: Clock) -> None:
+    old = Mapping()
+    old.placeholder_for("Anna", EntityType.PERSON)
+    store.create(old)
+    clock.now += 61
+    store.create()
+    assert len(old) == 0
