@@ -25,7 +25,7 @@ full; 1b and 1c are outlined at the end and get their own plan when they start.
 
 ## Review Focus
 
-1. A card number written next to another number (`qty 2 4111 1111 1111 1111`) is still found. Test in Task 3.
+1. A card number written next to another number (`qty 2 4111 1111 1111 1111`) is still found. Test in Task 3. <!-- pragma: allowlist secret -->
 2. Arabic-Indic and full-width digits are found, and the span covers the original characters. Tests in Tasks 3 and 4.
 3. A Luhn-valid 16-digit order number with an implausible prefix (`0000 ...`, `9...`) is not reported as a card. Test in Task 3.
 4. An IBAN followed by an upper-case word (`... 3000 BANK`) is found at its exact length. Test in Task 3.

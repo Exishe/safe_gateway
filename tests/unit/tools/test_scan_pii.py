@@ -112,3 +112,61 @@ def test_tracked_mode_scans_every_file_in_the_repository(tmp_path: Path) -> None
     (tmp_path / "notes.txt").write_text(f"ssn {SSN}\n")
     _git(tmp_path, "add", "notes.txt")
     assert main(["--tracked", "--repo", str(tmp_path)]) == 1
+
+
+# ---- engine findings (dogfooding: the product's own recognizers, NER off)
+
+IBAN = "DE89 3704 0044 0532 0130 00"  # pragma: allowlist secret
+INN = "7707083893"  # pragma: allowlist secret
+SNILS = "112-233-445 95"  # pragma: allowlist secret
+NBSP = " "
+ZWSP = "\u200b"
+
+
+def _kinds(text: str) -> list[str]:
+    return [finding.kind for finding in find_pii(text)]
+
+
+def test_iban_is_flagged_by_the_engine() -> None:
+    assert _kinds(f"pay to {IBAN}") == ["iban"]
+
+
+def test_russian_inn_and_snils_are_flagged_as_national_ids() -> None:
+    assert _kinds(f"inn {INN}") == ["national_id"]
+    assert _kinds(f"snils {SNILS}") == ["national_id"]
+
+
+@pytest.mark.parametrize("glue", [NBSP, ZWSP, f"{ZWSP}{NBSP}"])
+def test_card_with_unicode_spaces_or_zero_width_characters_is_flagged(glue: str) -> None:
+    # The shape regex does not see this; only the engine's cleaned view does.
+    digits = "4111", "1111", "1111", "1111"  # pragma: allowlist secret
+    assert _kinds(f"card {glue.join(digits)}") == ["credit_card"]
+
+
+def test_a_shape_hit_is_not_reported_twice_by_the_engine() -> None:
+    assert _kinds(f"card {CARD} ssn {SSN}") == ["ssn", "card"]
+
+
+def test_pragma_exempts_engine_findings_on_that_line_only() -> None:
+    text = f"iban {IBAN}  # pragma: allowlist secret\nnext line {IBAN}\n"
+    assert find_pii(text) == [Finding("<text>", 2, "iban")]
+
+
+def test_engine_finding_line_is_right_after_unicode_line_breaks() -> None:
+    assert find_pii(f"a b\nc {IBAN}")[0].line == 3
+
+
+def test_emails_phones_ips_and_urls_are_not_reported() -> None:
+    text = "mail anna@example.com call +1 415 555 0132 host 192.168.10.20 https://example.com/a"
+    assert find_pii(text) == []
+
+
+def test_engine_finding_text_never_contains_the_value() -> None:
+    (finding,) = find_pii(f"iban {IBAN}", "pay.txt")
+    assert str(finding) == "pay.txt:1: possible iban (value hidden)"
+    assert "3704" not in str(finding)
+
+
+def test_lock_files_keep_shape_checks_but_skip_the_engine_pass() -> None:
+    assert find_pii(f"pay {IBAN}", "uv.lock") == []
+    assert [f.kind for f in find_pii(f"ssn {SSN}", "sub/uv.lock")] == ["ssn"]

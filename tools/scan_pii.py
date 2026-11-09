@@ -1,8 +1,13 @@
 """Block commits that contain identifier-shaped personal data (ADR 0009).
 
-This is a coarse net for the repository, not the product's detector: SSN-shaped
-strings and Luhn-valid card numbers. Fake values in tests are allowed when the
-line carries `pragma: allowlist secret`. Findings never print the value.
+Two layers. Shape checks (SSN-shaped strings, Luhn-valid card numbers) are
+deliberately stricter than the engine, for example they flag the well-known fake
+SSN used in every tutorial. On top of them the product's own structured recognizers run with
+NER off (dogfooding), so cards split by no-break spaces or zero-width characters,
+IBANs and Russian INN/SNILS are found too. Emails, phones, IPs and URLs are not
+reported: they are far too common in a code repository. Fake values in tests are
+allowed when the line carries `pragma: allowlist secret`. Findings never print the
+value.
 
 Run: `python -m tools.scan_pii FILE ...`, `--staged` (the git index) or `--tracked`
 (every file git tracks; used by CI).
@@ -13,11 +18,27 @@ import codecs
 import re
 import subprocess
 import sys
+from bisect import bisect_right
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-Kind = Literal["ssn", "card"]
+from gateway.engine.detect import EngineConfig, detect
+from gateway.engine.types import EntityType
+
+Kind = Literal["ssn", "card", "credit_card", "iban", "national_id"]
+
+# Engine types that are reported, and the shape kind that already covers each.
+_ENGINE_KINDS: dict[EntityType, tuple[Kind, Kind | None]] = {
+    EntityType.CREDIT_CARD: ("credit_card", "card"),
+    EntityType.IBAN: ("iban", None),
+    EntityType.SSN: ("ssn", "ssn"),
+    EntityType.NATIONAL_ID: ("national_id", None),
+}
+_STRUCTURED_ONLY = EngineConfig(ner="off")
+# Generated lock files are pages of hashes and versions (uv.lock is 450 KB, about 5 s
+# in the engine, 90% of a full scan). They keep the shape checks, not the engine pass.
+_SHAPE_ONLY_FILES = frozenset({"uv.lock"})
 
 ALLOWLIST_PRAGMA = "pragma: allowlist secret"
 _SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
@@ -53,6 +74,40 @@ def _has_card(line: str) -> bool:
     return False
 
 
+def _line_starts(lines: list[str]) -> list[int]:
+    starts = []
+    offset = 0
+    for line in lines:
+        starts.append(offset)
+        offset += len(line)
+    return starts
+
+
+def _inside_a_word(text: str, start: int, end: int) -> bool:
+    """Digits glued to letters are hashes or ids, as in the shape regex's `\\b`."""
+    return (start > 0 and text[start - 1].isalpha()) or (end < len(text) and text[end].isalpha())
+
+
+def _engine_findings(text: str, path: str, shape_hits: set[tuple[int, Kind]]) -> list[Finding]:
+    # keepends=True so offsets add up; splitlines() splits on the same breaks as the
+    # shape pass, which keeps the line numbers of both layers aligned.
+    lines = text.splitlines(keepends=True)
+    starts = _line_starts(lines)
+    findings = []
+    for span in detect(text, config=_STRUCTURED_ONLY):
+        reported = _ENGINE_KINDS.get(span.entity_type)
+        if reported is None:
+            continue
+        kind, shape_kind = reported
+        index = bisect_right(starts, span.start) - 1
+        if ALLOWLIST_PRAGMA in lines[index] or (index + 1, shape_kind) in shape_hits:
+            continue
+        if span.entity_type != EntityType.IBAN and _inside_a_word(text, span.start, span.end):
+            continue
+        findings.append(Finding(path, index + 1, kind))
+    return findings
+
+
 def find_pii(text: str, path: str = "<text>") -> list[Finding]:
     findings = []
     for number, line in enumerate(text.splitlines(), start=1):
@@ -62,6 +117,9 @@ def find_pii(text: str, path: str = "<text>") -> list[Finding]:
             findings.append(Finding(path, number, "ssn"))
         if _has_card(line):
             findings.append(Finding(path, number, "card"))
+    shape_hits = {(finding.line, finding.kind) for finding in findings}
+    if Path(path).name not in _SHAPE_ONLY_FILES:
+        findings.extend(_engine_findings(text, path, shape_hits))
     return findings
 
 

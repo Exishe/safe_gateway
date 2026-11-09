@@ -74,7 +74,7 @@ TEXT = "x 55794 123-45-6780 y"  # pragma: allowlist secret
 
 
 def test_a_remainder_keeps_its_own_type_and_score_and_loses_edge_punctuation() -> None:
-    coincidence = span(2, 14, kind=E.NATIONAL_ID)  # "55794 123-45"
+    coincidence = span(2, 14, kind=E.NATIONAL_ID)  # "55794 123-45"  # pragma: allowlist secret
     ssn = span(8, 19, 0.85, kind=E.SSN, by="us_ssn")  # the SSN in TEXT
     assert merge([coincidence, ssn], text=TEXT) == [
         coincidence,

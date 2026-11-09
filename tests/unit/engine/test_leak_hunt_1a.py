@@ -2,7 +2,7 @@
 
 Every test here failed when it was written. Each one names the trick; the
 docstring says what detect() returned instead. All values are fake: published
-test numbers (4111..., 5500...0004, DE89..., 7707083893, 112-233-445 95),
+test numbers (4111..., 5500...0004, DE89..., 7707083893, 112-233-445 95), pragma: allowlist secret
 reserved ranges (555-01xx, 192.0.2.0/24, example.com) or invalid-by-construction.
 Separators are built with chr() so the source holds no invisible characters.
 """
@@ -120,7 +120,8 @@ def test_invisible_format_characters_inside_identifiers() -> None:
 
 def test_iban_with_hyphens_no_break_spaces_or_a_line_break() -> None:
     """iban._collect allows only single ASCII spaces: [] or just the tail
-    '0532-0130-00' as NATIONAL_ID, leaving country, check digits and bank code."""
+    '0532-0130-00' as NATIONAL_ID, pragma: allowlist secret
+    leaving country, check digits and bank code."""
     cases = [
         embedded(IBAN.replace(" ", "-"), E.IBAN),
         embedded(IBAN.replace(" ", NBSP), E.IBAN),
@@ -259,10 +260,12 @@ def test_token_url_with_a_camel_case_parameter() -> None:
 
 def test_phone_followed_by_another_number_on_the_same_line() -> None:
     """With Leniency.VALID the trailing postcode joins the candidate and the whole
-    phone is dropped: [] for RU and AM; for US only '555-0123 10001' as NATIONAL_ID.
+    phone is dropped: [] for RU and AM; for US only
+    '555-0123 10001' as NATIONAL_ID. pragma: allowlist secret
 
-    '555-0123 10001' is a checksum-valid INN as long as the US phone and scores higher,
-    so it keeps its span under ADR 0013; the US check is that no digit is left unmasked."""
+    '555-0123 10001' is a checksum-valid INN pragma: allowlist secret
+    as long as the US phone and scores higher, so it keeps its span under ADR 0013;
+    the US check is that no digit is left unmasked."""
     ru = "+7 912 345-67-89"  # pragma: allowlist secret
     am = "+374 77 123456"  # pragma: allowlist secret
     us = "(201) 555-0123"  # pragma: allowlist secret

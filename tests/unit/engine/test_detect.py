@@ -63,7 +63,7 @@ def test_values_are_reported_as_written_in_the_original_text() -> None:
 
 def test_thresholds_can_drop_low_confidence_types() -> None:
     bare_ssn = "ssn 123456780"  # pragma: allowlist secret
-    assert found(bare_ssn) == [("123456780", E.SSN)]
+    assert found(bare_ssn) == [("123456780", E.SSN)]  # pragma: allowlist secret
     assert found(bare_ssn, EngineConfig(thresholds={E.SSN: 0.7})) == []
 
 

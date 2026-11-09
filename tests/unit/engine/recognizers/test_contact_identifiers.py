@@ -165,7 +165,7 @@ def test_short_numbers_are_not_phones() -> None:
     [
         ("RU", "Иванов +7 912 345-67-89 125009 Москва", "+7 912 345-67-89"),
         ("AM", "Petrosyan +374 77 123456 0010 Yerevan", "+374 77 123456"),
-        ("US", "Smith (201) 555-0123 10001 NY", "(201) 555-0123"),
+        ("US", "Smith (201) 555-0123 10001 NY", "(201) 555-0123"),  # pragma: allowlist secret
         ("RU", "кв. 12 8 (912) 345-67-89", "8 (912) 345-67-89"),
     ],
 )
@@ -178,7 +178,7 @@ def test_phone_next_to_another_number_on_the_same_line(region: str, text: str, n
     [
         "Invoice 20240115 total 4500 1234 5678",
         "SSN 123-45-6780 filed",  # pragma: allowlist secret
-        "due 2024-01-15 or 15.01.2024, box 1 2 3 4 5 6 7 8 0",
+        "due 2024-01-15 or 15.01.2024, box 1 2 3 4 5 6 7 8 0",  # pragma: allowlist secret
     ],
 )
 def test_numbers_valid_only_without_their_national_prefix_are_not_phones(text: str) -> None:
