@@ -1,7 +1,8 @@
 """Leak-hunter round 3 (Phase 1c): dates, ADR 0023 shapes and keywords, routing by script.
 
-Every test here failed when it was written (run with --runxfail). Each one names the
-trick; the docstring says what detect() returned instead. Where it makes sense a test
+Every test here failed when it was written (it was a strict xfail until its fix
+landed; ADR 0013, 0016 and 0023 are amended for them). Each one names the trick; the
+docstring says what detect() returned instead. Where it makes sense a test
 first asserts a control, the same value in a form the engine already masks, so what
 fails is the trick, not the value. Values are invalid by construction or Faker-style
 inventions. Characters that are invisible or easily confused are built with chr(), so
@@ -22,9 +23,6 @@ import gateway.engine.detect as detect_module
 from gateway.engine.detect import detect
 from gateway.engine.gliner_ner import gliner_model_dir
 from gateway.engine.ner import SPACY_MODEL_DIRS, ModelMissing
-
-# Each finding stays a strict xfail until its fix lands; the mark is then removed.
-FINDING = pytest.mark.xfail(strict=True, reason="engine red-team finding (1c)")
 
 Case = tuple[str, str]  # (text, value as written)
 
@@ -273,7 +271,6 @@ def test_other_script_clause_after_an_english_instruction() -> None:
     assert leaks([(text, "Νίκος Παπαδόγιαννης")]) == []
 
 
-@FINDING
 @pytest.mark.models
 @pytest.mark.usefixtures("real_models")
 def test_capitalised_russian_name_inside_a_lower_case_line() -> None:

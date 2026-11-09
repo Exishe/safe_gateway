@@ -252,23 +252,37 @@ MOSTLY_CAPITALS = 0.7  # share of cased letters in capitals that makes a line "i
 MIN_CASED_LETTERS = 3
 
 
+# Capital letters of the BMP (every script the models read), as a class of ranges.
+_CAPITAL = _char_class("".join(chr(code) for code in range(0x10000) if chr(code).isupper()))
+_CAPS_WORD = f"(?<!\\w){_CAPITAL}{{3,}}(?!\\w)"
+# Two or more words in capitals of three or more letters, joined by inline spaces or a
+# hyphen: "SELENE MARCHETTI-QUILLIN", or a Russian name. Never across a line break.
+_CAPS_RUN = re.compile(
+    f"{_CAPS_WORD}(?:(?:[^\\S\\n\\r\\x0b\\x0c\\x85\\u2028\\u2029]+|-){_CAPS_WORD})+"
+)
+
+
 def title_cased_capitals(text: str) -> str:
-    """Each line written mostly in capitals, title-cased one character for one.
+    """Each line written mostly in capitals, and each run of words in capitals inside
+    another line, title-cased one character for one.
 
     Both models read case as a cue: 'SELENE MARCHETTI' in a header is missed where
-    'Selene Marchetti' is found. A heuristic: more than 70% of at least 3 cased letters.
+    'Selene Marchetti' is found. A heuristic: a line is "in capitals" when more than 70%
+    of at least 3 cased letters are; inside other lines, two or more neighbouring words
+    in capitals, each of three letters or more, are title-cased too (ADR 0016 amended),
+    so an acronym pair ("ACME LLC") becomes a name-like pair: over-masking, accepted.
     A character whose case mapping is not one character ('İ') is left as it is, so
     offsets never move.
     """
-    lines = [line for line in _LINE.finditer(text) if _in_capitals(line.group())]
-    if not lines:
+    ranges = [(m.start(), m.end()) for m in _CAPS_RUN.finditer(text)]
+    ranges += [(m.start(), m.end()) for m in _LINE.finditer(text) if _in_capitals(m.group())]
+    if not ranges:
         return text
     chars = list(text)
-    for line in lines:
-        for index in range(line.start(), line.end()):
-            char = chars[index]
-            word_start = index == line.start() or not text[index - 1].isalnum()
-            cased = char.title() if word_start else char.lower()
+    for start, end in ranges:
+        for index in range(start, end):
+            word_start = index == start or not text[index - 1].isalnum()
+            cased = text[index].title() if word_start else text[index].lower()
             if len(cased) == 1:
                 chars[index] = cased
     return "".join(chars)

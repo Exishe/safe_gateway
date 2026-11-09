@@ -212,7 +212,14 @@ def test_composed_view_maps_a_character_that_composition_lengthens() -> None:
             "Kind regards,\n\nPtolemy Harrowgate\nSenior Partner",
         ),
         ("TAVIEL D'ARBANNE, LEFÈVRE-QUILLIN, 3RD", "Taviel D'Arbanne, Lefèvre-Quillin, 3rd"),
-        ("Met ACME LLC in London.", "Met ACME LLC in London."),  # mostly lower case: left alone
+        # Mostly lower case: only runs of two or more words in capitals (1c #15).
+        ("Met ACME LLC in London.", "Met Acme Llc in London."),
+        ("Met IBM in London.", "Met IBM in London."),  # one word in capitals: left alone
+        ("Пациент ЗОРВАТ КВИЛЛИН поступил", "Пациент Зорват Квиллин поступил"),
+        ("signed by SELENE MARCHETTI-QUILLIN today", "signed by Selene Marchetti-Quillin today"),
+        ("ask the NHS GP or the GMC", "ask the NHS GP or the GMC"),  # words under three letters
+        ("codes ABC123 DEF456 here", "codes ABC123 DEF456 here"),  # not letters only
+        ("one LINE\nTWO words", "one LINE\nTWO words"),  # a run never crosses a line
         ("IBM", "Ibm"),
         ("OK", "OK"),  # fewer than three cased letters
         ("4111 1111 1111 1111", "4111 1111 1111 1111"),  # pragma: allowlist secret
