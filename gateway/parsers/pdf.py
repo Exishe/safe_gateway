@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from pdfminer.high_level import extract_pages
-from pdfminer.layout import LAParams, LTChar, LTTextLine
+from pdfminer.layout import LAParams, LTChar, LTImage, LTTextLine
 from pdfminer.pdfparser import PDFSyntaxError
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
@@ -27,6 +27,7 @@ from pypdf.generic import (
     TextStringObject,
 )
 
+from gateway.parsers import ocr
 from gateway.parsers.document import Document, DocumentBuilder, DocumentError, PagePosition
 from gateway.parsers.output import atomic_output
 from gateway.parsers.redact import UnitMask
@@ -103,9 +104,52 @@ def _page_lines(number: int, layout: Any, layer: str) -> list[Line]:  # noqa: AN
     return lines
 
 
-def _no_text_layer(number: int) -> list[Line]:
-    msg = f"page {number} has no text layer"
-    raise DocumentError(msg)
+def _image_boxes(item: Any) -> dict[int, tuple[float, float, float, float]]:  # noqa: ANN401
+    """Where each image object is drawn on the page, by object number."""
+    boxes = {}
+    for child in getattr(item, "_objs", ()):
+        if isinstance(child, LTImage) and getattr(child.stream, "objid", None) is not None:
+            boxes[child.stream.objid] = child.bbox
+        boxes.update(_image_boxes(child))
+    return boxes
+
+
+def _placed(
+    line: ocr.OcrLine, box: tuple[float, float, float, float], pixels: tuple[int, int]
+) -> Line:
+    """An OCR line, from image pixels (origin top left) to page points (origin bottom left)."""
+    x0, y0, x1, y1 = box
+    scale_x, scale_y = (x1 - x0) / pixels[0], (y1 - y0) / pixels[1]
+    baseline = y1 - (line.top + line.height) * scale_y
+    return Line(line.text, x0 + line.left * scale_x, baseline, round(line.height * scale_y, 2))
+
+
+def _ocr_lines(number: int, page: Any, layout: Any) -> list[Line]:  # noqa: ANN401
+    """Lines of a page with no text layer, read from its images (ADR 0017 point 5)."""
+    try:
+        images = list(page.images)
+    except (PdfReadError, ValueError, OSError, NotImplementedError, KeyError) as error:
+        msg = f"page {number} has no text layer and its image cannot be decoded ({error})"
+        raise DocumentError(msg) from error
+    if not images:
+        return []  # a blank page
+    if not ocr.available():
+        msg = (
+            f"page {number} has no text layer and Tesseract is not installed "
+            "(apt-get install tesseract-ocr tesseract-ocr-rus)"
+        )
+        raise ocr.OcrUnavailableError(msg)
+    boxes = _image_boxes(layout)
+    lines = []
+    for image_file in images:
+        reference = image_file.indirect_reference
+        box = boxes.get(reference.idnum) if reference is not None else None
+        image = image_file.image
+        if image is None:  # pragma: no cover  (pypdf decodes or raises)
+            continue
+        found = ocr.read_lines(image)
+        lines.extend(_placed(line, box or layout.bbox, image.size) for line in found)
+    return lines
 
 
 def _pages(path: Path) -> Iterator[tuple[int, list[Line], bool]]:
@@ -120,22 +164,22 @@ def _pages(path: Path) -> Iterator[tuple[int, list[Line], bool]]:
         if layer.strip():
             yield number, _page_lines(number, layout, layer), False
         else:
-            yield number, _no_text_layer(number), True
+            yield number, _ocr_lines(number, page, layout), True
 
 
 def parse(path: Path) -> Document:
     builder = DocumentBuilder()
     pages = 0
     ocr_pages = 0
-    for number, lines, ocr in _pages(path):
+    for number, lines, scanned in _pages(path):
         pages += 1
-        ocr_pages += int(ocr)
+        ocr_pages += int(scanned)
         if number > 1:
             builder.separate("\n\n")
         for index, line in enumerate(lines):
             if index:
                 builder.separate("\n")
-            builder.add(line.text, PagePosition(number, index, line.x, line.y, line.size, ocr))
+            builder.add(line.text, PagePosition(number, index, line.x, line.y, line.size, scanned))
     return builder.build("pdf", {"pages": pages, "ocr_pages": ocr_pages})
 
 
