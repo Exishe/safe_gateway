@@ -1,5 +1,10 @@
+import copy
+import pickle
+import threading
+
 import pytest
 
+import gateway.engine.mask as mask_module
 from gateway.engine.mask import Mapping
 from gateway.engine.placeholders import MAX_COUNTER
 from gateway.engine.types import EntityType
@@ -60,17 +65,77 @@ def test_to_dict_and_from_dict_round_trip_and_continue_numbering() -> None:
         {"[PERSON_01]": "x"},
         {"[PERSON_1]": "x", "[PERSON_2]": "x"},
         {"[PERSON_1]": 3},
+        {"[PERSON_2]": "x"},  # a counter gap: mask numbers from 1
+        {"[PERSON_1]": "x", "[PERSON_3]": "y"},
+        {"[LITERAL_1]": "Anna"},  # a literal only ever holds a placeholder-shaped token
+        {"[LITERAL_1]": "[PERSON_1] and more"},
+        {1: "x"},
     ],
 )
-def test_from_dict_rejects_what_mask_never_writes(data: dict[str, object]) -> None:
+def test_from_dict_rejects_what_mask_never_writes(data: dict[object, object]) -> None:
     with pytest.raises(ValueError, match="map"):
         Mapping.from_dict(data)
 
 
-def test_counter_overflow_raises_instead_of_writing_an_ambiguous_token() -> None:
-    mapping = Mapping.from_dict({f"[PERSON_{MAX_COUNTER}]": "Anna"})
+def test_counter_overflow_raises_instead_of_writing_an_ambiguous_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # from_dict refuses gaps, so the limit is lowered rather than a million entries made.
+    monkeypatch.setattr(mask_module, "MAX_COUNTER", 2)
+    mapping = Mapping()
+    mapping.placeholder_for("Anna", EntityType.PERSON)
+    mapping.placeholder_for("Boris", EntityType.PERSON)
     with pytest.raises(ValueError, match="counter"):
-        mapping.placeholder_for("Boris", EntityType.PERSON)
+        mapping.placeholder_for("Vera", EntityType.PERSON)
+
+
+def test_the_real_counter_limit_is_six_digits() -> None:
+    assert MAX_COUNTER == 999_999
+
+
+@pytest.mark.parametrize("data", [[], [("[PERSON_1]", "x")], "x", None])
+def test_from_dict_of_a_non_object_raises_value_error(data: object) -> None:
+    with pytest.raises(ValueError, match="map"):
+        Mapping.from_dict(data)
+
+
+def test_from_dict_accepts_a_literal_of_each_token_shape() -> None:
+    data = {"[LITERAL_1]": "[person-1]", "[LITERAL_2]": "PERSON 2", "[LITERAL_3]": "[SSN_1]"}
+    assert Mapping.from_dict(data).to_dict() == data
+
+
+def test_a_mapping_pickles_and_copies_without_its_lock() -> None:
+    mapping = Mapping()
+    mapping.placeholder_for("Anna", EntityType.PERSON)
+    pickled = pickle.loads(pickle.dumps(mapping))  # noqa: S301  (bytes made on the line)
+    for clone in (pickled, copy.deepcopy(mapping), copy.copy(mapping)):
+        assert clone.to_dict() == {"[PERSON_1]": "Anna"}
+        assert clone.placeholder_for("Boris", EntityType.PERSON) == "[PERSON_2]"
+    assert len(mapping) == 1
+
+
+def test_concurrent_allocation_gives_each_value_its_own_number() -> None:
+    mapping = Mapping()
+    values = [f"value-{n}" for n in range(2000)]
+
+    def allocate(chunk: list[str]) -> None:
+        for value in chunk:
+            mapping.placeholder_for(value, EntityType.PERSON)
+
+    threads = [threading.Thread(target=allocate, args=(values[i::8],)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sorted(mapping.to_dict()) == sorted(f"[PERSON_{n}]" for n in range(1, 2001))
+    assert sorted(mapping.to_dict().values()) == sorted(values)
+
+
+def test_known_values_leaves_out_literals() -> None:
+    mapping = Mapping()
+    mapping.placeholder_for("[PERSON_9]", EntityType.LITERAL)
+    mapping.placeholder_for("Anna", EntityType.PERSON)
+    assert mapping.known_values() == {"Anna": EntityType.PERSON}
 
 
 def test_clear_forgets_everything() -> None:

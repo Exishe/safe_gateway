@@ -1,5 +1,6 @@
 """Replace detected values with placeholders (ADR 0001, ADR 0002)."""
 
+import threading
 from collections.abc import Iterable, Sequence
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
@@ -13,51 +14,83 @@ class Mapping:
     """Placeholder -> original value. Never holds masked text (ADR 0001 point 5).
 
     Keys are exact surface strings: one surface always gets one placeholder, and
-    two spellings of a value get two (ADR 0001 point 3).
+    two spellings of a value get two (ADR 0001 point 3). Safe to share between
+    threads: a session's mapping is extended by concurrent requests (ADR 0002 point 2).
     """
 
     def __init__(self) -> None:
         self._originals: dict[str, str] = {}
         self._placeholders: dict[str, str] = {}  # the same pairs, looked up by surface
         self._counters: dict[EntityType, int] = {}
+        # Allocation reads the counter, then writes it: two threads must not interleave.
+        self._lock = threading.Lock()
 
     def placeholder_for(self, surface: str, entity_type: EntityType) -> str:
         """The placeholder of `surface`, assigning the type's next number if it is new."""
         if not surface:
             msg = "cannot mask an empty value"
             raise ValueError(msg)
-        existing = self._placeholders.get(surface)
-        if existing is not None:
-            return existing
-        number = self._counters.get(entity_type, 0) + 1
-        if number > MAX_COUNTER:
-            msg = f"placeholder counter for {entity_type} exceeds {MAX_COUNTER}"
-            raise ValueError(msg)
-        placeholder = canonical(entity_type, number)
-        self._counters[entity_type] = number
-        self._originals[placeholder] = surface
-        self._placeholders[surface] = placeholder
-        return placeholder
+        with self._lock:
+            existing = self._placeholders.get(surface)
+            if existing is not None:
+                return existing
+            number = self._counters.get(entity_type, 0) + 1
+            if number > MAX_COUNTER:
+                msg = f"placeholder counter for {entity_type} exceeds {MAX_COUNTER}"
+                raise ValueError(msg)
+            placeholder = canonical(entity_type, number)
+            self._counters[entity_type] = number
+            self._originals[placeholder] = surface
+            self._placeholders[surface] = placeholder
+            return placeholder
 
     def original(self, placeholder: str) -> str | None:
-        return self._originals.get(placeholder)
+        with self._lock:
+            return self._originals.get(placeholder)
+
+    def known_values(self) -> dict[str, EntityType]:
+        """A snapshot of surface -> type for every value except placeholder-shaped text."""
+        with self._lock:
+            pairs = list(self._placeholders.items())
+        known: dict[str, EntityType] = {}
+        for surface, placeholder in pairs:
+            match = CANONICAL.fullmatch(placeholder)
+            if match is not None and match.group("type") != EntityType.LITERAL.value:
+                known[surface] = EntityType(match.group("type"))
+        return known
 
     def __contains__(self, placeholder: object) -> bool:
-        return placeholder in self._originals
+        with self._lock:
+            return placeholder in self._originals
 
     def __len__(self) -> int:
-        return len(self._originals)
+        with self._lock:
+            return len(self._originals)
 
     def to_dict(self) -> dict[str, str]:
-        return dict(self._originals)
+        with self._lock:
+            return dict(self._originals)
+
+    def __reduce__(self) -> tuple[object, tuple[dict[str, str]]]:
+        # Pickle and copy go through from_dict: a lock cannot be pickled, each copy gets
+        # its own, and what is loaded back is validated.
+        return (Mapping.from_dict, (self.to_dict(),))
 
     @classmethod
-    def from_dict(cls, data: MappingABC[str, object]) -> "Mapping":
-        """Rebuild a mapping that `to_dict` wrote; refuse anything mask would not write."""
+    def from_dict(cls, data: object) -> "Mapping":
+        """Rebuild a mapping that `to_dict` wrote; refuse anything mask would not write.
+
+        Mask numbers each type 1, 2, 3... with no gap, and a `[LITERAL_n]` only ever
+        holds a placeholder-shaped token. Error messages name the placeholder only:
+        the original is personal data.
+        """
+        if not isinstance(data, MappingABC):
+            msg = f"invalid map: expected an object, got {type(data).__name__}"
+            raise ValueError(msg)  # noqa: TRY004  (a bad map is a bad value, as below)
         mapping = cls()
+        numbers: dict[EntityType, set[int]] = {}
         for placeholder, original in data.items():
-            match = CANONICAL.fullmatch(placeholder)
-            # Error messages name the placeholder only: the original is personal data.
+            match = CANONICAL.fullmatch(placeholder) if isinstance(placeholder, str) else None
             if match is None or not isinstance(original, str) or not original:
                 msg = f"invalid map entry for {placeholder!r}"
                 raise ValueError(msg)
@@ -65,16 +98,24 @@ class Mapping:
                 msg = f"invalid map: {placeholder!r} repeats another entry's value"
                 raise ValueError(msg)
             entity_type = EntityType(match.group("type"))
-            number = int(match.group("number"))
+            if entity_type is EntityType.LITERAL and TOKEN.fullmatch(original) is None:
+                msg = f"invalid map: {placeholder!r} holds text that is not placeholder-shaped"
+                raise ValueError(msg)
+            numbers.setdefault(entity_type, set()).add(int(match.group("number")))
             mapping._originals[placeholder] = original
             mapping._placeholders[original] = placeholder
-            mapping._counters[entity_type] = max(mapping._counters.get(entity_type, 0), number)
+        for entity_type, used in numbers.items():
+            if used != set(range(1, len(used) + 1)):
+                msg = f"invalid map: {entity_type} placeholders are not numbered 1..{len(used)}"
+                raise ValueError(msg)
+            mapping._counters[entity_type] = len(used)
         return mapping
 
     def clear(self) -> None:
-        self._originals.clear()
-        self._placeholders.clear()
-        self._counters.clear()
+        with self._lock:
+            self._originals.clear()
+            self._placeholders.clear()
+            self._counters.clear()
 
 
 @dataclass

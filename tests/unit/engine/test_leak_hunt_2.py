@@ -114,7 +114,6 @@ def test_cli_json_map_written_into_an_existing_path(
 # ------------------------------------------------------------------ (b, c, e) concurrency
 
 
-@FINDING
 def test_two_masks_into_one_session_mapping_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """Two requests mask into the same session's mapping from two worker threads. The
     store's lock guards only its dict; Mapping.placeholder_for reads the counter, builds
@@ -187,7 +186,11 @@ def test_unicode_digit_touching_an_unbracketed_token() -> None:
     TOKEN is compiled with re.ASCII, so a full-width digit is not a word character to it:
     the model's `PERSON_1` + full-width 2 (PERSON_12) came back as PERSON_1's name
     followed by the digit, a real value where the model meant a different placeholder."""
-    mapping = Mapping.from_dict({"[PERSON_1]": "Zorvath Quillin", "[PERSON_12]": "Brenna Holloway"})
+    # Built by allocation: from_dict refuses the counter gap a two-entry dict would have.
+    mapping = Mapping()
+    for name in ["Zorvath Quillin", *(f"Person {n}" for n in range(2, 12)), "Brenna Holloway"]:
+        mapping.placeholder_for(name, EntityType.PERSON)
+    assert mapping.original("[PERSON_12]") == "Brenna Holloway"
 
     restored, _ = rehydrate(f"PERSON_1{FULLWIDTH_TWO} signed the lease.", mapping)
 
