@@ -79,3 +79,26 @@ def test_every_generated_token_url_is_found(sample: tuple[str, str]) -> None:
 @given(embedded(phones()))
 def test_every_generated_phone_is_found(sample: tuple[str, str]) -> None:
     assert_found(PHONE, sample, EntityType.PHONE)
+
+
+# ------------------------------------------------------------------ dates (ADR 0016)
+
+from gateway.engine.recognizers.dates import DATE  # noqa: E402
+from tests.strategies import dates  # noqa: E402
+
+
+@given(embedded(dates()))
+def test_every_generated_date_is_found(sample: tuple[str, str]) -> None:
+    assert_found(DATE, sample, EntityType.DATE)
+
+
+@given(embedded(ip_addresses()))
+def test_no_ip_address_is_read_as_a_date(sample: tuple[str, str]) -> None:
+    text, _ = sample
+    assert DATE.find(text) == []
+
+
+@given(embedded(phones()))
+def test_no_phone_number_is_read_as_a_date(sample: tuple[str, str]) -> None:
+    text, _ = sample
+    assert DATE.find(text) == []

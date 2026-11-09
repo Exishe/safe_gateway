@@ -105,6 +105,7 @@ def test_one_megabyte_with_fifty_identifiers_is_fast_and_complete() -> None:
 
 import logging  # noqa: E402
 import re  # noqa: E402
+import unicodedata  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import gateway.engine.detect as detect_module  # noqa: E402
@@ -204,6 +205,48 @@ def test_ner_spans_map_back_through_the_cleaned_view(fake_ner: list[tuple[str, s
     # Both paragraphs are English, so the model reads them as one segment of the cleaned text.
     assert fake_ner == [("en", "Ref: card on file.\n\nMet Zorvath Quillin today.")]
     assert by_recognizer(text, spans, "ner_en") == ["Ref", "Met", "Zorvath", f"Quil{ZWSP}lin"]
+
+
+def test_the_model_reads_lines_in_capitals_title_cased(fake_ner: list[tuple[str, str]]) -> None:
+    text = "BETWEEN: SELENE MARCHETTI\nAnd the rest of the letter."
+
+    spans = detect(text)
+
+    assert fake_ner == [("en", "Between: Selene Marchetti\nAnd the rest of the letter.")]
+    assert by_recognizer(text, spans, "ner_en") == ["BETWEEN", "SELENE", "MARCHETTI", "And"]
+
+
+def test_the_model_reads_accents_composed_and_spans_cover_whole_clusters(
+    fake_ner: list[tuple[str, str]],
+) -> None:
+    def nfd(value: str) -> str:
+        return unicodedata.normalize("NFD", value)
+
+    text = nfd("Свидетель Пётр Ёлкин.")
+
+    spans = detect(text)
+
+    assert fake_ner == [("ru", "Свидетель Пётр Ёлкин.")]
+    assert by_recognizer(text, spans, "ner_ru") == [nfd("Свидетель"), nfd("Пётр"), nfd("Ёлкин")]
+
+
+def test_the_model_never_reads_a_lone_surrogate(fake_ner: list[tuple[str, str]]) -> None:
+    detect(f"Zorvath Quillin called {chr(0xD83D)} today.")
+    assert fake_ner == [("en", f"Zorvath Quillin called {chr(0xFFFD)} today.")]
+
+
+def test_lines_in_two_scripts_go_to_two_models(fake_ner: list[tuple[str, str]]) -> None:
+    request = "Please check this clause for Zorvath Quillin:"
+    detect(f"{request}\n{RU}")
+    assert fake_ner == [("en", request), ("ru", RU)]
+
+
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [("DOB:\n\n1985-03-12", "1985-03-12"), ("Дата рождения: 12 марта 1985 года", "12 марта 1985")],
+)
+def test_dates_are_found_without_a_model(text: str, value: str) -> None:
+    assert found(text) == [(value, E.DATE)]
 
 
 def test_armenian_text_returns_structured_and_gazetteer_hits(

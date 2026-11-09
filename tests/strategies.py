@@ -268,3 +268,50 @@ def chunkings(draw: st.DrawFn, text: str) -> list[str]:
     cuts = sorted(draw(st.lists(st.integers(0, len(text)), max_size=12)))
     bounds = [0, *cuts, len(text)]
     return [text[a:b] for a, b in itertools.pairwise(bounds)]
+
+
+# ------------------------------------------------------------------ dates (ADR 0016)
+
+import calendar  # noqa: E402
+
+EN_MONTH_NAMES = tuple(calendar.month_name[1:])
+RU_MONTHS_GENITIVE = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля")
+RU_MONTHS_GENITIVE += ("августа", "сентября", "октября", "ноября", "декабря")
+RU_MONTHS_SHORT = ("янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.")
+RU_MONTHS_SHORT += ("авг.", "сент.", "окт.", "нояб.", "дек.")
+
+
+def _ordinal(day: int) -> str:
+    if day in {11, 12, 13}:
+        return f"{day}th"
+    return f"{day}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th') }"
+
+
+def _date_forms(day: int, month: int, year: int, *, pad: bool) -> list[str]:
+    d, m = (f"{day:02d}", f"{month:02d}") if pad else (str(day), str(month))
+    name = EN_MONTH_NAMES[month - 1]
+    return [
+        f"{d}.{m}.{year}",
+        f"{d}/{m}/{year}",
+        f"{m}/{d}/{year}",
+        f"{d}-{m}-{year}",
+        f"{year}-{month:02d}-{day:02d}",
+        f"{day:02d}.{month:02d}.{year % 100:02d}",
+        f"{day} {name} {year}",
+        f"{name} {day}, {year}",
+        f"{name[:3]} {day} {year}",
+        f"{day} {name[:3]}. {year}",
+        f"{name} {_ordinal(day)}, {year}",
+        f"{day} {RU_MONTHS_GENITIVE[month - 1]} {year}",
+        f"{day} {RU_MONTHS_SHORT[month - 1]} {year}",
+    ]
+
+
+@st.composite
+def dates(draw: st.DrawFn) -> str:
+    """A real calendar date in one of the forms DateRecognizer reads, sometimes in capitals."""
+    year = draw(st.integers(1900, 2099))
+    month = draw(st.integers(1, 12))
+    day = draw(st.integers(1, calendar.monthrange(year, month)[1]))
+    value = draw(st.sampled_from(_date_forms(day, month, year, pad=draw(st.booleans()))))
+    return value.upper() if draw(st.booleans()) else value

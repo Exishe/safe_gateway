@@ -39,7 +39,10 @@ def _build_parser() -> argparse.ArgumentParser:
     scan.add_argument(
         "--no-ner",
         action="store_true",
-        help="skip names, organisations, places and dates (no spaCy or GLiNER model is loaded)",
+        help=(
+            "skip names, organisations and places (no spaCy or GLiNER model is loaded; "
+            "fixed date formats stay)"
+        ),
     )
 
     mask_parser = commands.add_parser(
@@ -60,7 +63,7 @@ def _build_parser() -> argparse.ArgumentParser:
     mask_parser.add_argument(
         "--no-ner",
         action="store_true",
-        help="skip names, organisations, places and dates (no model is loaded)",
+        help="skip names, organisations and places (no model is loaded; fixed date formats stay)",
     )
 
     models = commands.add_parser("models", help="download and list the local NER models")

@@ -9,6 +9,7 @@ from gateway.engine.gliner_ner import DEFAULT_THRESHOLD, GlinerRecognizer, gline
 from gateway.engine.merge import merge
 from gateway.engine.ner import SPACY_MODEL_DIRS, ModelMissing, SpacyNerRecognizer, model_dir
 from gateway.engine.recognizers.credit_card import CREDIT_CARD
+from gateway.engine.recognizers.dates import DATE
 from gateway.engine.recognizers.email import EMAIL
 from gateway.engine.recognizers.gazetteer import Gazetteer
 from gateway.engine.recognizers.iban import IBAN
@@ -19,7 +20,7 @@ from gateway.engine.recognizers.ru_snils import RU_SNILS
 from gateway.engine.recognizers.url_token import URL_WITH_TOKEN
 from gateway.engine.recognizers.us_ssn import US_SSN
 from gateway.engine.script import segments
-from gateway.engine.textview import TextView, clean_view
+from gateway.engine.textview import TextView, clean_view, ner_view
 from gateway.engine.types import EntityType, Recognizer, Span
 
 _log = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ PRIORITY = (
     "phone",
     "ip_address",
     "us_ssn",
+    "date",
     "ner_en",
     "ner_ru",
     "gliner",
@@ -70,6 +72,7 @@ def _recognizers(config: EngineConfig) -> list[Recognizer]:
         URL_WITH_TOKEN,
         IP_ADDRESS,
         PhoneRecognizer(config.phone_regions),
+        DATE,
     ]
     if config.gazetteer is not None:
         recognizers.insert(0, config.gazetteer)
@@ -96,7 +99,7 @@ def _ner_for(lang: str, *, forced: bool) -> SpacyNerRecognizer | None:
             raise
         if lang not in _WARNED:
             _WARNED.add(lang)
-            _log.warning("%s. Names, organisations, places and dates are not detected.", missing)
+            _log.warning("%s. Names, organisations and places are not detected.", missing)
         return None
     # Cheap: the model itself is loaded once per process (ner.build_analyzer).
     return SpacyNerRecognizer(lang, path)
@@ -138,11 +141,22 @@ def _ner_spans(text: str, lang: str, config: EngineConfig) -> list[Span]:
         gliner = _gliner(config) if _wants_gliner(piece_lang, config) else None
         if gliner is not None:
             recognizers.append(gliner)
+        if not recognizers:
+            continue
+        # Accents composed and capitals title-cased for the models; spans map back (ADR 0016).
+        piece = ner_view(text[start:end])
         for recognizer in recognizers:
-            spans.extend(
-                Span(s.start + start, s.end + start, s.entity_type, s.score, s.recognizer)
-                for s in recognizer.find(text[start:end])
-            )
+            for s in recognizer.find(piece.text):
+                piece_start, piece_end = piece.original_span(s.start, s.end)
+                spans.append(
+                    Span(
+                        piece_start + start,
+                        piece_end + start,
+                        s.entity_type,
+                        s.score,
+                        s.recognizer,
+                    )
+                )
     return spans
 
 

@@ -1,6 +1,7 @@
 """Paragraphs to languages by script, not by a detector (ADR 0012 point 4)."""
 
 import itertools
+import time
 
 import pytest
 from hypothesis import given
@@ -51,14 +52,36 @@ def test_a_tie_goes_to_cyrillic_or_armenian_not_latin() -> None:
 @pytest.mark.parametrize(
     "paragraph",
     [
-        "4111 1111 1111 1111 - 2024",  # pragma: allowlist secret
         "Ζορβάθ Κουιλλίν, Αθήνα",  # Greek: no model
         "李明在北京工作",  # Han: no model
-        "---",
     ],
 )
-def test_other_scripts_and_letterless_paragraphs_are_undetermined(paragraph: str) -> None:
+def test_other_scripts_are_undetermined(paragraph: str) -> None:
     assert labelled(f"{EN}\n\n{paragraph}") == [(EN, "en"), (paragraph, "und")]
+
+
+@pytest.mark.parametrize(
+    "paragraph",
+    [
+        "4111 1111 1111 1111 - 2024",  # pragma: allowlist secret
+        "1985-03-12",
+        "---",
+        "anna.petrova@example.org",  # an address is not counted as letters
+    ],
+)
+def test_a_paragraph_without_letters_joins_the_language_before_it(paragraph: str) -> None:
+    text = f"{EN}\n\n{paragraph}\n\n{RU}"
+    assert labelled(text) == [(f"{EN}\n\n{paragraph}", "en"), (RU, "ru")]
+
+
+def test_a_paragraph_without_letters_at_the_start_joins_the_language_after_it() -> None:
+    text = f"12.03.1985\n\n{RU}\n\n{EN}"
+    assert labelled(text) == [(f"12.03.1985\n\n{RU}", "ru"), (EN, "en")]
+
+
+@pytest.mark.parametrize("text", ["12 34", "12 34\n\n---", "+7 912 345-67-89"])
+def test_a_text_without_letters_is_undetermined(text: str) -> None:
+    assert labelled(text) == [(text, "und")]
 
 
 def test_blank_lines_with_spaces_and_windows_line_ends_separate_paragraphs() -> None:
@@ -66,9 +89,63 @@ def test_blank_lines_with_spaces_and_windows_line_ends_separate_paragraphs() -> 
     assert labelled(text) == [(EN, "en"), (RU, "ru")]
 
 
-def test_a_single_line_break_does_not_end_a_paragraph() -> None:
-    text = f"Zorvath Quillin\n{RU}"  # one paragraph: 14 Latin letters, 40 Cyrillic
+def test_a_single_line_break_between_two_scripts_ends_a_segment() -> None:
+    # A chat box sends Enter as one line break: each line goes to the model of its script.
+    request = "Please check this clause for Zorvath Quillin:"
+    assert labelled(f"{request}\n{RU}") == [(request, "en"), (RU, "ru")]
+    assert labelled(f"Zorvath Quillin\r\n{RU}\n{EN}") == [
+        ("Zorvath Quillin", "en"),
+        (RU, "ru"),
+        (EN, "en"),
+    ]
+
+
+def test_lines_of_one_script_stay_together() -> None:
+    text = f"{EN}\nSecond line.\n12 34\n{EN}"
+    assert labelled(text) == [(text, "en")]
+
+
+def test_a_line_without_a_model_language_stays_with_its_paragraph() -> None:
+    # Letterless and other-script lines go with the paragraph's model language, before or after.
+    text = f"12 34\nΑθήνα\n{RU}\n---"
     assert labelled(text) == [(text, "ru")]
+
+
+@pytest.mark.parametrize(
+    "separator",
+    ["\r\r", "\n\f", "\f\n", "\f", chr(0x2029), chr(0x2028) * 2, "\r\n\r\n", "\r\n \r\n"],
+)
+def test_page_breaks_paragraph_separators_and_classic_mac_blank_lines_split(
+    separator: str,
+) -> None:
+    text = f"{EN}{separator}{RU}"
+    assert labelled(text) == [(EN, "en"), (RU, "ru")]
+    assert labelled(f"{EN}{separator}Second English paragraph.") == [
+        (f"{EN}{separator}Second English paragraph.", "en")
+    ]
+
+
+@pytest.mark.parametrize("line_break", ["\r\n", "\r", "\n", chr(0x2028), chr(0x85)])
+def test_one_line_break_of_any_kind_is_one_line_break(line_break: str) -> None:
+    assert labelled(f"Zorvath Quillin{line_break}{RU}") == [("Zorvath Quillin", "en"), (RU, "ru")]
+    same = f"{EN}{line_break}{EN}"
+    assert labelled(same) == [(same, "en")]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "x" * 50_000,  # no whitespace, no address: every start was retried
+        "a@" * 25_000,
+        "\n" + " " * 200_000 + "x",
+        "\n \n" * 50_000,
+        "\r" * 200_000,
+    ],
+)
+def test_routing_is_linear_in_the_length_of_the_text(text: str) -> None:
+    started = time.perf_counter()
+    segments(text)
+    assert time.perf_counter() - started < 1.0
 
 
 @pytest.mark.parametrize("text", ["", "   ", "\n\n\n"])

@@ -22,9 +22,6 @@ import gateway.engine.detect as detect_module
 from gateway.engine.detect import detect
 from gateway.engine.ner import SPACY_MODEL_DIRS, ModelMissing
 
-# Red-team findings (Phase 1b), committed failing on purpose; the fix pass removes this.
-pytestmark = pytest.mark.xfail(strict=True, reason="NER red-team finding, fix in progress")
-
 Case = tuple[str, str]  # (text, value as written)
 
 APOSTROPHE = chr(0x2019)  # right single quotation mark: Word's autocorrected apostrophe
