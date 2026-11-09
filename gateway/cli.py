@@ -96,12 +96,13 @@ def _print_table(text: str, spans: list[Span], file: Path) -> None:
     if not spans:
         print(f"No detections in {file}.")
         return
-    print(f"{'LINE:COL':<10}{'TYPE':<16}{'SCORE':<7}{'RECOGNIZER':<13}TEXT")
+    # Wide enough for the longest recognizer name, "id_document_context".
+    print(f"{'LINE:COL':<10}{'TYPE':<16}{'SCORE':<7}{'RECOGNIZER':<21}TEXT")
     for span in spans:
         line, column = _line_and_column(text, span.start)
         print(
             f"{f'{line}:{column}':<10}{span.entity_type:<16}{span.score:<7.2f}"
-            f"{span.recognizer:<13}{_in_context(text, span)}"
+            f"{span.recognizer:<21}{_in_context(text, span)}"
         )
     print(f"{len(spans)} detections in {file}.")
 

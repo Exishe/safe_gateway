@@ -50,6 +50,17 @@ def test_scan_prints_a_table_with_position_type_and_context(
     assert "2 detections" in out
 
 
+def test_scan_table_keeps_the_longest_recognizer_name_apart_from_the_text(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    note = tmp_path / "note.txt"
+    licence = "driver's license: KELDA 770032 K9 706\n"  # pragma: allowlist secret
+    note.write_text(licence, encoding="utf-8")
+
+    assert main(["scan", "--no-ner", str(note)]) == 0
+    assert "id_document_context " in capsys.readouterr().out
+
+
 def test_scan_json_lists_offsets_and_text(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
