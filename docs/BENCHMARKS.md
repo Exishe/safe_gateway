@@ -84,7 +84,7 @@ document would take over 12 minutes. `gliner="all"` is therefore not a default.
 | Command | `uv run python -m tools.benchmark_openpii --sample 10000 --seed 20261109 --json docs/benchmarks/openpii-500k.json --markdown docs/benchmarks/openpii-500k.md` (the committed `.md` adds a header to the tables the command writes) |
 | Commit | 6b27eb43b422894f049e89932b32d2778a0a7e12 (tree clean). Previous run: 79d82b15215a812d69ad4e70b2e46b5a971e8b12 (harness), same engine as bc8662e |
 | Date | 2026-11-09 |
-| Engine | `detect(text, "auto", EngineConfig(ner="auto"))`: structured recognizers, the shape and keyword recognizers of ADR 0016, and spaCy `en_core_web_lg` 3.8.0 through Presidio. No GLiNER yet. Default phone regions. |
+| Engine | `detect(text, "auto", EngineConfig(ner="auto"))`: structured recognizers, the shape and keyword recognizers of ADR 0023, and spaCy `en_core_web_lg` 3.8.0 through Presidio. No GLiNER yet. Default phone regions. |
 | Run time | English 39.1 s; all eight languages 70 s in a 4-CPU container, single process |
 
 Definitions. Masking recall: share of gold spans with at least 90% of their characters
@@ -163,14 +163,14 @@ How to read this.
 
 - The dataset's values are synthetic and often invalid by construction. A one-off check of
   the full English validation shard (not part of the committed command) found 513 of 575
-  gold card numbers failing the Luhn check. Since ADR 0016, Luhn-invalid numbers of an
+  gold card numbers failing the Luhn check. Since ADR 0023, Luhn-invalid numbers of an
   exact card shape, `+` numbers that libphonenumber rejects, and numbers after a phone
   keyword are masked at lower scores (0.55 to 0.85), so they are found; a customer who
   raises a type's threshold above those scores gets the validated-only behaviour back. The
   property tests in `tests/property/` still assert 100% on valid generated identifiers;
   this benchmark does not show how real documents behave.
 - PASSPORT, DRIVER_LICENSE and a general NATIONAL_ID are found only by shape (`AA9999999`,
-  `AA99999AA`) or after a document keyword in English or Russian (ADR 0016), so typed
+  `AA99999AA`) or after a document keyword in English or Russian (ADR 0023), so typed
   recall stays low where the dataset writes a bare code with no keyword. ADDRESS parts
   have no recognizer; any masking recall there comes from other recognizers.
 - The gap between masking and typed recall for phones and cards means those values were
@@ -211,7 +211,7 @@ these languages are found by shape alone.
 Previous run: commit 79d82b15215a812d69ad4e70b2e46b5a971e8b12, 2026-11-09 (engine
 unchanged up to bc8662e). This run: commit 6b27eb43b422894f049e89932b32d2778a0a7e12,
 2026-11-09, same command, sample and seed. What changed: the six shape and keyword
-recognizers of ADR 0016 (`+` phones, keyword-gated phones, Luhn-invalid card shapes,
+recognizers of ADR 0023 (`+` phones, keyword-gated phones, Luhn-invalid card shapes,
 `AA9999999` passports, `AA99999AA` ID cards, keyword-gated document numbers). Masking
 recall, previous -> this run:
 
