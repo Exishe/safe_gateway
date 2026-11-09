@@ -2,14 +2,16 @@
 
 `KeyringKeyProvider` is the default `KeyProvider` for the encrypted session store
 (ADR 0002 point 3) and holds the audit log's device key (ADR 0021 point 7).
-Tests use `InMemoryKeyProvider`, never the real keychain.
+`read_api_key` reads an upstream API key (ADR 0020): from the keychain only, never
+from a file or the environment. Tests use `InMemoryKeyProvider` or an in-memory
+keyring backend, never the real keychain.
 """
 
 import os
 import re
 
 import keyring
-from keyring.errors import PasswordDeleteError
+from keyring.errors import KeyringError, PasswordDeleteError
 
 from gateway.engine.session_disk import KeyProvider
 
@@ -37,6 +39,47 @@ def device_key(provider: KeyProvider) -> bytes:
         key = os.urandom(32).hex().encode("ascii")
         provider.set(AUDIT_KEY_ID, key)
     return key
+
+
+class KeychainError(RuntimeError):
+    """The OS keychain could not be read. The message never holds a key."""
+
+
+class ApiKey:
+    """An API key that does not print itself: repr and str hide the value."""
+
+    __slots__ = ("_value",)
+
+    def __init__(self, value: str) -> None:
+        if not value:
+            msg = "an API key cannot be empty"
+            raise ValueError(msg)
+        self._value = value
+
+    def reveal(self) -> str:
+        """The key itself, for the one header that carries it."""
+        return self._value
+
+    def __repr__(self) -> str:
+        return "ApiKey(***)"
+
+    __str__ = __repr__
+
+
+def api_key_user(provider: str) -> str:
+    """The keychain user name a provider's key is stored under."""
+    return f"api-key:{provider}"
+
+
+def read_api_key(provider: str, service: str = SERVICE) -> ApiKey | None:
+    """The provider's key from the OS keychain, or None when none is stored."""
+    try:
+        value = keyring.get_password(service, api_key_user(provider))
+    except KeyringError as error:
+        # The backend's message is not repeated: some backends include what they read.
+        msg = f"cannot read the OS keychain ({type(error).__name__})"
+        raise KeychainError(msg) from None
+    return ApiKey(value) if value else None
 
 
 class KeyringKeyProvider:
