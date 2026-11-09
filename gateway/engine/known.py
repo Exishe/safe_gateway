@@ -79,6 +79,23 @@ def _tree(items: Sequence[tuple[str, str]], depth: int) -> str:
     return _alternation(parts)
 
 
+def _compile_uncached(pattern: str) -> re.Pattern[str]:
+    """Compile `pattern` and take it back out of `re`'s module-wide cache.
+
+    The pattern spells out the values, and the cache would keep them after the mapping
+    is cleared. Only this entry is removed: re.purge() would make every other caller
+    recompile its patterns. The cache is private, so it is reached defensively; a test
+    fails if CPython changes its shape.
+    """
+    compiled = re.compile(pattern)
+    key = (type(pattern), pattern, 0)
+    for name in ("_cache", "_cache2"):
+        cache = getattr(re, name, None)
+        if isinstance(cache, dict):
+            cache.pop(key, None)
+    return compiled
+
+
 class KnownValues:
     """Surface -> type for the values to find, compiled once."""
 
@@ -91,10 +108,7 @@ class KnownValues:
             (f"(?<!{edge})" if edge else "") + _tree([(v, v) for v in group], 0)
             for edge, group in sorted(by_edge.items(), key=lambda item: item[0] or "")
         ]
-        self._pattern = re.compile(_alternation(parts)) if parts else None
-        # re keeps every compiled pattern in a module-wide cache, and this pattern spells
-        # out the values: drop it there, so clearing the mapping really forgets them.
-        re.purge()
+        self._pattern = _compile_uncached(_alternation(parts)) if parts else None
 
     def __len__(self) -> int:
         return len(self._types)

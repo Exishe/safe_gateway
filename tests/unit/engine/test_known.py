@@ -114,10 +114,13 @@ def test_a_chain_of_values_that_prefix_each_other_compiles() -> None:
 
 def test_compiled_values_do_not_stay_in_the_regex_module_cache() -> None:
     marker = "Zorvath Quillin cache probe"
+    re.compile("another caller's pattern")
     KnownValues({marker: P})
     # The module-wide cache itself: private, so read by name.
     cached = [*getattr(re, "_cache", {}), *getattr(re, "_cache2", {})]
-    assert cached or hasattr(re, "_cache"), "the re cache moved; update this test"
+    # Other callers keep their cached patterns (re.purge would cost them a recompile);
+    # this also fails, as it should, if CPython moves the cache.
+    assert any("another caller" in str(key) for key in cached), "the re cache moved"
     assert not any(marker in str(key) for key in cached)
 
 
