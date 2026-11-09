@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from gateway import __version__
+from gateway.audit import commands as audit_commands
 from gateway.cloud import hub
 from gateway.cloud.hub import GLINER_MODEL
 from gateway.cloud.models import (
@@ -77,6 +78,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     model_commands.add_parser("list", help="show which models are installed")
     models.set_defaults(models_parser=models)
+    audit_commands.register(commands.add_parser)
     return parser
 
 
@@ -256,6 +258,8 @@ def main(argv: list[str] | None = None) -> int:
         return _mask(args)
     if args.command == "models":
         return _models(args)
+    if args.command == "audit":
+        return audit_commands.run(args)
     parser.print_help()
     return 0
 
