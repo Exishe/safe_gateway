@@ -80,3 +80,77 @@ def test_impossible_dates_are_refused(text: str) -> None:
 )
 def test_addresses_versions_and_phone_numbers_are_not_dates(text: str) -> None:
     assert found(text) == []
+
+
+# ------------------------------------------------------------------ leak hunt 1c (ADR 0016 amended)
+
+EN_DASH = chr(0x2013)
+RANGE = "12.03.1985-15.03.1985"  # pragma: allowlist secret
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (f"stay {RANGE} here", ["12.03.1985", "15.03.1985"]),
+        (
+            f"stay 12.03.1985{EN_DASH}15.03.1985 here",
+            ["12.03.1985", "15.03.1985"],
+        ),  # pragma: allowlist secret
+        ("visits 12.03.1985,15.03.1985,16.03.1985.", ["12.03.1985", "15.03.1985", "16.03.1985"]),
+        ("period 1985-03-12/1985-03-15 inclusive", ["1985-03-12", "1985-03-15"]),
+        ("from 12 March 1985-15 March 1985", ["12 March 1985", "15 March 1985"]),
+    ],
+)
+def test_ranges_and_lists_of_dates_without_spaces(text: str, expected: list[str]) -> None:
+    assert found(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "call 12-03-1985-1234",  # a date shape inside a longer number
+        "ref 1234/12.03.1985",
+        "ids 12.03.1985,1234",
+    ],
+)
+def test_a_separator_and_a_digit_next_to_a_date_still_refuse_it_unless_both_are_dates(
+    text: str,
+) -> None:
+    assert found(text) == []
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Договор заключён «12» марта 1985 г.", "«12» марта 1985"),
+        ('Договор от "3" мая 2024 г.', '"3" мая 2024'),
+        ("Договор от „3“ мая 2024 г.", "„3“ мая 2024"),
+    ],
+)
+def test_russian_day_in_guillemets_or_quotes(text: str, expected: str) -> None:
+    assert found(text) == [expected]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("DOB 12-MAR-1985 admitted.", "12-MAR-1985"),
+        ("Дата рождения: 12-Mar-1985, пол мужской.", "12-Mar-1985"),
+        ("log 12/Mar/1985 ok", "12/Mar/1985"),
+        ("seen 3.Sept.2024 ok", "3.Sept.2024"),
+        ("seen 01-JANUARY-2000 ok", "01-JANUARY-2000"),
+        ("выписан 12-мар-1985 г.", "12-мар-1985"),
+        ("выписан 12-МАЯ-1985 г.", "12-МАЯ-1985"),
+        ("drawn 1985-Mar-12 ok", "1985-Mar-12"),
+    ],
+)
+def test_hyphenated_and_abbreviated_month_names(text: str, expected: str) -> None:
+    assert found(text) == [expected]
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["12-Mar-3085", "32-Mar-1985", "12-Mar/1985", "12-Marz-1985", "A12-Mar-1985", "x12-мар-1985"],
+)
+def test_hyphenated_month_names_still_need_a_real_date(text: str) -> None:
+    assert found(text) == []
