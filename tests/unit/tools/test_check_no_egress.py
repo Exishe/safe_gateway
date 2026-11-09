@@ -58,9 +58,31 @@ def test_relative_imports_are_not_flagged() -> None:
     assert violations("from . import requests", "gateway/engine/detect.py") == []
 
 
-def test_parsers_may_run_subprocesses_but_not_open_connections() -> None:
-    assert violations("import subprocess", "gateway/parsers/pdf.py") == []
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import subprocess",
+        "import pytesseract",
+        "from pytesseract import image_to_data",
+        'eval("1")',
+    ],
+)
+def test_parsers_get_engine_rules_and_no_ocr_binary(source: str) -> None:
+    # ADR 0017 point 6: parsers start no process; OCR is confined to one module.
+    assert violations(source, "gateway/parsers/pdf.py") != []
+
+
+def test_parsers_may_not_open_connections() -> None:
     assert len(violations("import httpx", "gateway/parsers/pdf.py")) == 1
+
+
+def test_only_the_ocr_module_may_import_pytesseract() -> None:
+    assert violations("import pytesseract", "gateway/parsers/ocr.py") == []
+    assert violations("import subprocess", "gateway/parsers/ocr.py") != []
+    assert violations("import httpx", "gateway/parsers/ocr.py") != []
+    assert violations("import pytesseract", "gateway/cli.py") != []
+    assert violations("import pytesseract", "gateway/engine/detect.py") != []
+    assert violations("import pytesseract", "gateway/parsers/sub/ocr.py") != []
 
 
 def test_proxy_must_go_through_cloud_for_outbound_calls() -> None:

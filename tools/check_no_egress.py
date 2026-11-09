@@ -102,8 +102,22 @@ class RuleSet:
     forbid_dynamic_code: bool
 
 
-ENGINE_RULES = RuleSet("engine", NETWORK_MODULES | ENGINE_ONLY_MODULES, forbid_dynamic_code=True)
-NO_NETWORK_RULES = RuleSet("no-network", NETWORK_MODULES, forbid_dynamic_code=False)
+# Third-party wrappers that start a process. pytesseract runs the tesseract binary;
+# only OCR_MODULE may import it (ADR 0017 point 6).
+PROCESS_WRAPPERS = frozenset({"pytesseract"})
+OCR_MODULE = "gateway/parsers/ocr.py"
+
+ENGINE_RULES = RuleSet(
+    "engine", NETWORK_MODULES | ENGINE_ONLY_MODULES | PROCESS_WRAPPERS, forbid_dynamic_code=True
+)
+# Parsers read untrusted files: the engine's rules, no process, no dynamic code.
+PARSER_RULES = RuleSet(
+    "parser", NETWORK_MODULES | ENGINE_ONLY_MODULES | PROCESS_WRAPPERS, forbid_dynamic_code=True
+)
+OCR_RULES = RuleSet("OCR", NETWORK_MODULES | ENGINE_ONLY_MODULES, forbid_dynamic_code=True)
+NO_NETWORK_RULES = RuleSet(
+    "no-network", NETWORK_MODULES | PROCESS_WRAPPERS, forbid_dynamic_code=False
+)
 
 
 @dataclass(frozen=True)
@@ -125,6 +139,10 @@ def rules_for_path(path: Path, root: Path) -> RuleSet | None:
         return None  # outside the product, or the one package allowed outbound calls
     if relative.startswith("gateway/engine/"):
         return ENGINE_RULES
+    if relative == OCR_MODULE:
+        return OCR_RULES
+    if relative.startswith("gateway/parsers/"):
+        return PARSER_RULES
     return NO_NETWORK_RULES
 
 
