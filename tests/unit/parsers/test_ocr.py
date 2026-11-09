@@ -1,4 +1,6 @@
 import shutil
+import stat
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -83,3 +85,80 @@ def test_a_blank_page_needs_no_ocr(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     document = pdf.parse(blank)
     assert document.text == ""
     assert document.metadata["pages"] == 1
+
+
+# ------------------------------------------------------------------ security review M5
+
+_NO_WORDS = ("text", "block_num", "par_num", "line_num", "left", "top", "width", "height")
+
+
+def _fake_tesseract(
+    monkeypatch: pytest.MonkeyPatch, *, fail: bool = False
+) -> list[tuple[Path, int]]:
+    """Replace the Tesseract call; record the temporary directory it would write to."""
+    seen: list[tuple[Path, int]] = []
+
+    def fake_image_to_data(*_args: object, **_kwargs: object) -> dict[str, list[object]]:
+        directory = Path(tempfile.gettempdir())
+        seen.append((directory, stat.S_IMODE(directory.stat().st_mode)))
+        (directory / "tess_page_input.PNG").write_bytes(b"unmasked page")
+        if fail:
+            msg = "tesseract was killed"
+            raise RuntimeError(msg)
+        return {key: [] for key in _NO_WORDS}
+
+    monkeypatch.setattr(ocr, "available", lambda: True)
+    monkeypatch.setattr(ocr, "languages", lambda: "eng")
+    monkeypatch.setattr(ocr.pytesseract, "image_to_data", fake_image_to_data)
+    return seen
+
+
+def test_ocr_writes_only_to_an_owner_only_directory_that_is_removed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = _fake_tesseract(monkeypatch)
+    default = tempfile.gettempdir()
+
+    ocr.read_lines(Image.new("L", (10, 10), 255))
+
+    assert len(seen) == 1
+    directory, mode = seen[0]
+    assert str(directory) != default
+    assert directory.name.startswith("safeguard-ocr-")
+    assert mode == 0o700
+    assert not directory.exists()
+    assert tempfile.gettempdir() == default
+
+
+def test_the_private_directory_is_removed_when_tesseract_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = _fake_tesseract(monkeypatch, fail=True)
+    default = tempfile.gettempdir()
+    with pytest.raises(RuntimeError, match="killed"):
+        ocr.read_lines(Image.new("L", (10, 10), 255))
+    assert not seen[0][0].exists()
+    assert tempfile.gettempdir() == default
+
+
+@needs_tesseract
+def test_real_tesseract_files_land_in_the_private_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = ocr.pytesseract.pytesseract.run_tesseract
+    outputs: list[tuple[Path, int]] = []
+
+    def spy(
+        input_filename: str, output_filename_base: str, *args: object, **kwargs: object
+    ) -> None:
+        run(input_filename, output_filename_base, *args, **kwargs)
+        directory = Path(output_filename_base).parent
+        outputs.append((directory, stat.S_IMODE(directory.stat().st_mode)))
+
+    monkeypatch.setattr(ocr.pytesseract.pytesseract, "run_tesseract", spy)
+    ocr.read_lines(Image.new("L", (60, 20), 255))
+    assert len(outputs) == 1
+    directory, mode = outputs[0]
+    assert directory.name.startswith("safeguard-ocr-")
+    assert mode == 0o700
+    assert not directory.exists()

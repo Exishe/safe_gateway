@@ -6,6 +6,10 @@ network connection. Called only for PDF pages that have no text layer.
 
 import os
 import shutil
+import tempfile
+import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import cache
 
@@ -16,6 +20,7 @@ from gateway.parsers.document import DocumentError
 
 _WANTED_LANGUAGES = ("eng", "rus", "hye")
 _TIMEOUT_SECONDS = 300
+_TEMPDIR_LOCK = threading.Lock()
 
 
 class OcrUnavailableError(DocumentError):
@@ -43,6 +48,23 @@ def languages() -> str:
     return "+".join(chosen) or "eng"
 
 
+@contextmanager
+def _private_tempdir() -> Generator[None]:
+    """pytesseract writes the unmasked page image, and Tesseract its output, as files
+    next to a NamedTemporaryFile in the default temporary directory, readable by every
+    user (0644). For the call, the default becomes a new directory only the owner can
+    enter (0700), removed afterwards even when Tesseract fails. `tempfile.tempdir` is
+    process-wide, so OCR calls are serialised. If the process is killed, the directory
+    is left behind, still owner-only."""
+    with _TEMPDIR_LOCK, tempfile.TemporaryDirectory(prefix="safeguard-ocr-") as private:
+        previous = tempfile.tempdir
+        tempfile.tempdir = private
+        try:
+            yield
+        finally:
+            tempfile.tempdir = previous
+
+
 def read_lines(image: Image.Image) -> list[OcrLine]:
     if not available():
         msg = "Tesseract is not installed (apt-get install tesseract-ocr tesseract-ocr-rus)"
@@ -53,12 +75,13 @@ def read_lines(image: Image.Image) -> list[OcrLine]:
     os.environ.setdefault("OMP_THREAD_LIMIT", "1")
     if image.mode not in {"L", "RGB"}:
         image = image.convert("RGB")
-    data = pytesseract.image_to_data(
-        image,
-        lang=languages(),
-        output_type=pytesseract.Output.DICT,
-        timeout=_TIMEOUT_SECONDS,
-    )
+    with _private_tempdir():
+        data = pytesseract.image_to_data(
+            image,
+            lang=languages(),
+            output_type=pytesseract.Output.DICT,
+            timeout=_TIMEOUT_SECONDS,
+        )
     groups: dict[tuple[int, int, int], list[int]] = {}
     for index, word in enumerate(data["text"]):
         if word.strip():
