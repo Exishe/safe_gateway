@@ -16,3 +16,4 @@ never by editing history.
 | [0008](0008-naming-and-license.md) | Package names and the product's own license | Accepted |
 | [0009](0009-dev-tooling.md) | MCP servers, hooks and scanners used while building | Accepted |
 | [0010](0010-guard-hardening.md) | Guards fail closed, and every layer is checked by the next | Accepted |
+| [0011](0011-detection-engine-shape.md) | Shape of the detection engine | Accepted |
