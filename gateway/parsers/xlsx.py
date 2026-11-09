@@ -30,6 +30,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from gateway.parsers.document import CellPosition, Document, DocumentBuilder, DocumentError
 from gateway.parsers.output import atomic_output
 from gateway.parsers.redact import UnitMask
+from gateway.parsers.zipcheck import check_archive, parse_errors
 
 REDACTED_AUTHOR = "Redacted"
 _MAX_TITLE = 31
@@ -116,9 +117,10 @@ def _events(workbook: Workbook, renames: dict[str, str]) -> Iterator[_Event]:
 
 
 def _load(path: Path) -> Workbook:
+    check_archive(path)
     try:
         return openpyxl.load_workbook(path, data_only=True)
-    except (OSError, KeyError, ValueError, TypeError) as error:
+    except (OSError, KeyError, ValueError, TypeError, *parse_errors()) as error:
         msg = f"{path.name} is not a readable .xlsx workbook ({error})"
         raise DocumentError(msg) from error
 
