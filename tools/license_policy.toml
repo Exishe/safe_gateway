@@ -41,3 +41,4 @@ packages = ["pymupdf", "pymupdfb", "pymupdf4llm", "fitz", "pdftext"]
 [exceptions]
 # package-name = "who reviewed it, when, and why it is acceptable"
 # Exceptions can only clear "review". They never clear "forbidden".
+regex = "Approved by the project owner on 2026-11-09 (Phase 1b, ADR 0012). Apache-2.0 AND CNRI-Python: the CNRI part is Python 1.6's license, permissive and OSI-approved, allowing commercial use with the notice kept. Pulled in by presidio-analyzer only. Attribute in THIRD_PARTY_NOTICES.md."

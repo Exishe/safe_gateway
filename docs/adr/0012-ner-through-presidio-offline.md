@@ -46,6 +46,11 @@ static no-egress check cannot see, because they live inside the library:
 
 ## Consequences
 
+- presidio-analyzer pulls in `regex` (Apache-2.0 AND CNRI-Python). CNRI-Python
+  is not on the hard-rule-1 list; the project owner approved it as a reasoned
+  exception on 2026-11-09 (`tools/license_policy.toml`). It must be attributed in
+  `THIRD_PARTY_NOTICES.md` when packaging starts.
+
 - A missing model is an error the user can act on, never a silent download.
 - The socket-disabled test run also covers the NER path: any network call
   from inside Presidio or spaCy fails the suite.
