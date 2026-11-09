@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 
 from gateway.audit.db import open_readonly
-from gateway.audit.export import build_export, day_range, verify_export, write_private
+from gateway.audit.export import (
+    build_export,
+    day_range,
+    summary_lines,
+    verify_export,
+    write_private,
+)
 from gateway.audit.store import AuditLog
 from gateway.engine.session_disk import InMemoryKeyProvider
 from gateway.secrets import AUDIT_KEY_ID
@@ -145,3 +151,29 @@ def test_write_private_is_0600_and_atomic(tmp_path: Path, monkeypatch: pytest.Mo
         write_private(target, b"new")
     assert target.read_bytes() == b"{}\n"
     assert [p.name for p in tmp_path.iterdir()] == ["export.json"]
+
+
+def test_the_summary_shows_verification_head_totals_and_the_json_hmac(
+    db: Path, keys: InMemoryKeyProvider
+) -> None:
+    document = export(db, key_of(keys))
+    text = "\n".join(summary_lines(document, "export.json"))
+    head = document["chain"]["head_hash"]
+    assert "Verification:       OK, 3 rows checked" in text
+    assert f"Chain head:         row 3, {head}" in text
+    assert "Requests:           3" in text
+    assert "Bytes sent:         306" in text  # 101 + 102 + 103
+    assert "Local / cloud:      1 / 2" in text
+    assert "  api.example.com   2" in text
+    assert "  127.0.0.1:11434   1" in text
+    assert "  200               3" in text
+    assert "  EMAIL             3" in text
+    assert "  PERSON            6" in text  # 1 + 2 + 3
+    assert "export.json" in text
+    assert document["hmac"] in text
+
+
+def test_the_summary_names_a_broken_row(db: Path, keys: InMemoryKeyProvider) -> None:
+    tamper(db, "UPDATE audit_log SET bytes_out = 1 WHERE id = 2")
+    text = "\n".join(summary_lines(export(db, key_of(keys)), "export.json"))
+    assert "Verification:       BROKEN at row 2: edited" in text
