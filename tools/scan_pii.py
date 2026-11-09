@@ -15,9 +15,12 @@ Run: `python -m tools.scan_pii FILE ...`, `--staged` (the git index) or `--track
 
 import argparse
 import codecs
+import html
+import io
 import re
 import subprocess
 import sys
+import zipfile
 from bisect import bisect_right
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +42,15 @@ _STRUCTURED_ONLY = EngineConfig(ner="off")
 # Generated lock files are pages of hashes and versions (uv.lock is 450 KB, about 5 s
 # in the engine, 90% of a full scan). They keep the shape checks, not the engine pass.
 _SHAPE_ONLY_FILES = frozenset({"uv.lock"})
+
+# Office files are zip containers of XML. Caps keep a zip bomb from eating the commit.
+_OFFICE_PART = re.compile(r"^(?:word|xl|ppt)/.+\.xml$")
+_MAX_ZIP_BYTES = 50 * 1024 * 1024
+_MAX_ZIP_MEMBERS = 2000
+# Closing tags that end a line (paragraph, row, slide paragraph) or a cell.
+_LINE_END = re.compile(r"</(?:w:p|row|a:p)>")
+_CELL_END = re.compile(r"</(?:c|w:tc|a:tc|si)>")
+_TAG = re.compile(r"<[^>]*>")
 
 ALLOWLIST_PRAGMA = "pragma: allowlist secret"
 _SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
@@ -154,6 +166,54 @@ def _decode(blob: bytes) -> str | None:
     return blob.decode("utf-8", errors="replace")
 
 
+def _xml_to_text(xml: bytes) -> str:
+    """Visible text of an Office XML part. Runs are joined so split numbers re-form."""
+    text = xml.decode("utf-8", errors="replace")
+    text = _LINE_END.sub("\n", text)
+    text = _CELL_END.sub(" ", text)
+    return html.unescape(_TAG.sub("", text))
+
+
+def _office_texts(blob: bytes, name: str) -> list[tuple[str, str]] | None:
+    """(label, text) per Office XML part, or None when the blob is not an Office zip."""
+    if not blob.startswith(b"PK") or not zipfile.is_zipfile(io.BytesIO(blob)):
+        return None
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(blob))
+        members = [info for info in archive.infolist() if _OFFICE_PART.match(info.filename)]
+        if not members:
+            return None
+        texts: list[tuple[str, str]] = []
+        budget = _MAX_ZIP_BYTES
+        if len(members) > _MAX_ZIP_MEMBERS:
+            print(f"{name}: not fully scanned (too many parts)", file=sys.stderr)
+            members = members[:_MAX_ZIP_MEMBERS]
+        for info in members:
+            # file_size is only the header's claim, so the read itself is capped too.
+            if info.file_size > budget:
+                print(f"{name}: not fully scanned (size cap)", file=sys.stderr)
+                break
+            with archive.open(info) as part:
+                data = part.read(budget + 1)
+            if len(data) > budget:
+                print(f"{name}: not fully scanned (size cap)", file=sys.stderr)
+                break
+            budget -= len(data)
+            texts.append((f"{name}:{info.filename}", _xml_to_text(data)))
+    except (zipfile.BadZipFile, NotImplementedError, RuntimeError, OSError):
+        print(f"{name}: unreadable archive, skipped", file=sys.stderr)
+        return []
+    return texts
+
+
+def _scannable_texts(name: str, blob: bytes) -> list[tuple[str, str]]:
+    office = _office_texts(blob, name)
+    if office is not None:
+        return office
+    text = _decode(blob)
+    return [] if text is None else [(name, text)]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Find identifier-shaped personal data.")
     parser.add_argument("paths", nargs="*", type=Path)
@@ -171,9 +231,8 @@ def main(argv: list[str] | None = None) -> int:
         blobs = _file_blobs(args.paths)
     findings: list[Finding] = []
     for name, blob in blobs:
-        text = _decode(blob)
-        if text is not None:
-            findings.extend(find_pii(text, name))
+        for label, text in _scannable_texts(name, blob):
+            findings.extend(find_pii(text, label))
 
     for finding in findings:
         print(finding)

@@ -6,7 +6,7 @@ with each phase; the threat model gets its full review before the first pilot.
 
 ## Design goals
 
-1. Personal data leaves the machine only as placeholders. Detection and masking
+1. Detected personal data leaves the machine only as placeholders. Detection and masking
    run locally (Presidio, spaCy, GLiNER, regex with checksums).
 2. `gateway/cloud/` is the only package allowed to open an outbound
    connection, and only to the upstream the user configured. The detection
@@ -19,13 +19,13 @@ with each phase; the threat model gets its full review before the first pilot.
 5. The audit log stores hashes, counts, timestamps and the upstream host. It
    never stores raw or masked text.
 
-## What enforces this today (Phase 0)
+## What enforces this today
 
 | Control | Where it runs |
 |---------|---------------|
 | AST check of every module under `gateway/` except `gateway/cloud/`: network modules and LLM SDKs everywhere; also process, dynamic-import and cloud/proxy imports in the engine | Claude Code hook on every edit, git pre-commit, CI |
 | Tests run with sockets disabled (`pytest-socket`) | every test run |
-| License check of the runtime dependency closure, extras included, on Linux, macOS and Windows; PyMuPDF and pdftext denied by name | Claude Code hook before and after installs, CI |
+| License check of the runtime dependency closure, extras included, on Linux on every push and on macOS and Windows only on version tags or manual dispatch; PyMuPDF and pdftext denied by name | Claude Code hook before and after installs, CI |
 | Scan for keys (detect-secrets) and identifier-shaped data | Claude Code hook before commits, which also refuses commits that skip the git hook; git pre-commit on staged files; CI on every tracked file |
 | Bandit, pip-audit, Semgrep, zizmor | CI on every push |
 

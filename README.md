@@ -3,8 +3,8 @@
 SafeGuard Gateway finds personal data on the user's own machine and replaces it
 with placeholders such as `[PERSON_1]` before a prompt goes to a cloud AI
 model. The model answers with the placeholders, and the gateway puts the real
-values back before the answer reaches the screen. A local audit log records
-what was sent, as hashes and counts, never as text. Customers bring their own
+values back before the answer reaches the screen. A local audit log (planned,
+Phase 5) will record what was sent, as hashes and counts, never as text. Customers bring their own
 Anthropic, OpenAI or Azure key; development runs against a local Ollama model.
 
 It is built for small law, accounting, medical and HR firms. It reduces
@@ -23,8 +23,9 @@ Phase 1b of 8. `safeguard scan FILE` finds, in a text file:
   addresses and URLs with tokens, in any language;
 - names or codenames from a customer list (`--gazetteer clients.csv`).
 
-Street addresses, masking, the proxy and the UI come later. The build order and exit criteria for each phase
-are in [docs/plans/](docs/plans/), and design decisions are in
+Street addresses, masking and rehydration, the proxy, the tamper-evident audit
+log (Phase 5) and the UI come later. None of them exists yet. The build order
+and exit criteria for each phase are in [docs/plans/](docs/plans/), and design decisions are in
 [docs/adr/](docs/adr/).
 
 ## Development

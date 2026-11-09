@@ -1,4 +1,7 @@
+import io
 import subprocess
+import zipfile
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -170,3 +173,81 @@ def test_engine_finding_text_never_contains_the_value() -> None:
 def test_lock_files_keep_shape_checks_but_skip_the_engine_pass() -> None:
     assert find_pii(f"pay {IBAN}", "uv.lock") == []
     assert [f.kind for f in find_pii(f"ssn {SSN}", "sub/uv.lock")] == ["ssn"]
+
+
+# ---- Office files (zip containers with XML parts)
+
+
+def _zip_bytes(members: Mapping[str, str | bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, content in members.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def _docx(body: str) -> bytes:
+    xml = f"<w:document><w:body>{body}</w:body></w:document>"
+    return _zip_bytes({"[Content_Types].xml": "<Types/>", "word/document.xml": xml})
+
+
+def test_docx_text_is_scanned_with_member_and_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The number is split over two runs, as Word does after an edit.
+    body = (
+        "<w:p><w:r><w:t>Intro</w:t></w:r></w:p>"
+        f"<w:p><w:r><w:t>card {CARD[:9]}</w:t></w:r><w:r><w:t>{CARD[9:]}</w:t></w:r></w:p>"
+    )
+    path = tmp_path / "brief.docx"
+    path.write_bytes(_docx(body))
+    assert main([str(path)]) == 1
+    output = capsys.readouterr().out
+    assert "brief.docx:word/document.xml:2: possible card" in output
+    assert "4111" not in output
+
+
+def test_xlsx_cell_values_are_scanned(tmp_path: Path) -> None:
+    sheet = f"<worksheet><row><c><v>{SSN}</v></c></row></worksheet>"
+    path = tmp_path / "book.xlsx"
+    path.write_bytes(_zip_bytes({"xl/worksheets/sheet1.xml": sheet}))
+    assert main([str(path)]) == 1
+
+
+def test_clean_office_file_passes(tmp_path: Path) -> None:
+    path = tmp_path / "clean.docx"
+    path.write_bytes(_docx("<w:p><w:r><w:t>nothing here</w:t></w:r></w:p>"))
+    assert main([str(path)]) == 0
+
+
+def test_zip_without_office_parts_is_still_skipped(tmp_path: Path) -> None:
+    path = tmp_path / "data.zip"
+    path.write_bytes(_zip_bytes({"notes.txt": f"ssn {SSN}"}))
+    assert main([str(path)]) == 0
+
+
+def test_office_scan_stops_at_the_size_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("tools.scan_pii._MAX_ZIP_BYTES", 100)
+    path = tmp_path / "bomb.docx"
+    path.write_bytes(_docx("<w:t>" + "a" * 5000 + "</w:t>"))
+    assert main([str(path)]) == 0
+    assert "not fully scanned" in capsys.readouterr().err
+
+
+def test_office_scan_stops_at_the_member_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("tools.scan_pii._MAX_ZIP_MEMBERS", 2)
+    members = {f"word/part{i}.xml": "<w:t>x</w:t>" for i in range(5)}
+    path = tmp_path / "many.docx"
+    path.write_bytes(_zip_bytes(members))
+    assert main([str(path)]) == 0
+    assert "not fully scanned" in capsys.readouterr().err
+
+
+def test_corrupt_zip_is_skipped(tmp_path: Path) -> None:
+    path = tmp_path / "broken.docx"
+    path.write_bytes(b"PK\x03\x04\x00" + b"\x00" * 40)
+    assert main([str(path)]) == 0

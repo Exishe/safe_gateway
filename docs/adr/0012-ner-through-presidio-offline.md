@@ -58,3 +58,9 @@ static no-egress check cannot see, because they live inside the library:
   SECURITY.md must say so.
 - The `lg` models are about 1 GB of RAM each when loaded; on an 8 GB machine,
   loading only the languages a text needs matters.
+
+## Amended 2026-11-09
+
+Point 7 said CI caches the models. It does not: the workflow downloads them
+fresh on each run with `safeguard models pull` and verifies them against the
+pinned SHA-256. A cache could be poisoned and would skip that check (zizmor).

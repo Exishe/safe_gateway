@@ -25,3 +25,10 @@ breaks hard rule 1 (zero cost).
   Run the matrix by hand before risky merges.
 - If the repo is made public, minutes are free and the matrix can move back to
   every push.
+
+## Amended 2026-11-09
+
+CI now triggers on `push` (all branches and `v*` tags) and `workflow_dispatch`,
+not on `pull_request`. Every PR here comes from a branch in this repository, so
+`push` already runs the same job; keeping both ran it twice per update. A PR
+from a fork would not be covered; revisit if outside contributors appear.

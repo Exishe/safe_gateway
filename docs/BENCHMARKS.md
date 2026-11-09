@@ -46,6 +46,9 @@ Measured 2026-11-09 in a 4-CPU Linux container, spaCy 3.8.18, models
 
 With NER off, 1 MB of structured-only scanning takes about 0.5 s.
 
+Measured by the Phase 1b build agent at commit 84783e2 with an ad-hoc timing
+script (not in the repo); re-measure with a committed script before quoting.
+
 
 ## Recall per entity type
 
