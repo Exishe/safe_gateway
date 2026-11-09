@@ -45,6 +45,10 @@ MAX_SESSIONS = 10_000  # a local client cannot grow the store without bound
 _ROUTE_FOR_SHAPE = {ApiShape.OPENAI: CHAT_ROUTE, ApiShape.ANTHROPIC: MESSAGES_ROUTE}
 _NO_STORE = {"cache-control": "no-store"}  # answers hold personal data again
 _MASK_FIELDS = frozenset({"text", "texts", "session_id"})
+AUDIT_FAILED_MESSAGE = (
+    "the audit log could not be written, so the gateway forwards nothing more; "
+    "run `safeguard audit verify` and restart `safeguard serve`"
+)
 
 
 @dataclass
@@ -83,8 +87,10 @@ class _Forward:
         outcome: str,
         status_code: int,
         upstream: Upstream,
+        upstream_status: int | None,
         **fields: Any,  # noqa: ANN401  (AuditEvent's own fields, checked by its constructor)
     ) -> AuditEvent:
+        """The event for a payload handed to the upstream; `upstream_status` None: no answer."""
         return self.timer.event(
             outcome,
             status_code,
@@ -94,6 +100,9 @@ class _Forward:
             stream=self.stream,
             entity_counts=entity_counts(self.mapping),
             request_sha256=hashlib.sha256(self.payload).hexdigest(),
+            bytes_out=len(self.payload),
+            upstream_status=upstream_status,
+            local=upstream.local,
             **fields,
         )
 
@@ -134,17 +143,28 @@ class _Gateway:
         self.audit = audit
         self.sessions = sessions
         self.session_lock = anyio.Lock()  # one Mapping must not be extended by two threads
+        # Set once a write to the audit sink fails: from then on nothing is forwarded,
+        # because it could not be recorded (ADR 0021 point 12, fail closed).
+        self.audit_failed = False
 
     async def record(self, event: AuditEvent) -> None:
         try:
             await run_in_threadpool(self.audit.record, event)
         except Exception as error:  # noqa: BLE001  (the response is already decided)
-            _log.warning("audit sink failed: %s", type(error).__name__)
+            self.audit_failed = True
+            # The type only: a traceback or message could repeat request details.
+            _log.error(
+                "audit sink failed (%s); forwarding nothing more until restarted",
+                type(error).__name__,
+            )
 
     # ---------------------------------------------------------------- chat routes
 
     async def chat(self, request: Request, shape: Shape, route: str) -> Response:
         timer = _Timer(route)
+        if self.audit_failed:
+            body = shape.error_body("audit_unavailable", AUDIT_FAILED_MESSAGE)
+            return JSONResponse(body, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
         try:
             forward = await self._prepare(request, shape, timer)
         except RequestRejected as error:
@@ -181,29 +201,36 @@ class _Gateway:
             shape, mapping, encode_json(outgoing), model, bool(body.get("stream")), timer
         )
 
-    async def _upstream_failed(self, forward: _Forward, error: UpstreamError) -> Response:
+    async def _upstream_failed(
+        self, forward: _Forward, error: UpstreamError, upstream_status: int | None = None
+    ) -> Response:
+        # The event first: its counts are read from the mapping the clear empties.
+        event = forward.event("upstream_error", error.status, self.upstream, upstream_status)
         forward.mapping.clear()
-        await self.record(forward.event("upstream_error", error.status, self.upstream))
+        await self.record(event)
         body = forward.shape.error_body("upstream_error", str(error))
         return JSONResponse(body, status_code=error.status)
 
     async def _error_reply(self, forward: _Forward, reply: UpstreamReply) -> Response:
         """An upstream error status: JSON passes through unchanged, anything else is a 502."""
-        forward.mapping.clear()
-        digest = hashlib.sha256(reply.body).hexdigest()
         try:
             json.loads(reply.body)
         except ValueError:
-            await self.record(
-                forward.event("upstream_error", 502, self.upstream, response_sha256=digest)
-            )
-            message = f"upstream answered {reply.status} without a JSON body"
-            body = forward.shape.error_body("upstream_error", message)
-            return JSONResponse(body, status_code=status.HTTP_502_BAD_GATEWAY)
-        await self.record(
-            forward.event("upstream_error", reply.status, self.upstream, response_sha256=digest)
+            passes_through = False
+        else:
+            passes_through = True
+        status_code = reply.status if passes_through else status.HTTP_502_BAD_GATEWAY
+        digest = hashlib.sha256(reply.body).hexdigest()
+        event = forward.event(
+            "upstream_error", status_code, self.upstream, reply.status, response_sha256=digest
         )
-        return Response(reply.body, status_code=reply.status, media_type="application/json")
+        forward.mapping.clear()
+        await self.record(event)
+        if passes_through:
+            return Response(reply.body, status_code=reply.status, media_type="application/json")
+        message = f"upstream answered {reply.status} without a JSON body"
+        body = forward.shape.error_body("upstream_error", message)
+        return JSONResponse(body, status_code=status_code)
 
     async def _whole(self, forward: _Forward) -> Response:
         try:
@@ -219,12 +246,13 @@ class _Gateway:
             payload = None
         if not isinstance(payload, dict):
             error = UpstreamError(502, f"upstream {self.upstream.host} did not answer with JSON")
-            return await self._upstream_failed(forward, error)
+            return await self._upstream_failed(forward, error, reply.status)
         unresolved = forward.shape.rehydrate_reply(payload, forward.mapping)
         event = forward.event(
             "forwarded",
             reply.status,
             self.upstream,
+            reply.status,
             response_sha256=digest,
             unresolved=len(unresolved),
         )
@@ -242,7 +270,7 @@ class _Gateway:
         if opened.content_type != "text/event-stream":
             await opened.aclose()
             error = UpstreamError(502, f"upstream {self.upstream.host} did not stream its answer")
-            return await self._upstream_failed(forward, error)
+            return await self._upstream_failed(forward, error, opened.status)
         relay = _Relay(self, forward, opened)
         return _RelayResponse(relay)
 
@@ -347,6 +375,7 @@ class _Relay:
                 self._outcome,
                 self._opened.status,
                 self._gateway.upstream,
+                self._opened.status,  # it answered, even if the client or the stream left later
                 response_sha256=self._digest.hexdigest(),
                 unresolved=len(self._rewriter.unresolved),
             )

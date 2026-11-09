@@ -1,7 +1,8 @@
 """The audit hook point: one event per request, counts and hashes only (ADR 0019).
 
-Phase 5 replaces `NullAuditSink` with the hash-chained log. An event has no field
-that can hold request or response text.
+`safeguard serve` plugs in `gateway.audit.AuditLogSink`, the hash-chained log
+(ADR 0021); `NullAuditSink` is for `--no-audit` and for tests. An event has no
+field that can hold request or response text.
 """
 
 from collections import Counter
@@ -29,6 +30,9 @@ class AuditEvent:
     unresolved: int = 0
     request_sha256: str | None = None  # of the exact bytes sent upstream
     response_sha256: str | None = None  # of the exact bytes received from upstream
+    bytes_out: int = 0  # length of the exact bytes sent upstream
+    upstream_status: int | None = None  # the upstream's HTTP status; None when none came back
+    local: bool = False  # the upstream runs on this machine (Ollama)
 
 
 class AuditSink(Protocol):
@@ -36,7 +40,7 @@ class AuditSink(Protocol):
 
 
 class NullAuditSink:
-    """The default until Phase 5: records nothing."""
+    """Records nothing: `safeguard serve --no-audit`, and tests."""
 
     def record(self, event: AuditEvent) -> None:
         pass
