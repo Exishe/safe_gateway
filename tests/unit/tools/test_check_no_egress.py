@@ -128,3 +128,70 @@ def test_main_returns_0_when_clean(tmp_path: Path) -> None:
 
 def test_repository_is_clean() -> None:
     assert check_paths([REPO / "gateway"], REPO) == []
+
+
+# ---- review fixes (Important #1, #8)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from gateway.cloud import openai",
+        "from ..cloud import client",
+        "from .. import cloud",
+        "from gateway import cloud",
+        "from gateway.proxy import app",
+        "import openai",
+        "import anthropic",
+        "import ollama",
+        "import boto3",
+        "import _socket",
+        "import logging.handlers",
+        "from logging import handlers",
+        "import webbrowser",
+        "import fastapi",
+        "import builtins",
+        "import runpy",
+        "import pkgutil",
+        "from concurrent.futures import ProcessPoolExecutor",
+        'import os as o\no.system("x")',
+        'import os\ngetattr(os, "system")("x")',
+        'import os\nos.posix_spawn("x", [], {})',
+        "import os\nos.fork()",
+    ],
+)
+def test_engine_rejects_indirect_routes_to_the_network(source: str) -> None:
+    assert len(violations(source, "gateway/engine/detect.py")) == 1
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["from . import merge", "from gateway.engine import types", "import logging", "import os"],
+)
+def test_engine_allows_its_own_modules_and_plain_stdlib(source: str) -> None:
+    assert violations(source, "gateway/engine/detect.py") == []
+
+
+@pytest.mark.parametrize(
+    "relpath", ["gateway/__init__.py", "gateway/config.py", "gateway/newpkg/thing.py"]
+)
+def test_every_gateway_path_except_cloud_has_rules(relpath: str) -> None:
+    assert len(violations("import httpx", relpath)) == 1
+
+
+def test_proxy_may_use_cloud_but_not_an_sdk_directly() -> None:
+    assert violations("from gateway.cloud import openai", "gateway/proxy/app.py") == []
+    assert len(violations("from openai import OpenAI", "gateway/proxy/app.py")) == 1
+
+
+def test_main_fails_on_a_path_that_does_not_exist(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "gateway" / "engine").mkdir(parents=True)
+    assert main(["--root", str(tmp_path), str(tmp_path / "gateway" / "engin")]) == 1
+    assert "does not exist" in capsys.readouterr().out
+
+
+def test_main_fails_when_there_is_nothing_to_check(tmp_path: Path) -> None:
+    (tmp_path / "gateway").mkdir()
+    assert main(["--root", str(tmp_path)]) == 1

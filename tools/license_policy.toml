@@ -26,7 +26,8 @@ names = [
 # Substrings. Checked after [review] so that LGPL is not mistaken for GPL.
 patterns = [
     "AGPL", "Affero", "GPL", "General Public License", "CC-BY-NC", "NonCommercial",
-    "Non-Commercial", "SSPL", "Server Side Public License", "BUSL", "Business Source",
+    "Non-Commercial", "Non Commercial", "Commons Clause", "SSPL", "Server Side Public License",
+    "BUSL", "Business Source",
 ]
 
 [review]

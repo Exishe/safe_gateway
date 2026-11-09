@@ -96,3 +96,66 @@ def test_settings_deny_destructive_and_secret_reading_commands() -> None:
     deny = json.loads((REPO / ".claude" / "settings.json").read_text())["permissions"]["deny"]
     assert "Bash(rm -rf *)" in deny
     assert "Read(./.env)" in deny
+
+
+# ---- review fixes (Important #3, #6)
+
+
+def test_wrapper_blocks_when_uv_is_missing() -> None:
+    env = {"PATH": "/usr/bin:/bin", "CLAUDE_PROJECT_DIR": str(REPO), "HOME": os.environ["HOME"]}
+    result = subprocess.run(
+        [str(HOOK_DIR / "bash-guard.sh")],
+        input=json.dumps(bash_event("ls")),
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "uv" in result.stderr
+
+
+def test_guards_fail_closed_on_timeouts_and_crashes() -> None:
+    settings = json.loads((REPO / ".claude" / "settings.json").read_text())
+    by_script = {
+        hook["command"].rsplit("/", 1)[-1] + f"@{event}": hook.get("onFailure", "continue")
+        for event, groups in settings["hooks"].items()
+        for group in groups
+        for hook in group["hooks"]
+    }
+    for script in ("bash-guard.sh", "license-guard.sh", "secret-scan.sh"):
+        assert by_script[f"{script}@PreToolUse"] == "block"
+    for script in ("no-egress.sh", "test-after-edit.sh", "license-guard.sh"):
+        assert by_script[f"{script}@PostToolUse"] == "block"
+
+
+def test_pre_commit_passes_non_ascii_names_through_intact(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)  # noqa: S607
+    (repo / "Договор.txt").write_text("text\n")
+    subprocess.run(["git", "add", "Договор.txt"], cwd=repo, check=True)  # noqa: S607
+
+    # A stand-in uv records how the hook calls each tool.
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log = tmp_path / "uv.log"
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$UV_LOG"\n')
+    fake_uv.chmod(0o755)
+    env = {**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}", "UV_LOG": str(log)}
+
+    result = subprocess.run(
+        [str(REPO / ".githooks" / "pre-commit")], cwd=repo, env=env, check=False
+    )
+
+    assert result.returncode == 0
+    detect_calls = [line for line in log.read_text().splitlines() if "detect-secrets" in line]
+    assert detect_calls
+    assert "Договор.txt" in detect_calls[0]
+
+
+def test_mcp_config_loads_without_a_github_token() -> None:
+    text = (REPO / ".mcp.json").read_text()
+    assert "${GITHUB_PAT}" not in text
+    assert "${GITHUB_PAT:-}" in text

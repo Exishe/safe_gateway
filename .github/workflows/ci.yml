@@ -52,6 +52,14 @@ jobs:
       - name: Tests
         run: uv run pytest
 
+      # The last layer for personal data and keys: local hooks can be skipped,
+      # CI cannot.
+      - name: Identifier-shaped PII in tracked files
+        run: uv run python -m tools.scan_pii --tracked
+
+      - name: Secrets in tracked files
+        run: git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline
+
       - name: Bandit (medium and above)
         run: uv run bandit -c pyproject.toml -r gateway tools -q -ll
 
@@ -88,6 +96,10 @@ jobs:
 
       - name: Install
         run: uv sync --locked
+
+      # Platform markers differ: the .dmg and .msi ship dependencies Ubuntu never sees.
+      - name: Licenses of shipped dependencies on this platform
+        run: uv run python -m tools.check_licenses
 
       - name: Tests
         run: uv run pytest

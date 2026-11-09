@@ -16,7 +16,7 @@ The brief requires `rehydrate(mask(x)) == x` for every input.
    entity type in upper case from a fixed enum, underscore, a counter.
 2. Counters are per entity type and per session, start at 1, and are assigned
    in order of first appearance in the text (messages are scanned in order).
-3. The map key is the **exact surface string**. `123-45-6789` and
+3. The map key is the **exact surface string**. `123-45-6789` and <!-- fake example; pragma: allowlist secret -->
    `123 45 6789` get two different placeholders. This is what makes the
    round-trip property exact. Grouping variants of one value (case changes,
    "Smith" vs "John Smith") is a later improvement that must be measured

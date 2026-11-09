@@ -83,3 +83,32 @@ def test_staged_mode_reads_the_index_not_the_working_tree(tmp_path: Path) -> Non
 
     _git(tmp_path, "add", "notes.txt")
     assert main(["--staged", "--repo", str(tmp_path)]) == 0
+
+
+# ---- review fixes (Important #2, #4)
+
+
+def test_windows_1252_export_is_scanned(tmp_path: Path) -> None:
+    export = tmp_path / "clients.csv"
+    export.write_bytes(f"José,{SSN}\n".encode("cp1252"))
+    assert main([str(export)]) == 1
+
+
+def test_utf16_export_with_bom_is_scanned(tmp_path: Path) -> None:
+    export = tmp_path / "clients.csv"
+    export.write_bytes(f"name,ssn\nAnna,{SSN}\n".encode("utf-16"))
+    assert main([str(export)]) == 1
+
+
+def test_staged_mode_handles_non_ascii_file_names(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    (tmp_path / "Договор.txt").write_text(f"ssn {SSN}\n")
+    _git(tmp_path, "add", "Договор.txt")
+    assert main(["--staged", "--repo", str(tmp_path)]) == 1
+
+
+def test_tracked_mode_scans_every_file_in_the_repository(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    (tmp_path / "notes.txt").write_text(f"ssn {SSN}\n")
+    _git(tmp_path, "add", "notes.txt")
+    assert main(["--tracked", "--repo", str(tmp_path)]) == 1

@@ -169,3 +169,41 @@ def test_main_blocks_a_denied_install_command(capsys: pytest.CaptureFixture[str]
 
 def test_main_allows_a_clean_install_command() -> None:
     assert main(["--command", "uv add rich"]) == 0
+
+
+# ---- review fixes (Important #7, #8, #9)
+
+BSD_NON_COMMERCIAL = (
+    "Copyright (c) 2021 Lab\n\nRedistribution and use in source and binary forms, with or "
+    "without modification, are permitted for NON-COMMERCIAL research purposes only..."
+)
+MIT_COMMONS_CLAUSE = MIT_TEXT + '\n\n"Commons Clause" License Condition v1.0\nThe Software...'
+APACHE_NC_WEIGHTS = (
+    "Apache License\nVersion 2.0, January 2004\n...\nModel weights are released under CC-BY-NC-4.0."
+)
+
+
+@pytest.mark.parametrize("text", [BSD_NON_COMMERCIAL, MIT_COMMONS_CLAUSE, APACHE_NC_WEIGHTS])
+def test_full_text_with_a_non_commercial_restriction_is_forbidden(text: str) -> None:
+    assert status(dist(text=text)) == "forbidden"
+
+
+def test_runtime_closure_follows_requirements_pulled_in_through_extras() -> None:
+    # pip-audit needs CacheControl[filecache], and only that extra needs filelock.
+    assert "filelock" in runtime_closure("pip-audit")
+
+
+def test_main_fails_when_the_project_is_not_installed(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--project", "safeguard-gatewya"]) == 1
+    assert "not installed" in capsys.readouterr().out
+
+
+def test_project_name_comes_from_pyproject() -> None:
+    import tomllib  # noqa: PLC0415
+
+    pyproject = Path(__file__).resolve().parents[3] / "pyproject.toml"
+    expected = tomllib.loads(pyproject.read_text())["project"]["name"]
+
+    from tools import check_licenses  # noqa: PLC0415
+
+    assert expected == check_licenses.PROJECT

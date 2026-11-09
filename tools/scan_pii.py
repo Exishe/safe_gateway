@@ -4,10 +4,12 @@ This is a coarse net for the repository, not the product's detector: SSN-shaped
 strings and Luhn-valid card numbers. Fake values in tests are allowed when the
 line carries `pragma: allowlist secret`. Findings never print the value.
 
-Run: `python -m tools.scan_pii FILE ...` or `python -m tools.scan_pii --staged`.
+Run: `python -m tools.scan_pii FILE ...`, `--staged` (the git index) or `--tracked`
+(every file git tracks; used by CI).
 """
 
 import argparse
+import codecs
 import re
 import subprocess
 import sys
@@ -74,25 +76,46 @@ def _staged_blobs(repo: Path) -> list[tuple[str, bytes]]:
     return [(name, _git(repo, "show", f":{name}")) for name in names]
 
 
+def _tracked_blobs(repo: Path) -> list[tuple[str, bytes]]:
+    listing = _git(repo, "ls-files", "-z")
+    names = [name for name in listing.decode().split("\0") if name]
+    return [(name, (repo / name).read_bytes()) for name in names if (repo / name).is_file()]
+
+
 def _file_blobs(paths: list[Path]) -> list[tuple[str, bytes]]:
     return [(str(path), path.read_bytes()) for path in paths]
+
+
+def _decode(blob: bytes) -> str | None:
+    """Text for scanning, or None for binary. Never drops a file for its encoding."""
+    if blob.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return blob.decode("utf-16", errors="replace")  # Excel "Unicode text" exports
+    if b"\0" in blob:
+        return None
+    # cp1252 and other legacy exports: the digits we look for are ASCII either way.
+    return blob.decode("utf-8", errors="replace")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Find identifier-shaped personal data.")
     parser.add_argument("paths", nargs="*", type=Path)
-    parser.add_argument("--staged", action="store_true", help="scan the git index instead")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--staged", action="store_true", help="scan the git index")
+    source.add_argument("--tracked", action="store_true", help="scan every tracked file")
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
 
-    blobs = _staged_blobs(args.repo) if args.staged else _file_blobs(args.paths)
+    if args.staged:
+        blobs = _staged_blobs(args.repo)
+    elif args.tracked:
+        blobs = _tracked_blobs(args.repo)
+    else:
+        blobs = _file_blobs(args.paths)
     findings: list[Finding] = []
     for name, blob in blobs:
-        try:
-            text = blob.decode("utf-8")
-        except UnicodeDecodeError:
-            continue  # binary files are out of scope for a text scan
-        findings.extend(find_pii(text, name))
+        text = _decode(blob)
+        if text is not None:
+            findings.extend(find_pii(text, name))
 
     for finding in findings:
         print(finding)

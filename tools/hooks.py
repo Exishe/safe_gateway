@@ -4,6 +4,11 @@ Contract (Claude Code): the hook event arrives as JSON on stdin. Exit 0 lets the
 tool call proceed; exit 2 blocks a PreToolUse call, or, after PostToolUse, sends
 the reason on stderr back to Claude so it can fix what it just did.
 
+Failure policy (ADR 0010): a guard that crashes exits 2, so a broken guard stops
+the action instead of waving it through. The wrappers exit 2 when uv is missing,
+and settings.json marks every guard `onFailure: block` for timeouts. Only the
+format hook fails open.
+
 Run: `python -m tools.hooks <hook-name> < event.json`
 """
 
@@ -30,7 +35,6 @@ BLOCK = 2
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 TEST_TIMEOUT_SECONDS = 110
 _DEPENDENCY_CHANGE = re.compile(r"\buv\s+(add|remove|sync|lock)\b|\bpip\s+install\b")
-_GIT_COMMIT = re.compile(r"\bgit\b[^;&|]*\bcommit\b")
 
 
 def _tool_input(event: Event, key: str) -> str:
@@ -101,14 +105,48 @@ def _download_problem(program: str, arguments: list[str]) -> str | None:
     return None
 
 
+# Commands that run another command: `sudo -E rm`, `timeout 5 curl`, `uv run curl`.
+_WRAPPERS = frozenset(
+    {
+        "caffeinate", "chronic", "command", "doas", "env", "exec", "ionice", "nice",
+        "nohup", "npx", "run", "stdbuf", "strace", "sudo", "time", "timeout", "uv",
+        "uvx", "watch", "xargs",
+    }
+)  # fmt: skip
+_GUARDED_PROGRAMS = frozenset({"rm", "curl", "wget"})
+
+
+def _is_wrapper_part(token: str) -> bool:
+    return (
+        token in _WRAPPERS
+        or token.startswith("-")
+        or "=" in token
+        or re.fullmatch(r"\d+(\.\d+)?[smhd]?", token) is not None
+    )
+
+
+def _invocations(simple: list[str]) -> list[tuple[str, list[str]]]:
+    """The guarded programs this simple command actually runs, with their arguments.
+
+    `grep curl .` mentions curl but runs grep; `nice -n 10 rm -rf x` runs rm.
+    """
+    found = []
+    for index, token in enumerate(simple):
+        program = token.rsplit("/", 1)[-1]
+        if program in _GUARDED_PROGRAMS and all(map(_is_wrapper_part, simple[:index])):
+            found.append((program, simple[index + 1 :]))
+    return found
+
+
 def bash_guard(event: Event, root: Path) -> HookResult:  # noqa: ARG001
-    for program, *arguments in simple_commands(_tool_input(event, "command")):
-        if program == "rm" and _is_recursive_force_rm(arguments):
-            return BLOCK, "rm -rf is denied in this repo; delete specific files instead"
-        if program in {"curl", "wget"}:
-            problem = _download_problem(program, arguments)
-            if problem:
-                return BLOCK, problem
+    for simple in simple_commands(_tool_input(event, "command")):
+        for program, arguments in _invocations(simple):
+            if program == "rm" and _is_recursive_force_rm(arguments):
+                return BLOCK, "rm -rf is denied in this repo; delete specific files instead"
+            if program in {"curl", "wget"}:
+                problem = _download_problem(program, arguments)
+                if problem:
+                    return BLOCK, problem
     return ALLOW
 
 
@@ -187,21 +225,91 @@ def test_after_edit(event: Event, root: Path) -> HookResult:
 
 
 def _staged_files(root: Path) -> list[str]:
-    code, output = _run(["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"], root)
-    return output.splitlines() if code == 0 else []
+    # -z: without it git C-quotes non-ASCII names ("Договор.txt") and tools miss them.
+    command = ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]
+    completed = subprocess.run(command, cwd=root, capture_output=True, check=False)  # noqa: S603
+    if completed.returncode != 0:
+        return []
+    return [name for name in completed.stdout.decode().split("\0") if name]
+
+
+def detect_secrets_binary() -> Path:
+    return Path(sys.executable).with_name("detect-secrets-hook")
+
+
+def _git_invocations(command: str) -> list[list[str]]:
+    """Arguments of every real `git ...` call; text that merely mentions git does not count."""
+    return [arguments for program, *arguments in simple_commands(command) if program == "git"]
+
+
+_GIT_OPTIONS_WITH_VALUE = frozenset({"-c", "-C", "--git-dir", "--work-tree", "--namespace"})
+
+
+def _git_subcommand(arguments: list[str]) -> tuple[list[str], str, list[str]] | None:
+    """Split `git [global options] SUBCOMMAND [args]` into its three parts."""
+    takes_value = False
+    for index, argument in enumerate(arguments):
+        if takes_value:
+            takes_value = False
+        elif argument in _GIT_OPTIONS_WITH_VALUE:
+            takes_value = True
+        elif not argument.startswith("-"):
+            return arguments[:index], argument, arguments[index + 1 :]
+    return None
+
+
+def _is_commit(arguments: list[str]) -> bool:
+    parts = _git_subcommand(arguments)
+    return parts is not None and parts[1] == "commit"
+
+
+def _skips_git_hooks(git_calls: list[list[str]]) -> bool:
+    for arguments in git_calls:
+        parts = _git_subcommand(arguments)
+        if parts is None:
+            continue
+        global_options, subcommand, rest = parts
+        if any("hookspath" in option.lower() for option in global_options):
+            return True  # git -c core.hooksPath=/dev/null commit
+        if subcommand == "config" and any("hookspath" in a.lower() for a in rest):
+            return True  # rewiring the hooks in the same command as a commit
+        if subcommand == "commit" and (
+            "--no-verify" in rest or any(re.fullmatch(r"-[A-Za-z]*n[A-Za-z]*", a) for a in rest)
+        ):
+            return True
+    return False
+
+
+def _git_hooks_installed(root: Path) -> bool:
+    code, output = _run(["git", "config", "--get", "core.hooksPath"], root)
+    if code != 0 or not output:
+        return False
+    return (root / output).resolve() == (root / ".githooks").resolve()
 
 
 def secret_scan(event: Event, root: Path) -> HookResult:
-    if not _GIT_COMMIT.search(_tool_input(event, "command")):
+    git_calls = _git_invocations(_tool_input(event, "command"))
+    if not any(_is_commit(arguments) for arguments in git_calls):
         return ALLOW
+    # The git pre-commit hook is the authoritative gate; never let a commit skip it.
+    if _skips_git_hooks(git_calls):
+        return BLOCK, "Commits may not skip the git hook (--no-verify, -n, core.hooksPath)."
+    if not _git_hooks_installed(root):
+        return BLOCK, (
+            "The git pre-commit hook is not enabled for this clone. "
+            "Run scripts/install-git-hooks.sh, then commit again."
+        )
+
     problems = []
     code, output = _captured(scan_pii.main, ["--staged", "--repo", str(root)])
     if code:
         problems.append(output)
 
-    detector = Path(sys.executable).with_name("detect-secrets-hook")
     staged = _staged_files(root)
-    if detector.exists() and staged:
+    detector = detect_secrets_binary()
+    if staged and not detector.exists():
+        problems.append(f"detect-secrets-hook not found at {detector}; run `uv sync`")
+    elif staged:
         baseline = root / ".secrets.baseline"
         options = ["--baseline", str(baseline)] if baseline.exists() else []
         code, output = _run([str(detector), *options, *staged], root)
@@ -230,9 +338,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("hook", choices=sorted(HOOKS))
     args = parser.parse_args(argv)
 
-    event = json.load(sys.stdin)
-    root = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path.cwd())
-    code, message = HOOKS[args.hook](event, root)
+    try:
+        event = json.load(sys.stdin)
+        root = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path.cwd())
+        code, message = HOOKS[args.hook](event, root)
+    except Exception as error:  # noqa: BLE001  (fail closed on any crash, see module docstring)
+        code, message = (
+            BLOCK,
+            (
+                f"{args.hook} guard crashed: {error!r}. The action was stopped; "
+                f"run `uv run python -m tools.hooks {args.hook}` by hand to debug."
+            ),
+        )
     if message:
         print(message, file=sys.stderr)
     return code

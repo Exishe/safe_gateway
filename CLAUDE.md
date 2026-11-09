@@ -75,7 +75,11 @@ ty must pass.
 |-------|------|
 | Claude Code hooks (`.claude/hooks/`, logic in `tools/hooks.py`) | Before Bash: bash-guard (no `rm -rf`, no curl/wget beyond loopback), license-guard (denied packages), secret-scan (before `git commit`). After Edit/Write: no-egress, ruff format/fix, tests for the touched module. After Bash: license audit when dependencies change. |
 | Git pre-commit (`.githooks/pre-commit`) | ruff, no-egress, staged PII scan, detect-secrets. This is the authoritative commit gate. |
-| CI (`.github/workflows/ci.yml`) | Everything above plus ty, pytest, bandit, pip-audit, Semgrep, zizmor. macOS and Windows only on tags (ADR 0007). |
+| CI (`.github/workflows/ci.yml`) | ruff, ty, no-egress, licenses, pytest, PII and secrets over every tracked file, bandit, pip-audit, Semgrep, zizmor. macOS and Windows (tests and licenses) only on tags (ADR 0007). |
+
+Guards fail closed (ADR 0010). If one blocks you, fix the cause it names. Never
+skip the git hook (no `--no-verify`, `-n` or hooks-path override); secret-scan
+refuses such commits.
 
 ## How work is done
 

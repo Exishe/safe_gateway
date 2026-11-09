@@ -8,9 +8,11 @@ with each phase; the threat model gets its full review before the first pilot.
 
 1. Personal data leaves the machine only as placeholders. Detection and masking
    run locally (Presidio, spaCy, GLiNER, regex with checksums).
-2. Only one package, `gateway/cloud/`, can open an outbound connection, and
-   only to the upstream the user configured. The detection engine has no
-   network path at all.
+2. `gateway/cloud/` is the only package allowed to open an outbound
+   connection, and only to the upstream the user configured. The detection
+   engine is not allowed any network, process or dynamic-import code. Static
+   checks and socket-blocked tests enforce this; they match names, so the
+   limits below apply.
 3. The placeholder map is kept in memory, or encrypted with a per-session key
    from the OS keychain, and is deleted when the session ends (ADR 0002).
 4. API keys and the audit HMAC key live in the OS keychain, never in files.
@@ -21,10 +23,10 @@ with each phase; the threat model gets its full review before the first pilot.
 
 | Control | Where it runs |
 |---------|---------------|
-| AST check that fails on network, process or dynamic-import code outside `gateway/cloud/` | Claude Code hook on every edit, git pre-commit, CI |
+| AST check of every module under `gateway/` except `gateway/cloud/`: network modules and LLM SDKs everywhere; also process, dynamic-import and cloud/proxy imports in the engine | Claude Code hook on every edit, git pre-commit, CI |
 | Tests run with sockets disabled (`pytest-socket`) | every test run |
-| License check of every shipped dependency; PyMuPDF and pdftext denied by name | Claude Code hook before and after installs, CI |
-| Staged-file scan for keys (detect-secrets) and identifier-shaped data | Claude Code hook before commits, git pre-commit |
+| License check of the runtime dependency closure, extras included, on Linux, macOS and Windows; PyMuPDF and pdftext denied by name | Claude Code hook before and after installs, CI |
+| Scan for keys (detect-secrets) and identifier-shaped data | Claude Code hook before commits, which also refuses commits that skip the git hook; git pre-commit on staged files; CI on every tracked file |
 | Bandit, pip-audit, Semgrep, zizmor | CI on every push |
 
 ## Limits
@@ -48,6 +50,9 @@ with each phase; the threat model gets its full review before the first pilot.
   rows were changed; it cannot stop someone with admin rights from deleting
   the whole file. Customers should store periodic exports elsewhere.
 - Pilot installers are unsigned (see [INSTALL.md](INSTALL.md)).
+- The repository guards match names, not behaviour. Code that builds module
+  names at run time, or a shell command hidden inside `bash -c`, can get past
+  them. CI and code review are the backstops (ADR 0010).
 
 Compliance with GDPR, HIPAA or any other regime remains the customer's
 responsibility. The gateway provides controls and evidence for it.

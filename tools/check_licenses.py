@@ -26,15 +26,14 @@ Status = Literal["allowed", "forbidden", "review"]
 _RANK: dict[Status, int] = {"allowed": 0, "review": 1, "forbidden": 2}
 
 DEFAULT_POLICY = Path(__file__).with_name("license_policy.toml")
-PROJECT = "safeguard-gateway"
+_PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
+# Read, not repeated: a rename must not silently turn the check into a no-op.
+PROJECT: str = tomllib.loads(_PYPROJECT.read_text(encoding="utf-8"))["project"]["name"]
 
-# Markers for full license texts shipped in the License field. Copyleft markers
-# come first: a package that carries both a BSD and a GPL text is not BSD-only.
+# Permissive markers for full license texts shipped in the License field. They
+# are consulted only after the whole text was searched for the policy's review
+# and forbidden patterns, so "BSD, but non-commercial only" is never allowed.
 _TEXT_MARKERS: tuple[tuple[tuple[str, ...], Status], ...] = (
-    (("gnu affero",), "forbidden"),
-    (("gnu lesser general public",), "review"),
-    (("gnu library general public",), "review"),
-    (("gnu general public license",), "forbidden"),
     (("permission is hereby granted, free of charge",), "allowed"),
     (("apache license", "version 2.0"), "allowed"),
     (("redistribution and use in source and binary forms",), "allowed"),
@@ -135,6 +134,10 @@ def _classify_text(text: str, policy: Policy) -> Status:
     if "\n" not in text.strip() and len(text) <= 200:  # noqa: PLR2004
         return _classify_expression(text, policy)
     lowered = text.lower()
+    if any(pattern in lowered for pattern in policy.review_patterns):
+        return "review"
+    if any(pattern in lowered for pattern in policy.forbidden_patterns):
+        return "forbidden"
     for markers, status in _TEXT_MARKERS:
         if all(marker in lowered for marker in markers):
             return status
@@ -177,24 +180,32 @@ def load_dist_info(name: str) -> DistInfo:
 
 def runtime_closure(root: str) -> list[str]:
     """Names of every installed runtime dependency of `root`, excluding `root` itself."""
-    seen: set[str] = set()
-    queue = [root]
+    # Each package is visited with the extras it was asked for, so a dependency
+    # needed only through an extra (uvicorn[standard], CacheControl[filecache])
+    # is part of the closure.
+    extras_seen: dict[str, set[str]] = {}
+    queue: list[tuple[str, frozenset[str]]] = [(canonicalize_name(root), frozenset())]
     while queue:
-        current = queue.pop()
+        current, extras = queue.pop()
         try:
             requirements = metadata.requires(current) or []
         except metadata.PackageNotFoundError:
             continue  # reported later by load_dist_info as "not installed"
+        environments = [{"extra": extra} for extra in {"", *extras}]
         for line in requirements:
             requirement = Requirement(line)
-            if requirement.marker and not requirement.marker.evaluate({"extra": ""}):
+            marker = requirement.marker
+            if marker and not any(marker.evaluate(env) for env in environments):
                 continue
             name = canonicalize_name(requirement.name)
-            if name not in seen:
-                seen.add(name)
-                queue.append(name)
-    seen.discard(canonicalize_name(root))
-    return sorted(seen)
+            first_visit = name not in extras_seen
+            known = extras_seen.setdefault(name, set())
+            new_extras = set(requirement.extras) - known
+            if first_visit or new_extras:
+                known.update(new_extras)
+                queue.append((name, frozenset(known)))
+    extras_seen.pop(canonicalize_name(root), None)
+    return sorted(extras_seen)
 
 
 def check(dists: Iterable[DistInfo], policy: Policy) -> list[str]:
@@ -246,6 +257,11 @@ def _check_command(command: str, policy: Policy) -> int:
 
 
 def _check_project(project: str, policy: Policy) -> int:
+    try:
+        metadata.distribution(project)
+    except metadata.PackageNotFoundError:
+        print(f"{project}: not installed (run `uv sync`); nothing was checked")
+        return 1
     problems = []
     dists = []
     names = runtime_closure(project)

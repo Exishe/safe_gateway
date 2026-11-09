@@ -198,8 +198,13 @@ def test_secret_scan_only_runs_for_commits(project: Path) -> None:
     assert hooks.secret_scan(bash("git status"), project) == (0, "")
 
 
-def test_secret_scan_blocks_a_commit_with_staged_pii(project: Path) -> None:
+def _repo_with_gate(project: Path) -> None:
     _git(project, "init", "-q")
+    _git(project, "config", "core.hooksPath", ".githooks")
+
+
+def test_secret_scan_blocks_a_commit_with_staged_pii(project: Path) -> None:
+    _repo_with_gate(project)
     (project / "notes.txt").write_text(f"client {SSN}\n")
     _git(project, "add", "notes.txt")
 
@@ -211,7 +216,7 @@ def test_secret_scan_blocks_a_commit_with_staged_pii(project: Path) -> None:
 
 
 def test_secret_scan_allows_a_clean_commit(project: Path) -> None:
-    _git(project, "init", "-q")
+    _repo_with_gate(project)
     (project / "notes.txt").write_text("nothing sensitive\n")
     _git(project, "add", "notes.txt")
 
@@ -234,3 +239,112 @@ def test_main_reads_stdin_and_writes_the_reason_to_stderr(
 def test_main_rejects_unknown_hooks() -> None:
     with pytest.raises(SystemExit):
         hooks.main(["no-such-hook"])
+
+
+# ---- review fixes (Important #2, #3, #5, #6)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cd /tmp\nrm -rf build",
+        "echo start\ncurl https://example.com",
+        "env -i curl https://example.com",
+        "sudo -E rm -rf /",
+        "command -p curl https://example.com",
+        "timeout 5 curl https://example.com",
+        "nice rm -rf build",
+        "nice -n 10 rm -rf build",
+        "uv run curl https://example.com",
+    ],
+)
+def test_bash_guard_sees_through_newlines_and_wrappers(command: str) -> None:
+    assert hooks.bash_guard(bash(command), REPO)[0] == 2
+
+
+@pytest.mark.parametrize(
+    "command", ["grep -rn curl .", "git commit -m 'drop rm -rf usage'", "man curl | head"]
+)
+def test_bash_guard_does_not_block_mentions(command: str) -> None:
+    assert hooks.bash_guard(bash(command), REPO) == (0, "")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git commit --no-verify -m wip",
+        "git commit -n -m wip",
+        "git commit -anm wip",
+        "git -c core.hooksPath=/dev/null commit -m wip",
+        "git add -A && git commit --no-verify -m wip && git push",
+    ],
+)
+def test_secret_scan_blocks_commits_that_skip_the_git_hook(project: Path, command: str) -> None:
+    _repo_with_gate(project)
+    code, message = hooks.secret_scan(bash(command), project)
+    assert code == 2
+    assert "hook" in message
+
+
+def test_secret_scan_blocks_commits_when_the_git_hook_is_not_installed(project: Path) -> None:
+    _git(project, "init", "-q")
+    code, message = hooks.secret_scan(bash('git commit -m "notes"'), project)
+    assert code == 2
+    assert "install-git-hooks.sh" in message
+
+
+def test_staged_files_keeps_non_ascii_names(project: Path) -> None:
+    _repo_with_gate(project)
+    (project / "Договор.txt").write_text("text\n")
+    _git(project, "add", "Договор.txt")
+    assert hooks._staged_files(project) == ["Договор.txt"]  # noqa: SLF001
+
+
+def test_secret_scan_fails_closed_without_detect_secrets(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _repo_with_gate(project)
+    (project / "notes.txt").write_text("nothing sensitive\n")
+    _git(project, "add", "notes.txt")
+    monkeypatch.setattr(hooks, "detect_secrets_binary", lambda: project / "missing")
+
+    code, message = hooks.secret_scan(bash('git commit -m "notes"'), project)
+
+    assert code == 2
+    assert "detect-secrets" in message
+
+
+def test_main_fails_closed_when_the_hook_crashes(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("this is not json"))
+    assert hooks.main(["bash-guard"]) == 2
+    assert "crashed" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'echo "never run git commit --no-verify"',
+        "cat <<'EOF' > notes.md\nNever set core.hooksPath; the git pre-commit hook guards it.\nEOF",
+        "grep -rn hooksPath docs/",
+    ],
+)
+def test_secret_scan_ignores_commands_that_only_mention_commits(
+    project: Path, command: str
+) -> None:
+    assert hooks.secret_scan(bash(command), project) == (0, "")
+
+
+def test_secret_scan_allows_a_commit_message_that_mentions_the_hooks_setting(
+    project: Path,
+) -> None:
+    _repo_with_gate(project)
+    command = "git commit -m 'docs: explain core.hooksPath and the -n flag'"
+    assert hooks.secret_scan(bash(command), project) == (0, "")
+
+
+def test_secret_scan_blocks_reconfiguring_hooks_before_a_commit(project: Path) -> None:
+    _repo_with_gate(project)
+    command = "git config core.hooksPath /dev/null && git commit -m wip"
+    assert hooks.secret_scan(bash(command), project)[0] == 2
