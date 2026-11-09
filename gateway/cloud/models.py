@@ -29,6 +29,45 @@ from gateway.engine.ner import models_home
 _RELEASES = "https://github.com/explosion/spacy-models/releases/download"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
+# Every host a model download may reach: the pinned origins and the storage hosts they
+# redirect to. Exact names, no wildcards, https only. A host not listed fails the pull by
+# name and is added here only after review (ADR 0006, amended 2026-11-09).
+ALLOWED_HOSTS = frozenset(
+    {
+        # GitHub release downloads (the pinned wheels)...
+        "github.com",
+        # ...answer 302 to the release-asset store (seen for both wheels, 2026-11-09)...
+        "release-assets.githubusercontent.com",
+        # ...which replaced this earlier release-asset host, named in the security review.
+        "objects.githubusercontent.com",
+        # Hugging Face resolve URLs (the pinned files); small files are served from here.
+        "huggingface.co",
+        # Large files answer 302 to this CDN edge (seen for both weight files, 2026-11-09).
+        "us.gcp.cdn.hf.co",
+        # The other download CDN hosts Hugging Face lists for firewalls (docs, 2026-11-09).
+        "us.aws.cdn.hf.co",
+        "cdn-lfs-us-1.hf.co",
+        "cdn-lfs-eu-1.hf.co",
+    }
+)
+MAX_REDIRECTS = 5
+# Per-file byte cap: the recorded size plus this margin, or the ceiling when no size is
+# recorded. The pinned files are at most about 1.2 GB.
+SIZE_MARGIN = 1024**2
+MAX_DOWNLOAD_BYTES = 2 * 1024**3
+
+
+def byte_cap(size: int | None) -> int:
+    """The most bytes a download may stream: `size` plus a margin, or the 2 GiB ceiling."""
+    return MAX_DOWNLOAD_BYTES if size is None else size + SIZE_MARGIN
+
+
+def check_size(label: str, size: int | None) -> None:
+    """ValueError unless `size` is absent or a whole number of bytes."""
+    if size is not None and (isinstance(size, bool) or not isinstance(size, int) or size < 0):
+        msg = f"{label}: size must be a byte count, not {size!r}"
+        raise ValueError(msg)
+
 
 class ModelDownloadError(Exception):
     """A model could not be fetched, verified or unpacked; nothing was installed."""
@@ -40,11 +79,13 @@ class ModelSpec:
     version: str
     url: str
     sha256: str
+    size: int | None = None  # bytes, when recorded; caps the download (byte_cap)
 
     def __post_init__(self) -> None:
         if not _SHA256.fullmatch(self.sha256):
             msg = f"{self.name}: sha256 must be 64 lower-case hex digits"
             raise ValueError(msg)
+        check_size(self.name, self.size)
 
     @property
     def directory_name(self) -> str:
@@ -89,8 +130,8 @@ def installed(spec: ModelSpec) -> bool:
 
 
 def open_client() -> httpx.Client:
-    # Redirects: GitHub serves release assets from its storage host.
-    return httpx.Client(follow_redirects=True, timeout=httpx.Timeout(60.0))
+    # Redirects (to the storage hosts) are followed by download_verified, which checks each.
+    return httpx.Client(follow_redirects=False, timeout=httpx.Timeout(60.0))
 
 
 def pull(spec: ModelSpec, client: httpx.Client) -> Path:
@@ -126,29 +167,99 @@ def move_into_place(staged: Path, target: Path, pin: Pin) -> None:
 
 
 def _download(spec: ModelSpec, client: httpx.Client, destination: Path) -> None:
-    download_verified(spec.url, spec.sha256, spec.name, client, destination)
+    download_verified(
+        spec.url, spec.sha256, spec.name, client, destination, max_bytes=byte_cap(spec.size)
+    )
 
 
-def download_verified(
-    url: str, sha256: str, label: str, client: httpx.Client, destination: Path
+def download_verified(  # noqa: PLR0913  (the cap is keyword-only; the rest name one download)
+    url: str,
+    sha256: str,
+    label: str,
+    client: httpx.Client,
+    destination: Path,
+    *,
+    max_bytes: int = MAX_DOWNLOAD_BYTES,
 ) -> None:
-    """Stream `url` to `destination`; ModelDownloadError unless its SHA-256 is `sha256`."""
-    digest = hashlib.sha256()
+    """Stream `url` to `destination`; ModelDownloadError unless its SHA-256 is `sha256`.
+
+    Redirects are followed here, hop by hop, only over https to `ALLOWED_HOSTS`, never by
+    the client. The body may not exceed `max_bytes`, whatever its Content-Length says.
+    On any failure, an interrupt included, `destination` is deleted.
+    """
+    complete = False
     try:
-        with client.stream("GET", url) as response, destination.open("wb") as out:
+        actual = _fetch(url, label, client, destination, max_bytes)
+        if actual != sha256:
+            msg = (
+                f"{label}: SHA-256 mismatch, expected {sha256}, got {actual}; nothing was installed"
+            )
+            raise ModelDownloadError(msg)
+        complete = True
+    finally:
+        if not complete:
+            destination.unlink(missing_ok=True)
+
+
+def _fetch(url: str, label: str, client: httpx.Client, destination: Path, max_bytes: int) -> str:
+    """Write the body at the end of `url`'s redirects to `destination`; return its SHA-256."""
+    try:
+        response = _follow(httpx.URL(url), label, client)
+        try:
             response.raise_for_status()
-            for chunk in response.iter_bytes():
-                digest.update(chunk)
-                out.write(chunk)
-    except httpx.HTTPError as error:
+            declared = response.headers.get("Content-Length", "")
+            if declared.isdigit() and int(declared) > max_bytes:
+                raise ModelDownloadError(_too_large(label, max_bytes))
+            return _write_capped(response, label, destination, max_bytes)
+        finally:
+            response.close()
+    except (httpx.HTTPError, httpx.InvalidURL) as error:
         msg = f"{label}: download failed: {error}"
         raise ModelDownloadError(msg) from error
-    if digest.hexdigest() != sha256:
+
+
+def _follow(url: httpx.URL, label: str, client: httpx.Client) -> httpx.Response:
+    """The open, streamed response for `url`, after at most MAX_REDIRECTS checked hops."""
+    for _ in range(MAX_REDIRECTS + 1):
+        _check_url(url, label)
+        # follow_redirects=False here overrides the client: every hop comes back to us.
+        request = client.build_request("GET", url)
+        response = client.send(request, stream=True, follow_redirects=False)
+        if not response.has_redirect_location:
+            return response
+        response.close()
+        url = url.join(response.headers["Location"])  # a relative Location stays on its host
+    msg = f"{label}: more than {MAX_REDIRECTS} redirects; nothing was installed"
+    raise ModelDownloadError(msg)
+
+
+def _check_url(url: httpx.URL, label: str) -> None:
+    # The query is left out of the message: storage URLs carry signed tokens.
+    if url.scheme != "https" or url.host not in ALLOWED_HOSTS or url.port not in {None, 443}:
+        port = f":{url.port}" if url.port is not None else ""
         msg = (
-            f"{label}: SHA-256 mismatch, expected {sha256}, got {digest.hexdigest()}; "
+            f"{label}: refused to fetch from {url.scheme}://{url.host}{port}: models come only "
+            "over https from the hosts in ALLOWED_HOSTS (gateway/cloud/models.py); "
             "nothing was installed"
         )
         raise ModelDownloadError(msg)
+
+
+def _write_capped(response: httpx.Response, label: str, destination: Path, max_bytes: int) -> str:
+    digest = hashlib.sha256()
+    written = 0
+    with destination.open("wb") as out:
+        for chunk in response.iter_bytes():
+            written += len(chunk)
+            if written > max_bytes:  # stop reading at once: the rest is never fetched
+                raise ModelDownloadError(_too_large(label, max_bytes))
+            digest.update(chunk)
+            out.write(chunk)
+    return digest.hexdigest()
+
+
+def _too_large(label: str, max_bytes: int) -> str:
+    return f"{label}: larger than {max_bytes} bytes; download aborted, nothing was installed"
 
 
 def _is_unsafe(member: str) -> bool:

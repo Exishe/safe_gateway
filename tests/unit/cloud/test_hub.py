@@ -6,6 +6,7 @@ the network (pytest-socket is on).
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -20,7 +21,7 @@ from gateway.cloud.hub import (
     installed,
     pull,
 )
-from gateway.cloud.models import ModelDownloadError
+from gateway.cloud.models import ALLOWED_HOSTS, SIZE_MARGIN, ModelDownloadError
 from gateway.engine.gliner_ner import GLINER_MODEL_DIR, GLINER_PIN, is_gliner_model
 from gateway.engine.model_marker import MARKER, Pin, write_marker
 
@@ -80,6 +81,75 @@ def test_hub_file_rejects_a_bad_digest_or_a_branch_name() -> None:
         HubFile("org/repo", REVISION, "a.json", "abc")
     with pytest.raises(ValueError, match="revision"):
         HubFile("org/repo", "main", "a.json", "0" * 64)
+
+
+@pytest.mark.parametrize("size", [-1, True])
+def test_hub_file_rejects_a_size_that_is_not_a_byte_count(size: int) -> None:
+    with pytest.raises(ValueError, match="size"):
+        HubFile("org/repo", REVISION, "a.json", "0" * 64, size=size)
+
+
+def test_every_pinned_file_has_a_size_and_an_https_url_on_the_allow_list() -> None:
+    for file in GLINER_MODEL.files:
+        url = httpx.URL(hub_url(file))
+        assert url.scheme == "https", file.path
+        assert url.host in ALLOWED_HOSTS, file.path
+        assert file.size is not None, file.path
+        assert file.size > 0, file.path
+
+
+@pytest.mark.usefixtures("home")
+def test_a_file_larger_than_its_recorded_size_installs_nothing() -> None:
+    oversized = b"\x00" * (SIZE_MARGIN + 4096)
+    payloads = {**PAYLOADS, ("example/gliner", "pytorch_model.bin"): oversized}
+    files = tuple(
+        replace(f, size=len(PAYLOADS[(f.repo, f.path)])) for f in spec_for(payloads).files
+    )
+    spec = replace(spec_for(payloads), files=files)  # digests of what is served, sizes of before
+
+    with serving(payloads, []) as client, pytest.raises(ModelDownloadError, match="larger than"):
+        pull(spec, client)
+
+    assert not install_dir(spec).exists()
+    assert not installed(spec)
+
+
+@pytest.mark.usefixtures("home")
+def test_a_redirect_to_the_hub_cdn_is_followed_and_one_elsewhere_refused() -> None:
+    spec = spec_for(PAYLOADS)
+    weights_url = f"https://huggingface.co/example/gliner/resolve/{REVISION}/pytorch_model.bin"
+    cdn = "https://us.gcp.cdn.hf.co/xet-bridge-us/1/invented?Signature=x"
+    elsewhere = "https://cdn.example.org/weights.bin"
+
+    def via(location: str, calls: list[str]) -> httpx.Client:
+        """Like `serving`, but the weights answer 302 to `location`, which serves them."""
+        by_url = {
+            f"https://huggingface.co/{repo}/resolve/{REVISION}/{path}": data
+            for (repo, path), data in PAYLOADS.items()
+        }
+        weights = by_url.pop(weights_url)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            calls.append(url)
+            if url == weights_url:
+                return httpx.Response(302, headers={"Location": location})
+            data = weights if url == location else by_url.get(url)
+            return httpx.Response(404) if data is None else httpx.Response(200, content=data)
+
+        return httpx.Client(transport=httpx.MockTransport(handler))
+
+    refused: list[str] = []
+    with via(elsewhere, refused) as client, pytest.raises(ModelDownloadError, match="refused"):
+        pull(spec, client)
+    assert elsewhere not in refused
+    assert not installed(spec)
+
+    followed: list[str] = []
+    with via(cdn, followed) as client:
+        pull(spec, client)
+    assert cdn in followed
+    assert installed(spec)
 
 
 def test_pull_installs_every_file_and_the_offline_config(home: Path) -> None:

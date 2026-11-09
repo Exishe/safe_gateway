@@ -143,12 +143,14 @@ def _fake_gliner() -> tuple[HubModelSpec, dict[str, bytes]]:
 def fake_models(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, ModelSpec]:
     """Small fake wheels and GLiNER files served by a mock transport, under an empty home."""
     monkeypatch.setenv("SAFEGUARD_HOME", str(tmp_path / "sg"))
-    wheels = {f"https://models.example.org/{n}.whl": _fake_wheel(n) for n in ("xx_en", "xx_ru")}
+    # Invented paths on an allowed host: downloads go only to ALLOWED_HOSTS, and none is sent.
+    releases = "https://github.com/example/models/releases/download"
+    wheels = {f"{releases}/{n}.whl": _fake_wheel(n) for n in ("xx_en", "xx_ru")}
     specs = {
         lang: ModelSpec(name, "1.0.0", url, hashlib.sha256(wheels[url]).hexdigest())
         for lang, name, url in (
-            ("en", "xx_en", "https://models.example.org/xx_en.whl"),
-            ("ru", "xx_ru", "https://models.example.org/xx_ru.whl"),
+            ("en", "xx_en", f"{releases}/xx_en.whl"),
+            ("ru", "xx_ru", f"{releases}/xx_ru.whl"),
         )
     }
     gliner, served = _fake_gliner()

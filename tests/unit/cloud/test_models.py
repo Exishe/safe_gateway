@@ -1,14 +1,15 @@
 """`safeguard models pull`: pinned downloads, verified and unpacked safely (ADR 0012 point 3).
 
 Every test serves a small wheel built here through `httpx.MockTransport`; no
-test reaches the network (pytest-socket is on).
+test reaches the network (pytest-socket is on). Downloads follow redirects only over
+https to the hosts in `ALLOWED_HOSTS`, and stop at a byte cap (ADR 0006, amended).
 """
 
 import hashlib
 import io
 import re
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import httpx
@@ -16,19 +17,28 @@ import pytest
 
 from gateway.cloud import models
 from gateway.cloud.models import (
+    ALLOWED_HOSTS,
+    MAX_DOWNLOAD_BYTES,
+    MAX_REDIRECTS,
+    SIZE_MARGIN,
     SPACY_MODELS,
     ModelDownloadError,
     ModelSpec,
+    byte_cap,
+    download_verified,
     install_dir,
     installed,
     models_home,
+    open_client,
     pull,
 )
 from gateway.engine.model_marker import MARKER, Pin, write_marker
 
 NAME, VERSION = "xx_fake_model", "1.0.0"
 INNER = f"{NAME}/{NAME}-{VERSION}/"
-URL = f"https://models.example.org/{NAME}-{VERSION}-py3-none-any.whl"
+# Invented release paths on the real hosts: only the hosts are checked, and nothing is sent.
+URL = f"https://github.com/example/models/releases/download/{NAME}-{VERSION}/{NAME}.whl"
+ASSET = "https://release-assets.githubusercontent.com/production/1/asset?sig=invented"
 
 GOOD_MEMBERS = {
     f"{NAME}/__init__.py": b"# package shim, not extracted\n",
@@ -314,3 +324,282 @@ def test_an_archive_without_a_model_raises(
         pull(spec_for(payload), client)
 
     assert [p for p in leftovers(home) if p.is_file()] == []
+
+
+# ------------------------------------------------------------------ redirects, M4
+
+
+def redirecting(
+    payload: bytes, hops: dict[str, str], calls: list[str], *, follow: bool = False
+) -> httpx.Client:
+    """Serves `payload` at ASSET; a URL in `hops` answers 302 to its value; anything else 404."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        calls.append(url)
+        if url in hops:
+            return httpx.Response(302, headers={"Location": hops[url]})
+        return httpx.Response(200, content=payload) if url == ASSET else httpx.Response(404)
+
+    return httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=follow)
+
+
+def test_a_redirect_to_the_release_storage_host_is_followed(home: Path) -> None:
+    payload = wheel(GOOD_MEMBERS)
+    calls: list[str] = []
+
+    with redirecting(payload, {URL: ASSET}, calls) as client:
+        pull(spec_for(payload), client)
+
+    assert calls == [URL, ASSET]
+    assert installed(spec_for(payload))
+    assert home.exists()
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "http://release-assets.githubusercontent.com/production/1/asset",  # downgrade to http
+        "https://downloads.example.org/model.whl",  # a host not on the list
+        "//downloads.example.org/model.whl",  # the same, scheme-relative
+        "https://release-assets.githubusercontent.com.example.org/asset",  # a look-alike
+        "https://release-assets.githubusercontent.com:8443/asset",  # another port
+        "ftp://release-assets.githubusercontent.com/asset",
+        "file:///etc/passwd",
+    ],
+)
+@pytest.mark.parametrize("follow", [False, True])
+def test_a_redirect_off_the_allow_list_is_refused_before_it_is_requested(
+    home: Path, location: str, *, follow: bool
+) -> None:
+    # `follow`: even a client built to follow redirects itself gets every hop checked.
+    payload = wheel(GOOD_MEMBERS)
+    calls: list[str] = []
+
+    with (
+        redirecting(payload, {URL: location}, calls, follow=follow) as client,
+        pytest.raises(ModelDownloadError, match="refused"),
+    ):
+        pull(spec_for(payload), client)
+
+    assert calls == [URL]  # the target was never contacted
+    assert [p for p in leftovers(home) if p.is_file()] == []
+
+
+def test_a_relative_redirect_stays_on_its_host_and_is_followed(tmp_path: Path) -> None:
+    # huggingface.co answers some resolve URLs with a same-host relative redirect.
+    url = "https://huggingface.co/example/model/resolve/0123abc/config.json"
+    cached = "https://huggingface.co/api/resolve-cache/models/example/model/0123abc/config.json"
+    payload = b'{"model_type": "fake"}'
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        if str(request.url) == url:
+            location = cached.removeprefix("https://huggingface.co")  # "/api/resolve-cache/..."
+            return httpx.Response(307, headers={"Location": location})
+        return httpx.Response(200, content=payload)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        download_verified(
+            url, hashlib.sha256(payload).hexdigest(), "config", client, tmp_path / "f"
+        )
+
+    assert calls == [url, cached]
+    assert (tmp_path / "f").read_bytes() == payload
+
+
+def test_a_redirect_loop_is_cut_off(home: Path) -> None:
+    payload = wheel(GOOD_MEMBERS)
+    calls: list[str] = []
+
+    with (
+        redirecting(payload, {URL: URL}, calls) as client,
+        pytest.raises(ModelDownloadError, match="redirects"),
+    ):
+        pull(spec_for(payload), client)
+
+    assert len(calls) == MAX_REDIRECTS + 1
+    assert [p for p in leftovers(home) if p.is_file()] == []
+
+
+@pytest.mark.parametrize(
+    "pinned",
+    [
+        URL.replace("https://", "http://"),
+        f"https://downloads.example.org/{NAME}.whl",
+    ],
+)
+def test_a_pinned_url_off_the_allow_list_is_refused_without_a_request(
+    home: Path, pinned: str
+) -> None:
+    payload = wheel(GOOD_MEMBERS)
+    spec = ModelSpec(NAME, VERSION, pinned, spec_for(payload).sha256)
+    calls: list[str] = []
+
+    with serving(payload, calls) as client, pytest.raises(ModelDownloadError, match="refused"):
+        pull(spec, client)
+
+    assert calls == []
+    assert [p for p in leftovers(home) if p.is_file()] == []
+
+
+def test_the_client_never_follows_redirects_by_itself() -> None:
+    with open_client() as client:
+        assert client.follow_redirects is False
+
+
+def test_the_allow_list_is_the_pinned_hosts_and_their_storage_hosts() -> None:
+    # Widening it is a reviewed change to this test, not a side effect.
+    assert (
+        frozenset(
+            {
+                "github.com",
+                "release-assets.githubusercontent.com",
+                "objects.githubusercontent.com",
+                "huggingface.co",
+                "us.gcp.cdn.hf.co",
+                "us.aws.cdn.hf.co",
+                "cdn-lfs-us-1.hf.co",
+                "cdn-lfs-eu-1.hf.co",
+            }
+        )
+        == ALLOWED_HOSTS
+    )
+
+
+def test_every_pinned_wheel_is_https_on_an_allowed_host() -> None:
+    for spec in SPACY_MODELS.values():
+        url = httpx.URL(spec.url)
+        assert url.scheme == "https", spec.name
+        assert url.host in ALLOWED_HOSTS, spec.name
+
+
+# ------------------------------------------------------------------ size cap, M4
+
+
+def chunks(count: int, size: int, served: list[int]) -> Iterator[bytes]:
+    for _ in range(count):
+        served.append(size)
+        yield b"\x00" * size
+
+
+def streaming(body: Iterator[bytes], headers: dict[str, str] | None = None) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(200, headers=headers, content=body)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_byte_cap_is_the_pinned_size_plus_a_margin_or_a_ceiling() -> None:
+    assert byte_cap(None) == MAX_DOWNLOAD_BYTES == 2 * 1024**3
+    assert byte_cap(1000) == 1000 + SIZE_MARGIN
+    assert 0 < SIZE_MARGIN <= 1024**2
+
+
+@pytest.mark.parametrize("size", [-1, True])
+def test_a_recorded_size_must_be_a_byte_count(size: int) -> None:
+    with pytest.raises(ValueError, match="size"):
+        ModelSpec(NAME, VERSION, URL, "0" * 64, size=size)
+
+
+@pytest.mark.parametrize("headers", [None, {"Content-Length": "100"}])
+def test_a_stream_past_the_cap_is_aborted_even_if_its_length_claims_less(
+    tmp_path: Path, headers: dict[str, str] | None
+) -> None:
+    served: list[int] = []
+    destination = tmp_path / "model.whl"
+
+    with (
+        streaming(chunks(10_000, 1024, served), headers) as client,
+        pytest.raises(ModelDownloadError, match="larger than 4096 bytes"),
+    ):
+        download_verified(URL, "0" * 64, NAME, client, destination, max_bytes=4096)
+
+    assert len(served) <= 5  # stopped at the first chunk past the cap, not at 10 MB
+    assert not destination.exists()
+
+
+def test_a_declared_length_past_the_cap_is_refused_before_the_body(tmp_path: Path) -> None:
+    served: list[int] = []
+
+    with (
+        streaming(chunks(8, 1024, served), {"Content-Length": "8192"}) as client,
+        pytest.raises(ModelDownloadError, match="larger than 4096 bytes"),
+    ):
+        download_verified(URL, "0" * 64, NAME, client, tmp_path / "m", max_bytes=4096)
+
+    assert served == []
+    assert not (tmp_path / "m").exists()
+
+
+def test_a_file_of_exactly_the_cap_is_accepted(tmp_path: Path) -> None:
+    served: list[int] = []
+    expected = hashlib.sha256(b"\x00" * 4096).hexdigest()
+
+    with streaming(chunks(4, 1024, served)) as client:
+        download_verified(URL, expected, NAME, client, tmp_path / "m", max_bytes=4096)
+
+    assert (tmp_path / "m").stat().st_size == 4096
+
+
+def test_a_wheel_larger_than_its_recorded_size_is_not_installed(home: Path) -> None:
+    payload = wheel({**GOOD_MEMBERS, f"{INNER}ner/big": b"\x00" * (SIZE_MARGIN + 4096)})
+    spec = ModelSpec(NAME, VERSION, URL, spec_for(payload).sha256, size=1024)
+
+    with serving(payload) as client, pytest.raises(ModelDownloadError, match="larger than"):
+        pull(spec, client)
+
+    assert not installed(spec)
+    assert [p for p in leftovers(home) if p.is_file()] == []
+
+
+# ------------------------------------------------------------------ partial downloads, M4
+
+
+def failing_after(count: int, error: BaseException, served: list[int]) -> Iterator[bytes]:
+    yield from chunks(count, 1024, served)
+    raise error
+
+
+def test_a_digest_mismatch_deletes_the_download(tmp_path: Path) -> None:
+    destination = tmp_path / "model.whl"
+
+    with (
+        serving(b"pinned bytes") as client,
+        pytest.raises(ModelDownloadError, match="SHA-256"),
+    ):
+        download_verified(URL, "0" * 64, NAME, client, destination)
+
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("error", "raised"),
+    [
+        (httpx.ReadError("connection reset"), ModelDownloadError),
+        (KeyboardInterrupt(), KeyboardInterrupt),
+        (OSError("disk full"), OSError),
+    ],
+)
+def test_a_download_cut_short_deletes_the_partial_file(
+    tmp_path: Path, error: BaseException, raised: type[BaseException]
+) -> None:
+    served: list[int] = []
+    destination = tmp_path / "model.whl"
+
+    with streaming(failing_after(3, error, served)) as client, pytest.raises(raised):
+        download_verified(URL, "0" * 64, NAME, client, destination)
+
+    assert served == [1024] * 3  # some bytes were written before it failed
+    assert not destination.exists()
+
+
+def test_an_http_error_leaves_no_file(tmp_path: Path) -> None:
+    destination = tmp_path / "model.whl"
+
+    with serving(b"") as client, pytest.raises(ModelDownloadError, match="404"):
+        download_verified(URL + "?gone", "0" * 64, NAME, client, destination)
+
+    assert not destination.exists()

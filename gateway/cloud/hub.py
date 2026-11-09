@@ -20,7 +20,13 @@ from pathlib import Path, PurePosixPath
 
 import httpx
 
-from gateway.cloud.models import ModelDownloadError, download_verified, move_into_place
+from gateway.cloud.models import (
+    ModelDownloadError,
+    byte_cap,
+    check_size,
+    download_verified,
+    move_into_place,
+)
 from gateway.engine.model_marker import Pin, is_installed
 from gateway.engine.ner import models_home
 
@@ -36,8 +42,10 @@ class HubFile:
     revision: str
     path: str
     sha256: str
+    size: int | None = None  # bytes, when recorded; caps the download (byte_cap)
 
     def __post_init__(self) -> None:
+        check_size(f"{self.repo}/{self.path}", self.size)
         if not _SHA256.fullmatch(self.sha256):
             msg = f"{self.repo}/{self.path}: sha256 must be 64 lower-case hex digits"
             raise ValueError(msg)
@@ -85,7 +93,9 @@ _BACKBONE_REVISION = "a0484667b22365f84929a935b5e50a51f71f159d"  # pragma: allow
 # Digests of the files at these commits, 2026-11-09; public, not secrets, hence the
 # pragmas for detect-secrets. Model card licenses: GLiNER PII apache-2.0 (fine-tuned from
 # urchade/gliner_multi-v2.1, apache-2.0); mdeberta-v3-base mit. The backbone's weights are
-# not fetched: GLiNER's own pytorch_model.bin holds the fine-tuned encoder.
+# not fetched: GLiNER's own pytorch_model.bin holds the fine-tuned encoder. Sizes measured
+# 2026-11-09 from an install whose five files all matched these digests; each caps its
+# download at the size plus SIZE_MARGIN (ADR 0006, amended).
 GLINER_MODEL = HubModelSpec(
     name="gliner_multi_pii-v1",
     revision=_GLINER_REVISION,
@@ -97,6 +107,7 @@ GLINER_MODEL = HubModelSpec(
             "gliner_config.json",
             # pragma: allowlist nextline secret
             "2088bee85f50849dea2ab4cf411ab5cf3aaaf7c8a45c23412035978b2bc02801",
+            size=478,
         ),
         HubFile(
             _GLINER_REPO,
@@ -104,6 +115,7 @@ GLINER_MODEL = HubModelSpec(
             "pytorch_model.bin",
             # pragma: allowlist nextline secret
             "3003753fba99e40645cf088c7367a2c6211fc174897dc64f1f9c147c29d18d2d",
+            size=1_155_900_362,
         ),
         HubFile(
             _BACKBONE_REPO,
@@ -111,6 +123,7 @@ GLINER_MODEL = HubModelSpec(
             "config.json",
             # pragma: allowlist nextline secret
             "bcffcd343dc5efa5ef2d5a58d2b405eed108f01cc45b48d0a907b333ec41801f",
+            size=579,
         ),
         HubFile(
             _BACKBONE_REPO,
@@ -118,6 +131,7 @@ GLINER_MODEL = HubModelSpec(
             "spm.model",
             # pragma: allowlist nextline secret
             "13c8d666d62a7bc4ac8f040aab68e942c861f93303156cc28f5c7e885d86d6e3",
+            size=4_305_025,
         ),
         HubFile(
             _BACKBONE_REPO,
@@ -125,6 +139,7 @@ GLINER_MODEL = HubModelSpec(
             "tokenizer_config.json",
             # pragma: allowlist nextline secret
             "3f3978e0c036f2c2588cac34a6047cbb0af0b0dc1814254e291028529805496d",
+            size=52,
         ),
     ),
 )
@@ -152,7 +167,14 @@ def pull(spec: HubModelSpec, client: httpx.Client) -> Path:
         assembled.mkdir()
         for file in spec.files:
             label = f"{file.repo}/{file.path}"
-            download_verified(hub_url(file), file.sha256, label, client, assembled / file.path)
+            download_verified(
+                hub_url(file),
+                file.sha256,
+                label,
+                client,
+                assembled / file.path,
+                max_bytes=byte_cap(file.size),
+            )
         _write_offline_config(spec, assembled)
         move_into_place(assembled, target, spec.pin)
     return target
