@@ -180,6 +180,8 @@ def _type_problem(row: Mapping[str, object]) -> str | None:
             return f"column {column} holds a {type(value).__name__}"
         if isinstance(value, str) and not value.isascii():
             return f"column {column} holds non-ASCII text"
+        if type(value) is int and abs(value) > MAX_SAFE_INT:
+            return f"column {column} holds an integer beyond 2**53 - 1"
     return None
 
 

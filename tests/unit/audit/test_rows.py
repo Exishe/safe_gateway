@@ -154,6 +154,8 @@ def test_a_well_formed_stored_row_has_no_problem() -> None:
     "overrides",
     [
         {"local": 2},
+        {"bytes_out": 2**53},
+        {"status": -(2**63)},
         {"kind": "deleted"},
         {"bytes_out": 1.5},
         {"model": b"bytes"},

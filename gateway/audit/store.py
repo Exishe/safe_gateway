@@ -1,4 +1,4 @@
-"""The audit log on disk: SQLite schema, the writer, and the read-only opener (ADR 0021).
+"""The audit log writer: SQLite schema, appends and the head record (ADR 0021).
 
 Every write is one `BEGIN IMMEDIATE` transaction, which is also the lock between
 processes: check the head, chain the new row to it, insert, move the head.
@@ -8,7 +8,7 @@ import hmac
 import os
 import sqlite3
 import threading
-from collections.abc import Callable, Generator, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,11 +16,12 @@ from types import TracebackType
 from typing import Self
 
 from gateway.audit.chain import GENESIS_HASH, head_hmac, row_hash, row_hmac
+from gateway.audit.db import SCHEMA_VERSION, AuditLogError, check_schema, read_head
 from gateway.audit.rows import format_ts, is_hex64, request_content
+from gateway.audit.verify import VerifyResult, verify_connection
 from gateway.engine.session_disk import KeyProvider
 from gateway.secrets import device_key, load_device_key
 
-SCHEMA_VERSION = 1
 _DIR_MODE = 0o700
 _FILE_MODE = 0o600
 _BUSY_TIMEOUT_SECONDS = 30
@@ -71,15 +72,6 @@ INSERT INTO audit_head (singleton, head_id, head_hash, hmac) VALUES (1, ?, ?, ?)
 ON CONFLICT (singleton) DO UPDATE SET
     head_id = excluded.head_id, head_hash = excluded.head_hash, hmac = excluded.hmac
 """
-_SELECT_ROWS = """
-SELECT * FROM audit_log
-WHERE (:start IS NULL OR ts_utc >= :start) AND (:end IS NULL OR ts_utc < :end)
-ORDER BY id
-"""
-
-
-class AuditLogError(Exception):
-    """The audit log cannot be used as it is."""
 
 
 class AuditChainBroken(AuditLogError):  # noqa: N818  (reads as what happened)
@@ -88,16 +80,6 @@ class AuditChainBroken(AuditLogError):  # noqa: N818  (reads as what happened)
 
 class DeviceKeyMissing(AuditLogError):  # noqa: N818
     """The log has rows but this keychain has no device key for it."""
-
-
-class NotAnAuditLog(AuditLogError):  # noqa: N818
-    """The file is not an audit log this version can read."""
-
-
-def default_audit_path() -> Path:
-    """`<SAFEGUARD_HOME>/audit.db`, with SAFEGUARD_HOME defaulting to `~/.safeguard`."""
-    home = os.environ.get("SAFEGUARD_HOME")
-    return (Path(home) if home else Path.home() / ".safeguard") / "audit.db"
 
 
 def utc_now() -> datetime:
@@ -117,58 +99,6 @@ def _configure(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA journal_mode = DELETE")
     connection.execute("PRAGMA synchronous = FULL")
     connection.execute("PRAGMA secure_delete = ON")  # purged rows are overwritten
-
-
-def _tables(connection: sqlite3.Connection) -> set[str]:
-    rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-    return {name for (name,) in rows}
-
-
-def _check_schema(connection: sqlite3.Connection) -> bool:
-    """True when the file already holds our tables; raises when it holds anything else."""
-    (version,) = connection.execute("PRAGMA user_version").fetchone()
-    tables = _tables(connection)
-    if version == SCHEMA_VERSION and {"audit_log", "audit_head"} <= tables:
-        return True
-    if version == 0 and not tables:
-        return False
-    msg = f"not a SafeGuard audit log of schema version {SCHEMA_VERSION}"
-    raise NotAnAuditLog(msg)
-
-
-def open_readonly(path: Path) -> sqlite3.Connection:
-    """Open an existing log without the power to change or create it."""
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
-    try:
-        has_tables = _check_schema(connection)
-    except sqlite3.DatabaseError as error:  # not a SQLite file at all
-        connection.close()
-        raise NotAnAuditLog(str(error)) from error
-    except NotAnAuditLog:
-        connection.close()
-        raise
-    if not has_tables:
-        connection.close()
-        msg = "empty file, not an audit log"
-        raise NotAnAuditLog(msg)
-    return connection
-
-
-def read_head(connection: sqlite3.Connection) -> tuple[object, object, object] | None:
-    found = connection.execute("SELECT head_id, head_hash, hmac FROM audit_head").fetchone()
-    return None if found is None else (found[0], found[1], found[2])
-
-
-def iter_rows(
-    connection: sqlite3.Connection, start: str | None = None, end: str | None = None
-) -> Iterator[dict[str, object]]:
-    """Rows in id order as stored, optionally with start <= ts_utc < end."""
-    cursor = connection.execute(_SELECT_ROWS, {"start": start, "end": end})
-    names = [column[0] for column in cursor.description]
-    for values in cursor:
-        yield dict(zip(names, values, strict=True))
 
 
 def head_problem(
@@ -209,7 +139,7 @@ class AuditLog:
 
     def _initialise(self, key_provider: KeyProvider) -> bytes:
         with self._transaction():
-            if not _check_schema(self._connection):
+            if not check_schema(self._connection):
                 self._connection.execute(_CREATE_LOG)
                 self._connection.execute(_CREATE_HEAD)
                 self._connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -292,6 +222,10 @@ class AuditLog:
             )
             self._append(content, head_hash)
             return head_id + 1
+
+    def verify(self) -> VerifyResult:
+        with self._lock:
+            return verify_connection(self._connection, self._key)
 
     def close(self) -> None:
         self._connection.close()

@@ -9,13 +9,12 @@ from pathlib import Path
 
 import pytest
 
+from gateway.audit.db import NotAnAuditLog, default_audit_path
 from gateway.audit.rows import COLUMNS
 from gateway.audit.store import (
     AuditChainBroken,
     AuditLog,
     DeviceKeyMissing,
-    NotAnAuditLog,
-    default_audit_path,
 )
 from gateway.engine.session_disk import InMemoryKeyProvider
 from gateway.secrets import AUDIT_KEY_ID
