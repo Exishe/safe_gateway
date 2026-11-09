@@ -109,9 +109,31 @@ Rules: IP via the `ipaddress` module (v4 and v6), not inside a longer dotted num
 
 ---
 
-## Phase 1b (outline)
+## Phase 1b: names, organisations, places and dates (NER), strictly offline
 
-spaCy `en_core_web_lg` and `ru_core_news_lg` through Presidio's NLP engine as one `Recognizer`; language detection for mixed en/ru/hy text; NER windows per ADR 0004; Armenian passport and social card, Russian passport and other national formats from cited sources; OCR-noise handling if the leak-hunter shows it matters.
+**Goal:** `safeguard scan` also finds PERSON, ORG, LOCATION and DATE in English and Russian text, using spaCy through Presidio, with no network path at run time (ADR 0012).
+
+**Global Constraints (in addition to 1a):** the engine never passes Presidio a model *name*, only an existing local directory; a missing model raises `ModelMissing` naming `safeguard models pull`; only `gateway/cloud/` downloads anything; tests that need a model are marked `models` and skip with a reason when it is absent.
+
+**Review Focus:** (1) a missing model must never trigger a download (socket-disabled test); (2) mixed English/Russian text sends each paragraph to the right model; (3) a 1 MB text stays within spaCy's `max_length` via windows and finds names on both sides of a window edge; (4) a zip entry with `../` in `models pull` must not escape the models directory; (5) Armenian text returns structured and gazetteer hits without error.
+
+### Task 1: Model registry and `safeguard models pull`
+Files: `gateway/cloud/models.py`, `gateway/cli.py`; tests `tests/unit/cloud/test_models.py`. Adds `httpx` (BSD) at run time.
+Interfaces: `ModelSpec(name, version, url, sha256)`; `SPACY_MODELS` for `en_core_web_lg` and `ru_core_news_lg` 3.8.0 (explosion/spacy-models GitHub release wheels, SHA-256 pinned after first verified download); `models_home() -> Path` (`$SAFEGUARD_HOME` or `~/.safeguard`) / `models`; `pull(spec, client: httpx.Client) -> Path` downloads, checks SHA-256, unpacks the wheel's model directory to `models/spacy/<name>-<version>/`. CLI `safeguard models pull [--only en|ru]` and `safeguard models list`.
+Tests (httpx `MockTransport`, no network): good archive unpacks to the expected path; wrong SHA-256 raises and leaves nothing behind; `../` entry rejected; existing install is not downloaded again.
+
+### Task 2: Offline NER recognizer
+Files: `gateway/engine/ner.py`; tests `tests/unit/engine/test_ner.py`. Adds `presidio-analyzer` (MIT) and `spacy` (MIT) at run time.
+Interfaces: `ModelMissing(Exception)`; `model_dir(lang) -> Path` (raises `ModelMissing` if absent); `SpacyNerRecognizer(lang, model_dir)` with `name = f"ner_{lang}"` and `find(text)`; builds a Presidio `AnalyzerEngine` lazily with an NLP engine configured from the *path* and a registry holding only Presidio's spaCy recognizer; maps labels per ADR 0012 point 5; splits text into windows below `max_length` with an overlap.
+Tests: label mapping and windowing with a stub NLP engine (always run); `ModelMissing` raised before Presidio is constructed when the directory is absent, with sockets disabled; `models`-marked tests with the real models: an English and a Russian sentence each yield PERSON/ORG/LOCATION at exact offsets.
+
+### Task 3: Script routing and `detect()`
+Files: `gateway/engine/script.py`, `gateway/engine/detect.py`; tests alongside.
+Interfaces: `segments(text) -> list[tuple[int, int, str]]` (paragraph ranges with the dominant script's language: Latin `en`, Cyrillic `ru`, Armenian `hy`, other `und`); `EngineConfig.ner: Literal["auto", "off"] = "auto"`; `detect(text, lang="auto")`: `lang` forces one language; with `auto`, each segment goes to its model; `hy` and `und` get no NER; models that are not installed are skipped with one warning per process (`auto`) rather than failing the scan.
+Tests: routing of a mixed en/ru/hy text; `lang="ru"` forces Russian; NER off when configured; detection still works with no models installed.
+
+### Task 4: CI, docs and red team
+CI downloads the models once with `safeguard models pull` (cached by version) and runs `-m models`; `docs/INSTALL.md` gains the `models pull` step; `docs/SECURITY.md` states that Armenian names are found only through the gazetteer until 1c; leak-hunter round on names (declension, initials, transliteration, all-caps headers) with every bypass a failing test, fixed or recorded as a limit; recall numbers still wait for 1c.
 
 ## Phase 1c (outline)
 
