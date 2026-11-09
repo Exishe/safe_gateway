@@ -23,7 +23,8 @@ from gateway.engine.detect import detect
 from gateway.engine.gliner_ner import gliner_model_dir
 from gateway.engine.ner import SPACY_MODEL_DIRS, ModelMissing
 
-pytestmark = pytest.mark.xfail(strict=True, reason="engine red-team finding (1c)")
+# Each finding stays a strict xfail until its fix lands; the mark is then removed.
+FINDING = pytest.mark.xfail(strict=True, reason="engine red-team finding (1c)")
 
 Case = tuple[str, str]  # (text, value as written)
 
@@ -77,6 +78,7 @@ def real_models() -> None:
 # ------------------------------------------------------------------ dates (ADR 0016 point 5)
 
 
+@FINDING
 def test_date_range_or_list_without_spaces() -> None:
     """_BEFORE/_AFTER refuse a date touching '-', ',' or '/' and a digit, to keep IP
     addresses out, so both dates of a range 'dd.mm.yyyy-dd.mm.yyyy' are refused. The
@@ -93,6 +95,7 @@ def test_date_range_or_list_without_spaces() -> None:
     assert leaks(cases) == []
 
 
+@FINDING
 def test_russian_date_with_the_day_in_guillemets() -> None:
     """The Russian contract form puts the day in guillemets ('«12» <month> 1985'), so a
     closing guillemet stands between the day and the month; _RU_DAY_FIRST needs
@@ -101,6 +104,7 @@ def test_russian_date_with_the_day_in_guillemets() -> None:
     assert leaks([("Договор заключён «12» марта 1985 г. в Москве.", "12» марта 1985")]) == []
 
 
+@FINDING
 def test_date_with_a_hyphenated_month_abbreviation() -> None:
     """dd-Mon-yyyy (lab reports, airline and hospital systems) is not in the list:
     _EN_DAY_FIRST needs whitespace after the day. ADR 0016 says such forms are left to
@@ -133,6 +137,7 @@ def test_date_in_full_width_or_arabic_indic_digits() -> None:
 # ------------------------------------------------------------------ documents (ADR 0023)
 
 
+@FINDING
 def test_russian_passport_series_and_number_split_by_a_number_sign() -> None:
     """The usual Russian form 'серия 4599 № 012345' (or '... номер 012345') breaks the
     _RUN at '№' or a word; '4599' alone is under nine digits, so the series is never
@@ -150,6 +155,7 @@ def test_russian_passport_series_and_number_split_by_a_number_sign() -> None:
     assert leaks(cases) == []
 
 
+@FINDING
 def test_passport_or_licence_with_one_letter_and_seven_digits() -> None:
     """_is_code wants two letters for a mixed code, passport_shape two letters and seven
     digits. One letter and seven digits (Indian and Australian passports, California
@@ -161,6 +167,7 @@ def test_passport_or_licence_with_one_letter_and_seven_digits() -> None:
     assert leaks(cases) == []
 
 
+@FINDING
 def test_lower_case_passport_number() -> None:
     """passport_shape and the keyword _RUN accept only [A-Z]; a passport number typed in
     lower case in a chat is refused with and without the keyword: [] for both."""
@@ -173,6 +180,7 @@ def test_lower_case_passport_number() -> None:
     assert leaks(cases) == []
 
 
+@FINDING
 def test_armenian_social_card_number_after_an_armenian_keyword() -> None:
     """ADR 0023 has an Armenian phone keyword (հեռ) but no Armenian document keyword, so
     a ten-digit social card number after 'սոցիալական քարտ' is never gated in: []."""
@@ -183,6 +191,7 @@ def test_armenian_social_card_number_after_an_armenian_keyword() -> None:
 # ------------------------------------------------------------------ cards and phones (ADR 0023)
 
 
+@FINDING
 def test_card_shape_with_mixed_or_doubled_separators() -> None:
     """_CARD_SHAPE wants one separator used throughout; a Luhn-invalid card typed with a
     space and a hyphen, or with double spaces (justified PDF text), returns []."""
@@ -192,6 +201,7 @@ def test_card_shape_with_mixed_or_doubled_separators() -> None:
     assert leaks([(f"Card {mixed} on file", mixed), (f"Card {doubled} on file", doubled)]) == []
 
 
+@FINDING
 def test_plus_phone_glued_to_the_next_word() -> None:
     """_within_digit_limit drops a last group glued to a word ('01K@example.com'), so
     '+99 912 345 6789Fax:' (PDF columns run together) keeps eight digits and phone_shape
@@ -201,6 +211,7 @@ def test_plus_phone_glued_to_the_next_word() -> None:
     assert leaks([(f"Phone: {phone}Fax: none", phone)]) == []
 
 
+@FINDING
 def test_plus_phone_with_doubled_spaced_or_slashed_separators() -> None:
     """phone_shape takes single space, dot or hyphen separators; double spaces, a spaced
     hyphen (which digits.py accepts) or slashes stop the run after '+99'. libphonenumber
@@ -238,6 +249,7 @@ def test_invisible_characters_missing_from_the_clean_list() -> None:
 # ------------------------------------------------------------------ routing by script (ADR 0016)
 
 
+@FINDING
 @pytest.mark.models
 @pytest.mark.usefixtures("real_models")
 def test_armenian_clause_after_an_instruction_on_the_same_line() -> None:
@@ -261,6 +273,7 @@ def test_armenian_clause_after_an_instruction_on_the_same_line() -> None:
     assert leaks(cases) == []
 
 
+@FINDING
 @pytest.mark.models
 @pytest.mark.usefixtures("real_models")
 def test_other_script_clause_after_an_english_instruction() -> None:
@@ -272,6 +285,7 @@ def test_other_script_clause_after_an_english_instruction() -> None:
     assert leaks([(text, "Νίκος Παπαδόγιαννης")]) == []
 
 
+@FINDING
 @pytest.mark.models
 @pytest.mark.usefixtures("real_models")
 def test_capitalised_russian_name_inside_a_lower_case_line() -> None:

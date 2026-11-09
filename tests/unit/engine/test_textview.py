@@ -73,7 +73,51 @@ def _is_zs(code_point: int) -> bool:
     return unicodedata.category(chr(code_point)) == "Zs"
 
 
-_SPECIALS = [NBSP, NNBSP, EN_DASH, MINUS, ZWSP, SHY, BOM]
+def test_every_format_character_the_grapheme_joiner_and_every_tag_are_removed() -> None:
+    """ADR 0013 amended (1c): the whole Cf category, U+034F and U+E0000-E007F go."""
+    format_chars = [chr(c) for c in range(sys.maxunicode + 1) if _is_cf(c)]
+    tags = [chr(c) for c in range(0xE0000, 0xE0080)]
+    text = "a" + "".join(format_chars) + chr(0x034F) + "".join(tags) + "b"
+    view = clean_view(text)
+    assert view.text == "ab"
+    assert view.original_span(1, 2) == (len(text) - 1, len(text))
+
+
+def _is_cf(code_point: int) -> bool:
+    return unicodedata.category(chr(code_point)) == "Cf"
+
+
+def test_every_unicode_decimal_digit_becomes_its_ascii_digit_one_for_one() -> None:
+    decimals = [chr(c) for c in range(sys.maxunicode + 1) if chr(c).isdecimal()]
+    view = clean_view("".join(decimals))
+    assert view.text == "".join(str(unicodedata.decimal(c)) for c in decimals)
+    full_width = "".join(chr(0xFF10 + int(c)) if c.isdigit() else c for c in "12.03.1985")
+    view = clean_view(f"DOB {full_width}")
+    assert view.text == "DOB 12.03.1985"
+    assert view.original_span(4, 14) == (4, 14)
+
+
+def test_digits_that_are_not_decimal_are_left_alone() -> None:
+    superscript_two, circled_one = chr(0x00B2), chr(0x2460)
+    assert (
+        clean_view(f"m{superscript_two} {circled_one}").text == f"m{superscript_two} {circled_one}"
+    )
+
+
+_SPECIALS = [
+    NBSP,
+    NNBSP,
+    EN_DASH,
+    MINUS,
+    ZWSP,
+    SHY,
+    BOM,
+    chr(0x034F),  # combining grapheme joiner
+    chr(0x061C),  # Arabic letter mark
+    chr(0xE0020),  # tag space
+    chr(0xFF11),  # full-width one
+    chr(0x0663),  # Arabic-Indic three
+]
 
 
 @given(st.text(alphabet=st.sampled_from(["a", "1", " ", "-", *_SPECIALS]), max_size=40))

@@ -25,24 +25,47 @@ DASHES = "".join(map(chr, (*range(0x2010, 0x2016), 0x2212, 0xFE58, 0xFE63, 0xFF0
 APOSTROPHES = "".join(map(chr, (0x02BC, 0x2019, 0xFF07)))
 # Variation selectors pick an emoji or glyph style; they show nothing of their own.
 VARIATION_SELECTORS = "".join(map(chr, (*range(0xFE00, 0xFE10), *range(0xE0100, 0xE01F0))))
-# Invisible characters that split a value without showing: removed.
+# Unicode keeps format characters (category Cf) in the BMP and planes 1 and 14 only;
+# scanning those, not all 1.1 million code points, keeps the import fast. A test scans
+# every code point, so a future Unicode release that adds one elsewhere is caught.
+_SCANNED_PLANES = (range(0x10000), range(0x10000, 0x20000), range(0xE0000, 0xF0000))
+
+
+def _format_characters() -> str:
+    return "".join(
+        chr(code)
+        for plane in _SCANNED_PLANES
+        for code in plane
+        if unicodedata.category(chr(code)) == "Cf"
+    )
+
+
+# Invisible characters that split a value without showing: removed. Every format
+# character (soft hyphen, zero-width space and joiners, bidi marks and isolates, word
+# joiner, BOM, Arabic letter mark, the tag characters U+E0001 and U+E0020-E007F), the
+# combining grapheme joiner (category Mn, but it shows nothing) and the whole tags
+# block U+E0000-E007F, unassigned code points included.
 INVISIBLE = (
     "".join(
-        map(
-            chr,
-            (
-                0x00AD,  # soft hyphen
-                0x180E,  # Mongolian vowel separator
-                *range(0x200B, 0x2010),  # zero-width space, (non-)joiner, LRM, RLM
-                *range(0x202A, 0x202F),  # bidi embeddings and overrides
-                *range(0x2060, 0x2065),  # word joiner, invisible operators
-                *range(0x2066, 0x206A),  # bidi isolates
-                0xFEFF,  # byte order mark, zero-width no-break space
-            ),
+        sorted(
+            {
+                *_format_characters(),
+                chr(0x034F),  # combining grapheme joiner
+                *map(chr, range(0xE0000, 0xE0080)),  # tags block
+            }
         )
     )
     + VARIATION_SELECTORS
 )
+# Decimal digits of every script (Arabic-Indic, full width, Devanagari...): 1:1 to ASCII,
+# so every recognizer reads one kind of digit and offsets do not move.
+_DIGIT_FOLD = {
+    code: str(unicodedata.decimal(chr(code)))
+    for plane in _SCANNED_PLANES[:2]
+    for code in plane
+    if not chr(code).isascii() and chr(code).isdecimal()
+}
+NON_ASCII_DIGITS = "".join(map(chr, _DIGIT_FOLD))
 REPLACEMENT = chr(0xFFFD)  # what a lone surrogate becomes, 1:1
 
 
@@ -55,7 +78,20 @@ def _escaped(char: str) -> str:
 
 
 def _char_class(chars: str, extra: str = "") -> str:
-    return "[" + "".join(map(_escaped, chars)) + extra + "]"
+    """A class of `chars` written as ranges: a long list of single characters (the
+    format characters, the digits of every script) makes every search slow."""
+    codes = sorted(set(map(ord, chars)))
+    ranges: list[list[int]] = []
+    for code in codes:
+        if ranges and code == ranges[-1][1] + 1:
+            ranges[-1][1] = code
+        else:
+            ranges.append([code, code])
+    parts = (
+        _escaped(chr(low)) if low == high else f"{_escaped(chr(low))}-{_escaped(chr(high))}"
+        for low, high in ranges
+    )
+    return "[" + "".join(parts) + extra + "]"
 
 
 # Half of a UTF-16 pair with no other half (JavaScript cut an emoji): UTF-8 cannot encode it.
@@ -66,7 +102,9 @@ _DASH = re.compile(_char_class(DASHES))
 _APOSTROPHE = re.compile(_char_class(APOSTROPHES))
 _SURROGATE = re.compile(f"[{_SURROGATES}]")
 _INVISIBLE_RUN = re.compile(_char_class(INVISIBLE) + "+")
-_ANY_SPECIAL = re.compile(_char_class(SPACES + DASHES + APOSTROPHES + INVISIBLE, _SURROGATES))
+_ANY_SPECIAL = re.compile(
+    _char_class(SPACES + DASHES + APOSTROPHES + INVISIBLE + NON_ASCII_DIGITS, _SURROGATES)
+)
 
 
 @dataclass(frozen=True)
@@ -96,12 +134,14 @@ class TextView:
 
 
 def clean_view(text: str) -> TextView:
-    if _ANY_SPECIAL.search(text) is None:
+    # Every character cleaned here is outside ASCII; isascii() is far quicker than the search.
+    if text.isascii() or _ANY_SPECIAL.search(text) is None:
         return TextView(text)  # the common case: nothing to clean, offsets are the same
     replaced = _SPACE.sub(" ", text)
     replaced = _DASH.sub("-", replaced)
     replaced = _APOSTROPHE.sub("'", replaced)
     replaced = _SURROGATE.sub(REPLACEMENT, replaced)
+    replaced = replaced.translate(_DIGIT_FOLD)
     pieces, segment_starts, shifts = [], [0], [0]
     cursor = removed = 0
     for run in _INVISIBLE_RUN.finditer(replaced):
