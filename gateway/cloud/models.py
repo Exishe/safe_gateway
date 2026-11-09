@@ -7,7 +7,6 @@ directory by path and never by name, so spaCy's own downloader never runs.
 """
 
 import hashlib
-import os
 import re
 import shutil
 import tempfile
@@ -17,6 +16,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import httpx
+
+# One answer to "where do models live", shared with the engine that reads them.
+from gateway.engine.ner import models_home
 
 _RELEASES = "https://github.com/explosion/spacy-models/releases/download"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -64,12 +66,6 @@ SPACY_MODELS: Mapping[str, ModelSpec] = {
         "90bd584be86772b647e1b15cdc62e09d3a7182284ee23da95e19c2bf71aa0189",
     ),
 }
-
-
-def models_home() -> Path:
-    """`$SAFEGUARD_HOME/models`, or `~/.safeguard/models`."""
-    base = os.environ.get("SAFEGUARD_HOME")
-    return (Path(base) if base else Path.home() / ".safeguard") / "models"
 
 
 def install_dir(spec: ModelSpec) -> Path:

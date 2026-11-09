@@ -12,6 +12,8 @@ classifiers = [
 dependencies = [
     "httpx>=0.28.1",
     "phonenumbers>=9.0.43",
+    "presidio-analyzer>=2.2.366",
+    "spacy>=3.8.0,<3.9.0",
 ]
 
 [project.scripts]
@@ -93,6 +95,7 @@ markers = [
     "integration: talks to local services on loopback; opts in to sockets",
     "e2e: drives a real browser",
     "benchmark: recall measurement, slow",
+    "models: loads the spaCy models from `safeguard models pull`; skipped when they are absent",
 ]
 
 [tool.coverage.run]
