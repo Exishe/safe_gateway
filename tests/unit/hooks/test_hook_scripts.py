@@ -192,6 +192,24 @@ def test_guards_still_run_when_uv_lock_does_not_parse(tmp_path: Path, script: st
         assert run_project_hook(project, script, "rm -rf /").returncode == 2
 
 
+@pytest.mark.parametrize("script", ["bash-guard.sh", "license-guard.sh", "secret-scan.sh"])
+def test_guards_still_run_when_an_engine_module_does_not_parse(tmp_path: Path, script: str) -> None:
+    # scan_pii imports the engine. If the guards imported it up front, a merge conflict in
+    # an engine module would block every command, including the one that repairs it.
+    project = project_copy(tmp_path, with_venv=True)
+    detect = project / "gateway" / "engine" / "detect.py"
+    detect.write_text(detect.read_text() + "\n<<<<<<< HEAD\nx = 1\n=======\nx = 2\n>>>>>>> y\n")
+
+    repair = run_project_hook(project, script, "git checkout -- gateway/engine/detect.py")
+    assert repair.returncode == 0, repair.stderr
+
+    if script == "bash-guard.sh":
+        assert run_project_hook(project, script, "rm -rf /").returncode == 2
+    if script == "secret-scan.sh":
+        # Committing still needs the staged PII scan, so it fails closed.
+        assert run_project_hook(project, script, "git commit -m wip").returncode == 2
+
+
 def test_a_crash_before_the_guard_starts_still_blocks(tmp_path: Path) -> None:
     project = project_copy(tmp_path, with_venv=True)
     (project / "tools" / "hooks.py").write_text("raise ImportError('broken checkout')\n")

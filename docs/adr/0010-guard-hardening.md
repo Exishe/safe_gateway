@@ -31,7 +31,10 @@ for example:
    open. The wrappers run `.venv`'s Python first and `uv run` only without a
    `.venv`: `uv run` parses `uv.lock` even with `--frozen`, so a lock with
    merge-conflict markers blocked every command, including its own repair
-   (observed during a cherry-pick, 2026-11-09).
+   (observed during a cherry-pick, 2026-11-09). For the same reason
+   `tools/hooks.py` imports `scan_pii`, which loads the engine, only when a
+   commit is being scanned. An engine module with conflict markers then
+   blocks commits, but not the commands that repair it (observed the same day).
 3. **The git hook cannot be skipped from Claude Code.** secret-scan refuses
    commits with `--no-verify`, `-n` or a `core.hooksPath` override, and
    refuses commits when the clone has not run `scripts/install-git-hooks.sh`.

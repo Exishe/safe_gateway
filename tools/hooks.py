@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from tools import check_licenses, check_no_egress, scan_pii
+from tools import check_licenses, check_no_egress
 from tools.shell import raw_commands, simple_commands, unwrap
 
 HookResult = tuple[int, str]
@@ -635,6 +635,11 @@ def secret_scan(event: Event, root: Path) -> HookResult:
         return BLOCK, gate_problem
 
     problems = []
+    # Imported here, not at the top: scan_pii loads the engine, and an engine module that
+    # does not parse (a merge conflict) must not block the commands that repair it. A
+    # commit still needs the scan, so here an import error blocks it (fail closed).
+    from tools import scan_pii  # noqa: PLC0415
+
     code, output = _captured(scan_pii.main, ["--staged", "--repo", str(root)])
     if code:
         problems.append(output)
