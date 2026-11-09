@@ -31,6 +31,7 @@ with each phase; the threat model gets its full review before the first pilot.
 | bash-guard: no `rm -rf`, `curl`/`wget` only to loopback (every non-option word counts as a host; `--proxy` must be loopback; `-K`, `--config`, `--resolve`, `--connect-to`, `wget -i/-e` refused), no git settings or variables that run commands (`core.sshCommand`, `alias.x=!...`, `GIT_SSH_COMMAND`, `GIT_CONFIG_*`), no `git push` to a URL, no `gh gist create`; it looks through wrappers with option values (`sudo -u root`, `timeout -s KILL 5`, `env -C dir`), `bash -c`, `eval`, `find -exec`, `$(...)` and backticks | Claude Code hook before Bash |
 | Permission list: only named commands run without a prompt (pytest, ruff, ty, `python -m tools.*`, `safeguard`, uv sync/add/lock, git status/diff/log/show/add/commit, push to `origin claude/*`); `gh gist`, `gh api`, `git -c` and `git push http*` are denied | `.claude/settings.json` |
 | Bandit, pip-audit, Semgrep, zizmor | CI on every push |
+| Model downloads (`safeguard models pull`): pinned SHA-256 per file; redirects only over https to a fixed list of hosts; a per-file byte cap; partial downloads deleted; a model counts as installed only with a completion marker for its current pin (ADR 0006, amended) | every `models pull`, `models list` and model load |
 
 ## Limits
 
