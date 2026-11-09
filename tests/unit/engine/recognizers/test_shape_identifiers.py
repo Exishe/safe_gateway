@@ -182,17 +182,17 @@ def test_other_lengths_prefixes_and_groupings_are_not_card_shapes(number: str) -
 # ------------------------------------------------------------------ passport and ID card shapes
 
 
-def test_two_letters_and_seven_digits_is_a_passport() -> None:
-    text = "Bring AB1234567 tomorrow"  # pragma: allowlist secret
-    assert typed(PASSPORT_SHAPE, text) == [
-        ("AB1234567", E.PASSPORT, 0.7, "passport_shape")  # pragma: allowlist secret
-    ]
+@pytest.mark.parametrize("value", ["AB1234567", "ab1234567"])  # pragma: allowlist secret
+def test_two_letters_and_seven_digits_is_a_passport(value: str) -> None:
+    """Lower case too (1c #7): a passport number typed in a chat (ADR 0023 amended)."""
+    text = f"Bring {value} tomorrow"
+    assert typed(PASSPORT_SHAPE, text) == [(value, E.PASSPORT, 0.7, "passport_shape")]
 
 
 @pytest.mark.parametrize(
     "text",
     [
-        "code ab1234567 here",  # pragma: allowlist secret
+        "code Ab1234567 here",  # pragma: allowlist secret  (mixed case)
         "code ABC1234567 here",  # pragma: allowlist secret
         "code AB12345678 here",  # pragma: allowlist secret
         "code AB1234567X here",  # pragma: allowlist secret
@@ -255,6 +255,27 @@ def test_id_card_shape_is_exact_and_word_bounded(text: str) -> None:
             "9912 345678",  # pragma: allowlist secret
             E.DRIVER_LICENSE,
         ),
+        # Leak hunt 1c (ADR 0023 amended): one letter and seven or more digits.
+        ("Passport No: N1234567, issued", "N1234567", E.PASSPORT),  # pragma: allowlist secret
+        (
+            "Driver's license: D1234567 (CA)",
+            "D1234567",
+            E.DRIVER_LICENSE,
+        ),  # pragma: allowlist secret
+        ("ID: A1234567890", "A1234567890", E.NATIONAL_ID),  # pragma: allowlist secret
+        # Any case after a keyword.
+        ("my passport is ab1234567 thanks", "ab1234567", E.PASSPORT),  # pragma: allowlist secret
+        ("licence no. dk12345678", "dk12345678", E.DRIVER_LICENSE),  # pragma: allowlist secret
+        # Armenian keywords: social card, public service number, passport, ID card, licence.
+        (
+            "Սոցիալական քարտի համարը 1234567890 է։",
+            "1234567890",
+            E.NATIONAL_ID,
+        ),  # pragma: allowlist secret
+        ("ՀԾՀ 1234567890", "1234567890", E.NATIONAL_ID),  # pragma: allowlist secret
+        ("Անձնագրի համարը AN0123456", "AN0123456", E.PASSPORT),  # pragma: allowlist secret
+        ("նույնականացման քարտ 012345678", "012345678", E.NATIONAL_ID),  # pragma: allowlist secret
+        ("վարորդական վկայական AB123456", "AB123456", E.DRIVER_LICENSE),  # pragma: allowlist secret
     ],
 )
 def test_identifiers_after_a_document_keyword_take_its_type(text: str, value: str, kind: E) -> None:
@@ -297,10 +318,54 @@ def test_codes_without_a_document_keyword_are_not_reported(text: str) -> None:
         "ID: 123456789012345",  # pragma: allowlist secret  (fifteen digits)
         "ID: AB1",
         "ID: ABCDEFGHJK",  # letters only
-        "ID: A1234567890",  # pragma: allowlist secret  (one letter)
-        "passport ab1234567",  # pragma: allowlist secret  (lower case)
+        "ID: A123456",  # pragma: allowlist secret  (one letter, six digits)
+        "passport number abc",
+        "passport: see section 12",
         "Passport office hours are Monday to Friday; ref 123456789",  # pragma: allowlist secret
     ],
 )
 def test_document_keyword_still_needs_the_identifier_shape_and_proximity(text: str) -> None:
+    assert found(ID_DOCUMENT_CONTEXT, text) == []
+
+
+# ------------------------------------------------------------------ Russian series and number
+
+
+@pytest.mark.parametrize(
+    ("text", "value", "kind"),
+    [
+        (
+            "Паспорт серия 4599 № 012345 выдан",
+            "4599 № 012345",
+            E.PASSPORT,
+        ),  # pragma: allowlist secret
+        (
+            "Паспорт: серия 45 99 номер 012345, выдан",  # pragma: allowlist secret
+            "45 99 номер 012345",  # pragma: allowlist secret
+            E.PASSPORT,
+        ),
+        ("паспорт серии 4599 N012345", "4599 N012345", E.PASSPORT),  # pragma: allowlist secret
+        (
+            "Серия: 4599, номер: 012345",
+            "4599, номер: 012345",
+            E.NATIONAL_ID,
+        ),  # pragma: allowlist secret
+    ],
+)
+def test_russian_series_and_number_are_masked_together(text: str, value: str, kind: E) -> None:
+    """1c #5: the series and the number, split by "№" or "номер", are one value."""
+    assert typed(ID_DOCUMENT_CONTEXT, text) == [(value, kind, 0.75, "id_document_context")]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "серия 4599 № 01234",  # pragma: allowlist secret  (five-digit number)
+        "серия 459 № 012345",  # pragma: allowlist secret  (three-digit series)
+        "серия 4599 № 0123456",  # pragma: allowlist secret  (seven-digit number)
+        "сериал 4599 012345",  # pragma: allowlist secret  (not the word)
+        "4599 № 012345",  # pragma: allowlist secret  (no keyword)
+    ],
+)
+def test_russian_series_and_number_need_the_keyword_and_the_shape(text: str) -> None:
     assert found(ID_DOCUMENT_CONTEXT, text) == []

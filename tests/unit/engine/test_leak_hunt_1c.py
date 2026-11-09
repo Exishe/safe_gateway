@@ -134,7 +134,6 @@ def test_date_in_full_width_or_arabic_indic_digits() -> None:
 # ------------------------------------------------------------------ documents (ADR 0023)
 
 
-@FINDING
 def test_russian_passport_series_and_number_split_by_a_number_sign() -> None:
     """The usual Russian form 'серия 4599 № 012345' (or '... номер 012345') breaks the
     _RUN at '№' or a word; '4599' alone is under nine digits, so the series is never
@@ -152,7 +151,6 @@ def test_russian_passport_series_and_number_split_by_a_number_sign() -> None:
     assert leaks(cases) == []
 
 
-@FINDING
 def test_passport_or_licence_with_one_letter_and_seven_digits() -> None:
     """_is_code wants two letters for a mixed code, passport_shape two letters and seven
     digits. One letter and seven digits (Indian and Australian passports, California
@@ -164,7 +162,6 @@ def test_passport_or_licence_with_one_letter_and_seven_digits() -> None:
     assert leaks(cases) == []
 
 
-@FINDING
 def test_lower_case_passport_number() -> None:
     """passport_shape and the keyword _RUN accept only [A-Z]; a passport number typed in
     lower case in a chat is refused with and without the keyword: [] for both."""
@@ -177,7 +174,6 @@ def test_lower_case_passport_number() -> None:
     assert leaks(cases) == []
 
 
-@FINDING
 def test_armenian_social_card_number_after_an_armenian_keyword() -> None:
     """ADR 0023 has an Armenian phone keyword (հեռ) but no Armenian document keyword, so
     a ten-digit social card number after 'սոցիալական քարտ' is never gated in: []."""

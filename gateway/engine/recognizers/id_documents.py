@@ -4,7 +4,8 @@ None of these formats carries a checksum we can validate, so a shape alone is
 used only where it is distinctive (two letters and seven digits; two letters,
 five digits, two letters). Any other letter-digit code is reported only when a
 document keyword stands in the 40 characters before it, because invoice, ticket
-and part numbers look the same.
+and part numbers look the same. A Russian series and number ("серия 4599 №
+012345") is one value, gated by the word for "series" itself.
 """
 
 import re
@@ -18,6 +19,7 @@ CONTEXT_SCORE = 0.75
 _MIN_LENGTH, _MAX_LENGTH = 8, 20
 _MIN_DIGITS_ONLY, _MAX_DIGITS_ONLY = 9, 14
 _MIN_EACH = 2  # letters and digits in a mixed code
+_MIN_DIGITS_ONE_LETTER = 7  # "N1234567": Indian and Australian passports, Californian licences
 # A code has at most this many space- or hyphen-joined parts within 20 characters.
 _MAX_PARTS = 10
 
@@ -38,9 +40,10 @@ class ShapeRecognizer:
         ]
 
 
+# Upper or lower case (a number typed in a chat), not mixed: "Xy1234567" reads as a word.
 PASSPORT_SHAPE = ShapeRecognizer(
     "passport_shape",
-    re.compile(r"(?<![\w-])[A-Z]{2}\d{7}(?![\w-])"),
+    re.compile(r"(?<![\w-])(?:[A-Z]{2}|[a-z]{2})\d{7}(?![\w-])"),
     EntityType.PASSPORT,
     0.7,
 )
@@ -55,19 +58,32 @@ ID_CARD_SHAPE = ShapeRecognizer(
 # ------------------------------------------------------------------ keyword-gated
 
 # Specific keywords name the document; the generic ones only say "an identifier".
+# Armenian: անձնագ- (passport), վարորդական (driver's), սոցիալական քարտ (social card),
+# ՀԾՀ (public service number, on the social card), նույնականացման (identification).
 _KEYWORD = re.compile(
-    r"(?P<passport>(?i:passport|паспорт))"
-    r"|(?P<licence>(?i:licen[cs]e|driver|водительск)|\bDL\b)"
-    r"|(?P<identity>(?i:\bID\b|identity|identification|удостоверени))"
+    r"(?P<passport>(?i:passport|паспорт|անձնագ))"
+    r"|(?P<licence>(?i:licen[cs]e|driver|водительск|վարորդական)|\bDL\b)"
+    r"|(?P<identity>(?i:\bID\b|identity|identification|удостоверени"
+    r"|սոցիալական\s+քարտ|(?<!\w)հծհ(?!\w)|նույնականացման))"
 )
 _SPECIFIC = {"passport": EntityType.PASSPORT, "licence": EntityType.DRIVER_LICENSE}
-# Upper-case letters and digits, joined by single spaces or hyphens, whole words only.
-_RUN = re.compile(r"(?<!\w)[A-Z0-9]+(?!\w)(?:[ \-][A-Z0-9]+(?!\w))*")
-_PART = re.compile(r"[A-Z0-9]+")
+# A part: a word with a digit in any case ("xy1234567"), or a word in capitals ("KELDA").
+# Parts are joined by single spaces or hyphens, whole words only. A lower-case word
+# without a digit ("number", "is") is never a part, so it is never masked as a code.
+_CODE_PART = r"(?:[A-Za-z]*\d[A-Za-z0-9]*|[A-Z]+)(?!\w)"
+_RUN = re.compile(rf"(?<!\w){_CODE_PART}(?:[ \-]{_CODE_PART})*")
+_PART = re.compile(r"[A-Za-z0-9]+")
+# A Russian series and number: "серия 4599 № 012345", "серии 45 99 номер 012345".
+_RU_SERIES_NUMBER = re.compile(
+    # The word for series, spelled as code points: its first three letters have Latin lookalikes.
+    r"(?i:(?<!\w)\u0441\u0435\u0440(?:ия|ии|\.))\s*:?\s*"
+    r"(\d{2} ?\d{2}\s*[,;]?\s*(?:(?:№|N|No\.?|номер|ном\.)\s*:?\s*)?\d{6})(?!\d)",
+)
 
 
 def _is_code(value: str) -> bool:
-    """8 to 20 characters: 9 to 14 digits, or at least two letters and two digits."""
+    """8 to 20 characters: 9 to 14 digits, one letter and at least seven digits, or at
+    least two letters and two digits."""
     if not _MIN_LENGTH <= len(value) <= _MAX_LENGTH:
         return False
     compact = value.replace(" ", "").replace("-", "")
@@ -75,6 +91,8 @@ def _is_code(value: str) -> bool:
     letters = len(compact) - digits
     if letters == 0:
         return _MIN_DIGITS_ONLY <= digits <= _MAX_DIGITS_ONLY
+    if letters == 1:
+        return digits >= _MIN_DIGITS_ONE_LETTER
     return letters >= _MIN_EACH and digits >= _MIN_EACH
 
 
@@ -109,15 +127,25 @@ class IdDocumentContextRecognizer:
 
     def find(self, text: str) -> list[Span]:
         keywords = _Keywords(text)
+        found = self._series_and_numbers(text, keywords)
         if not keywords:
-            return []
-        found = []
+            return found
         for run in _RUN.finditer(text):
             parts = [
                 (run.start() + m.start(), run.start() + m.end())
                 for m in _PART.finditer(run.group())
             ]
             found.extend(self._codes(text, parts, keywords))
+        # A series and number in a code's shape ("4599 N012345") is found by both rules.
+        return list(dict.fromkeys(found))
+
+    def _series_and_numbers(self, text: str, keywords: _Keywords) -> list[Span]:
+        """Russian series and number; a passport keyword nearby makes it a PASSPORT."""
+        found = []
+        for match in _RU_SERIES_NUMBER.finditer(text):
+            start, end = match.span(1)
+            kind = keywords.kind_before(match.start()) or EntityType.NATIONAL_ID
+            found.append(Span(start, end, kind, CONTEXT_SCORE, self.name))
         return found
 
     def _codes(self, text: str, parts: list[tuple[int, int]], keywords: _Keywords) -> list[Span]:
