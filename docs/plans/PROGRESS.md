@@ -25,15 +25,16 @@ local-first.
 
 ## In flight (agent worktrees under `.claude/worktrees/`)
 
-| Work | ADRs | Status |
-|------|------|--------|
-| Fix 7 Phase 2 red-team findings (`test_leak_hunt_2.py`) | 0014 amendment | running |
-| Model download hardening (M3 marker file, M4 redirects and size cap) | 0006 amendment | merged b1b3015 |
-| Fix 15 leak-hunt 1c findings (`test_leak_hunt_1c.py`) + shape property tests + benchmark re-run | 0016/0023 amendments | running |
-| Phase 3 parsers (pdf, docx, xlsx, txt, eml + redacted write-back) | 0017, 0018 | running |
-| Phase 4 proxy (`safeguard serve`, OpenAI/Anthropic shapes, adapters) | 0019, 0020 | running |
-| Phase 5 audit log (hash chain, HMAC, verify, export, retention) | 0021, 0022 | running |
-| Leak-hunt 1c on the newest engine changes (`test_leak_hunt_1c.py`) | none | merged 050ff8c (15 strict xfails) |
+Merged on the branch so far: Phases 2, 3, 4 and 5 (at 29a019a), the M3/M4 model
+download hardening, the 7 Phase 2 red-team fixes, and the leak-hunt 1c tests
+(15 strict xfails). CI passed at 56d1eec.
+
+| Work | Status |
+|------|--------|
+| Fix 15 leak-hunt 1c findings, add shape property tests, re-run the benchmark | running |
+| Wire the proxy AuditSink to AuditLogSink; `GET /audit`; retention; proxy uses `mask_messages`; README status | running |
+| Security review of Phases 2–5 (`security-reviewer`, read-only) | running; fix its Critical and Important findings after |
+| Phase 6 web UI (`apps/web`), Playwright e2e, CI web job | running (`ui-builder`) |
 
 If an agent's worktree branch has commits but the agent is gone, merge what
 is there and finish the remainder yourself or with a new agent.
@@ -52,10 +53,10 @@ is there and finish the remainder yourself or with a new agent.
 
 ## Next, in order
 
-1. Merge the in-flight work above as each piece lands. Launch a fix agent for
-   the leak-hunt 1c findings.
-2. Integrate Phase 4 with Phase 5: wire the proxy's `AuditSink` to
-   `AuditLog.record`, and replace the `GET /audit` 501 stub.
+1. Merge the in-flight work above as each piece lands. Fix the security
+   review's Critical and Important findings.
+2. Leak-hunter round on `gateway/parsers/`; add 12-digit Maestro cards to the
+   card recognizer (a strict xfail from Phase 3).
 3. Pre-tag review:
    - `security-reviewer` agent on the full diff;
    - Semgrep, supply-chain and code-review skills;
