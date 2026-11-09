@@ -37,3 +37,6 @@ Thumbs.db
 
 # Benchmark datasets downloaded by tools/benchmark_openpii.py (never committed)
 .cache/
+
+# Browser test screenshots (tests/e2e/test_web_ui.py)
+tests/e2e/artifacts/

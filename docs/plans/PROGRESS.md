@@ -64,9 +64,10 @@ is there and finish the remainder yourself or with a new agent.
    - run `workflow_dispatch` once for macOS and Windows.
 4. Tag the phases whose exit criteria are met, `v0.1.0` to `v0.5.0`, only
    after each phase's exit criteria have been checked.
-5. Phase 6, web UI and Tauri: follow the outline in `phase-6.md`, using the
-   `ui-builder` agent and the frontend-design skill. Run Playwright
-   click-through.
+5. Phase 6, web UI and Tauri. Part 1, the web UI, is built (`apps/web/`, ADR
+   0024): the e2e click-through passes, and CI has a `web` job. Next is part 2,
+   the Tauri shell with the PyInstaller sidecar, per `phase-6.md`. When
+   `GET /audit` is wired, run the e2e again against real rows.
 6. Phase 7, browser extension. Phase 8 is pilot hardening.
 
 ## Known open items

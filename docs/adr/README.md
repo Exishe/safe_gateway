@@ -29,3 +29,4 @@ never by editing history.
 | [0021](0021-audit-chain-and-retention.md) | Audit log: hash chain, device key and retention | Accepted |
 | [0022](0022-audit-export-format.md) | Audit export: signed JSON and a text PDF summary | Accepted |
 | [0023](0023-shape-and-keyword-recognizers.md) | Shape and keyword recognizers for values that fail validation | Accepted |
+| [0024](0024-web-ui.md) | Web UI: mask first, send through the gateway, restore in the browser | Accepted |

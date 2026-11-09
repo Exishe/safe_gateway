@@ -55,6 +55,29 @@ uv run keyring set safeguard-gateway api-key:openai
 
 The gateway reads the key once at start-up; restart it after changing the key.
 
+### The web UI (Phase 6)
+
+Node 22.12 or later builds it once; the gateway then serves it at
+`http://127.0.0.1:8787/`:
+
+```bash
+cd apps/web && npm ci --ignore-scripts && npm run build && cd ../..
+uv run safeguard serve      # open http://127.0.0.1:8787/
+```
+
+Without `apps/web/dist` the gateway serves the API only. To work on the UI with
+hot reload, set `allow_dev_ui = true` under `[proxy]` in config.toml, restart the
+gateway, and run `npm run dev` in `apps/web` (http://127.0.0.1:5173). Leave the
+flag off otherwise.
+
+Browser tests (Node Playwright with an installed Chromium):
+
+```bash
+SAFEGUARD_E2E=1 uv run pytest tests/e2e -m e2e --no-cov -s
+```
+
+Screenshots go to `tests/e2e/artifacts/web/`.
+
 ### Claude Code
 
 Open the repository in Claude Code. It reads `CLAUDE.md`, the hooks in

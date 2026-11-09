@@ -87,6 +87,41 @@ jobs:
         # Offline audits; action SHAs were pinned from the official repos' tags.
         run: uv run zizmor --offline .github/workflows .github/dependabot.yml
 
+  # The web UI (ADR 0024): licenses, lint with typecheck, unit tests, build.
+  # No dependency cache on purpose (cache poisoning, zizmor); install scripts are off
+  # because nothing in the tree needs them.
+  web:
+    name: web UI (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Licenses of shipped and direct packages (hard rule 1)
+        run: npm run licenses
+
+      - name: Lint and typecheck
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
   platforms:
     name: tests (${{ matrix.os }})
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
