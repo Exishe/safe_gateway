@@ -1,0 +1,93 @@
+name: ci
+
+# Every push and PR: one Ubuntu job. macOS and Windows only on version tags or by
+# hand, because private-repo minutes on those runners count 10x and 2x (ADR 0007).
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HYPOTHESIS_PROFILE: ci
+
+jobs:
+  checks:
+    name: checks (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Types
+        run: uv run ty check
+
+      - name: No egress from the engine (hard rule 2)
+        run: uv run python -m tools.check_no_egress
+
+      - name: Licenses of shipped dependencies (hard rule 1)
+        run: uv run python -m tools.check_licenses
+
+      - name: Tests
+        run: uv run pytest
+
+      - name: Bandit (medium and above)
+        run: uv run bandit -c pyproject.toml -r gateway tools -q -ll
+
+      - name: Dependency CVEs
+        run: |
+          uv export --locked --all-groups --no-emit-project --format requirements-txt \
+            -o "$RUNNER_TEMP/requirements.txt" -q
+          uv run pip-audit --disable-pip --progress-spinner off -r "$RUNNER_TEMP/requirements.txt"
+
+      - name: Semgrep
+        run: >-
+          uvx semgrep==1.184.0 scan --config p/python --config p/secrets
+          --metrics=off --error gateway tools
+
+      - name: Workflow security
+        # Offline audits; action SHAs were pinned from the official repos' tags.
+        run: uv run zizmor --offline .github/workflows .github/dependabot.yml
+
+  platforms:
+    name: tests (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest] # macos-14 is arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Tests
+        run: uv run pytest
