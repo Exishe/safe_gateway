@@ -287,3 +287,49 @@ def test_unhashable_block_index_from_upstream_passes_untouched() -> None:
     assert rewriter.on_event(_event("content_block_stop", index={"a": 1}))[-1].event == (
         "content_block_stop"
     )
+
+
+# ------------------------------------------------------------------ cache_control (review M3)
+
+
+def _with_cache_control(value: object, *, system: bool = False) -> dict[str, Any]:
+    block = {"type": "text", "text": "x", "cache_control": value}
+    if system:
+        return _body(system=[block])
+    raw = _body()
+    raw["messages"][1]["content"] = [block]
+    return raw
+
+
+@pytest.mark.parametrize(
+    "value",
+    [{"type": "ephemeral"}, {"type": "ephemeral", "ttl": "5m"}, {"type": "ephemeral", "ttl": "1h"}],
+)
+@pytest.mark.parametrize("system", [False, True])
+def test_documented_cache_control_passes(value: dict[str, str], *, system: bool) -> None:
+    body = ANTHROPIC.validate(_with_cache_control(value, system=system))
+    block = body["system"][0] if system else body["messages"][1]["content"][0]
+    assert block["cache_control"] == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"type": "ephemeral", "note": "Alice Example, alice@example.org"},  # free text upstream
+        {"type": "Alice Example"},
+        {"type": "ephemeral", "ttl": "five minutes"},
+        {"type": "ephemeral", "ttl": "5d"},
+        {"type": "ephemeral", "ttl": "٥m"},  # an Arabic-Indic five is not a digit here
+        {"type": "ephemeral", "ttl": 5},
+        {"ttl": "5m"},
+        {},
+        "ephemeral",
+        ["ephemeral"],
+    ],
+)
+@pytest.mark.parametrize("system", [False, True])
+def test_any_other_cache_control_is_refused(value: object, *, system: bool) -> None:
+    error = _rejected(_with_cache_control(value, system=system))
+    assert error.status == 400
+    assert "cache_control" in error.message
+    assert "Alice" not in error.message

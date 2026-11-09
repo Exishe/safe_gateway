@@ -328,27 +328,40 @@ def test_valid_parameters_pass() -> None:
     assert OPENAI.validate(raw) == raw
 
 
-def test_json_schema_text_values_are_masked_but_keys_and_name_are_not() -> None:
+def test_json_schema_values_and_property_names_are_masked_but_its_name_is_not() -> None:
+    # Review M3: a property name can hold personal data as well as a value can.
     schema = {
         "name": "client_card",
         "strict": True,
         "description": "about Jane",
         "schema": {
             "type": "object",
-            "properties": {"who": {"type": "string", "enum": ["Jane", "Bob"]}},
+            "properties": {"jane@example.org": {"type": "string", "enum": ["Jane", "Bob"]}},
         },
     }
     body = OPENAI.validate(_body(response_format={"type": "json_schema", "json_schema": schema}))
     texts = OPENAI.collect_texts(body)
-    assert texts[4:] == ["about Jane", "object", "string", "Jane", "Bob"]
-    out = OPENAI.with_texts(body, [*texts[:4], "D", "object", "string", "P1", "P2"])
+    assert texts[4:] == [
+        "about Jane",
+        "type",
+        "object",
+        "properties",
+        "jane@example.org",
+        "type",
+        "string",
+        "enum",
+        "Jane",
+        "Bob",
+    ]
+    masked = ["D", "type", "object", "properties", "[EMAIL_1]", "type", "string", "enum"]
+    out = OPENAI.with_texts(body, [*texts[:4], *masked, "P1", "P2"])
     assert out["response_format"]["json_schema"] == {
         "name": "client_card",
         "strict": True,
         "description": "D",
         "schema": {
             "type": "object",
-            "properties": {"who": {"type": "string", "enum": ["P1", "P2"]}},
+            "properties": {"[EMAIL_1]": {"type": "string", "enum": ["P1", "P2"]}},
         },
     }
 

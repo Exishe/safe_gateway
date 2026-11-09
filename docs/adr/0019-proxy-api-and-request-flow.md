@@ -190,3 +190,17 @@ checker; it allows nothing new.
    400 when it does not fit; the configuration file and the audit row use the
    same rule. Model ids in use (`gpt-4o-mini`, `claude-...`, `qwen2.5:3b`,
    `hf.co/org/model:Q4_K_M`, Azure deployment names) fit.
+2. **Anthropic `cache_control` (M3).** It was copied as sent, so any key or
+   string in it reached the upstream unmasked. Only `{"type": "ephemeral"}`
+   with an optional `ttl` of one to four ASCII digits and `s`, `m` or `h`
+   (`5m`, `1h`) passes, on message and system blocks alike; anything else is a
+   400 that does not repeat the value.
+3. **JSON schema property names (M3).** In an OpenAI `response_format` JSON
+   schema, object keys are now masked like its string values (decision point
+   2 above said keys were kept). Property names can hold personal data, and
+   masking rather than refusing keeps such schemas usable: each key is visited
+   just before its value, mask gives distinct keys distinct forms, and a
+   `required` entry naming a key is masked to the same placeholder through the
+   request's one mapping, so the schema stays consistent. The model answers
+   with placeholder keys, which rehydration restores in the answer text. The
+   schema's `name` stays a short token.

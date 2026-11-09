@@ -191,8 +191,8 @@ def _rewrite(body: Body, fn: Callable[[str], str]) -> Body:
         out["stop"] = [fn(s) for s in stop]
     response_format = body.get("response_format")
     if isinstance(response_format, dict) and isinstance(response_format.get("json_schema"), dict):
-        # Descriptions, enums and examples in a schema can hold personal data; the
-        # schema's keys and its name are structure and are kept.
+        # Descriptions, enums, examples and property names in a schema can hold
+        # personal data (review M3); its name is a short token and is kept.
         schema = response_format["json_schema"]
         rewritten = {
             key: value if key in {"name", "strict"} else rewrite_values(value, fn)

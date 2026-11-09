@@ -73,11 +73,17 @@ def replace(rewrite: Rewrite, body: Body, texts: Sequence[str]) -> Body:
 
 
 def rewrite_values(value: object, fn: Callable[[str], str]) -> object:
-    """`value` with every string value rewritten; object keys are left as they are."""
+    """`value` with every string rewritten, object keys included, each key before its value.
+
+    Keys are rewritten too (security review M3): in a JSON schema they are property
+    names, which can hold personal data as well as values can. Mask gives two distinct
+    keys two distinct masked forms, so no key is lost.
+    """
     if isinstance(value, str):
         return fn(value)
     if isinstance(value, dict):
-        return {key: rewrite_values(item, fn) for key, item in value.items()}
+        # A dict comprehension evaluates each key before its value.
+        return {fn(key): rewrite_values(item, fn) for key, item in value.items()}
     if isinstance(value, list):
         return [rewrite_values(item, fn) for item in value]
     return value

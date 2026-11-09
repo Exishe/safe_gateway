@@ -1,6 +1,7 @@
 """The Anthropic Messages shape: what is forwarded, masked and restored (ADR 0019)."""
 
 import json
+import re
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -42,6 +43,24 @@ _TOOL_BLOCKS = frozenset(
 )
 _MEDIA_BLOCKS = frozenset({"image", "document"})
 _ROLES = frozenset({"user", "assistant"})
+# Anthropic's documented cache control, and nothing else: any other key or value
+# would be free text sent upstream unmasked (security review M3).
+_CACHE_TTL = re.compile(r"[0-9]{1,4}[smh]")
+CACHE_CONTROL_RULE = "{'type': 'ephemeral'} with an optional 'ttl' such as '5m' or '1h'"
+
+
+def _cache_control(value: object) -> dict[str, str]:
+    ttl = value.get("ttl", "5m") if isinstance(value, dict) else None
+    if (
+        not isinstance(value, dict)
+        or value.get("type") != "ephemeral"
+        or not set(value) <= {"type", "ttl"}
+        or not isinstance(ttl, str)
+        or not _CACHE_TTL.fullmatch(ttl)
+    ):
+        msg = f"'cache_control' must be {CACHE_CONTROL_RULE}"
+        raise invalid(msg)
+    return dict(value)
 
 
 def _thinking(name: str, value: object) -> None:
@@ -93,8 +112,8 @@ def _block(block: object) -> Body:
     for key, value in block.items():
         if key in {"type", "text"} or value is None:
             continue
-        if key == "cache_control":  # caching hints carry no text
-            out[key] = value
+        if key == "cache_control":
+            out[key] = _cache_control(value)
             continue
         msg = f"text block field {key!r} is not forwarded by the gateway"
         raise unsupported(msg)
