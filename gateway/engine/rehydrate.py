@@ -1,44 +1,89 @@
 """Put the original values back into a model's answer (ADR 0003, ADR 0004 point 3)."""
 
+from enum import StrEnum
+
+from gateway.engine.links import LinkContext
 from gateway.engine.mask import Mapping
 from gateway.engine.placeholders import MAX_PARTIAL, TOKEN, canonical_of, could_become_token
 
 
-def _restore(
-    text: str, start: int, stop: int, mapping: Mapping, unresolved: dict[str, None]
+class UnresolvedReason(StrEnum):
+    """Why a placeholder-shaped token was left as written."""
+
+    NOT_IN_MAPPING = "not_in_mapping"
+    # ADR 0003 amendment 1: a value is never restored inside a link, where a client
+    # could send it to a host the answer chose (security review I3).
+    INSIDE_LINK = "inside_link"
+
+
+Unresolved = dict[str, UnresolvedReason]
+
+
+def _restore(  # noqa: PLR0913  (the scan's whole state, passed in by both callers)
+    text: str,
+    start: int,
+    stop: int,
+    *,
+    mapping: Mapping,
+    unresolved: Unresolved,
+    links: LinkContext,
 ) -> str:
     """text[start:stop] with its tokens restored; tokens left as written go to `unresolved`.
 
     The scan neither slices nor sets an end position, so rule 3's edges see the real
     characters on both sides. The caller picks `stop` so that no token straddles it.
-    A restored value is never scanned again.
+    A restored value is never scanned again for tokens, but `links` reads it: the
+    client sees it, so it is part of the context of what follows.
     """
     pieces: list[str] = []
     cursor = start
     for match in TOKEN.finditer(text, start):
         if match.start() >= stop:
             break
-        pieces.append(text[cursor : match.start()])
-        # ADR 0003, first rule that matches wins. TOKEN only matches the three shapes:
-        # rule 1 is an exact key; rules 2 (bracketed, any case, `_`/space/`-`) and 3
-        # (unbracketed, upper case) restore when their canonical key is in the mapping.
+        plain = text[cursor : match.start()]
+        links.feed(plain)
+        pieces.append(plain)
         token = match.group()
-        original = mapping.original(token)
-        if original is None:
-            original = mapping.original(canonical_of(match))
-        if original is None:
-            unresolved[token] = None
-            original = token
-        pieces.append(original)
+        restored = _restore_token(token, canonical_of(match), mapping, links)
+        if restored is None:
+            unresolved.setdefault(token, _reason(links))
+            restored = token
+        links.feed(restored)
+        pieces.append(restored)
         cursor = match.end()
-    pieces.append(text[cursor:stop])
+    tail = text[cursor:stop]
+    links.feed(tail)
+    pieces.append(tail)
     return "".join(pieces)
+
+
+def _restore_token(token: str, key: str, mapping: Mapping, links: LinkContext) -> str | None:
+    """The original value of a token, or None when it stays as written."""
+    if links.inside:
+        return None
+    # ADR 0003, first rule that matches wins. TOKEN only matches the three shapes:
+    # rule 1 is an exact key; rules 2 (bracketed, any case, `_`/space/`-`) and 3
+    # (unbracketed, upper case) restore when their canonical key is in the mapping.
+    original = mapping.original(token)
+    return original if original is not None else mapping.original(key)
+
+
+def _reason(links: LinkContext) -> UnresolvedReason:
+    return UnresolvedReason.INSIDE_LINK if links.inside else UnresolvedReason.NOT_IN_MAPPING
+
+
+def rehydrate_explained(text: str, mapping: Mapping) -> tuple[str, Unresolved]:
+    """(restored text, each token left as written -> why), tokens once each, in order."""
+    unresolved: Unresolved = {}
+    restored = _restore(
+        text, 0, len(text), mapping=mapping, unresolved=unresolved, links=LinkContext()
+    )
+    return restored, unresolved
 
 
 def rehydrate(text: str, mapping: Mapping) -> tuple[str, list[str]]:
     """(restored text, placeholder-shaped tokens left as written, each once, in order)."""
-    unresolved: dict[str, None] = {}
-    restored = _restore(text, 0, len(text), mapping, unresolved)
+    restored, unresolved = rehydrate_explained(text, mapping)
     return restored, list(unresolved)
 
 
@@ -65,11 +110,16 @@ class StreamingRehydrator:
         self._mapping = mapping
         self._pending = ""
         self._before = ""  # the last character already emitted, for rule 3's left edge
-        self._unresolved: dict[str, None] = {}
+        self._unresolved: Unresolved = {}
+        self._links = LinkContext()  # fed exactly what has been emitted
 
     @property
     def unresolved(self) -> list[str]:
         return list(self._unresolved)
+
+    @property
+    def reasons(self) -> Unresolved:
+        return dict(self._unresolved)
 
     @property
     def held(self) -> int:
@@ -89,7 +139,14 @@ class StreamingRehydrator:
             return ""
         text = self._before + self._pending
         start = len(self._before)
-        out = _restore(text, start, start + cut, self._mapping, self._unresolved)
+        out = _restore(
+            text,
+            start,
+            start + cut,
+            mapping=self._mapping,
+            unresolved=self._unresolved,
+            links=self._links,
+        )
         self._before = self._pending[cut - 1]
         self._pending = self._pending[cut:]
         return out

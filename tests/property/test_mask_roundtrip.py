@@ -8,7 +8,7 @@ from hypothesis import strategies as st
 from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.mask import Mapping, mask, mask_messages
 from gateway.engine.placeholders import TOKEN
-from gateway.engine.rehydrate import rehydrate
+from gateway.engine.rehydrate import UnresolvedReason, rehydrate, rehydrate_explained
 from gateway.engine.types import EntityType, Span
 from tests.strategies import any_spans, placeholder_texts, texts_with_identifiers, us_ssns
 
@@ -16,10 +16,22 @@ NO_NER = EngineConfig(ner="off")
 WRITTEN = re.compile(r"\[[A-Z_]+_[0-9]+\]")  # a placeholder as mask writes it
 
 
+def restored(masked: str, mapping: Mapping) -> tuple[str, list[str]]:
+    """rehydrate(), for text with no placeholder inside a link.
+
+    A placeholder that lands inside a link (`//[PERSON_1]`) is never restored (ADR 0003
+    amendment 1), so the exact round trip holds only outside links; such examples are
+    discarded here and the rule itself is tested in tests/unit/engine/test_rehydrate_links.py.
+    """
+    text, reasons = rehydrate_explained(masked, mapping)
+    assume(UnresolvedReason.INSIDE_LINK not in reasons.values())
+    return text, list(reasons)
+
+
 @given(texts_with_identifiers())
 def test_round_trip_with_detected_spans(text: str) -> None:
     masked, mapping = mask(text, detect(text, config=NO_NER))
-    assert rehydrate(masked, mapping) == (text, [])
+    assert restored(masked, mapping) == (text, [])
 
 
 @st.composite
@@ -32,7 +44,7 @@ def texts_and_spans(draw: st.DrawFn, *, disjoint: bool) -> tuple[str, list[Span]
 def test_round_trip_with_any_spans(sample: tuple[str, list[Span]]) -> None:
     text, spans = sample
     masked, mapping = mask(text, spans)
-    assert rehydrate(masked, mapping) == (text, [])
+    assert restored(masked, mapping) == (text, [])
 
 
 @given(st.data())
@@ -93,7 +105,7 @@ def test_same_surface_same_placeholder(surfaces: list[str]) -> None:
 def test_one_mapping_shared_by_messages_round_trips_each(texts: list[str]) -> None:
     mapping = Mapping()
     masked = [mask(text, detect(text, config=NO_NER), mapping)[0] for text in texts]
-    assert [rehydrate(m, mapping) for m in masked] == [(text, []) for text in texts]
+    assert [restored(m, mapping) for m in masked] == [(text, []) for text in texts]
 
 
 @given(us_ssns(), st.sampled_from(["ref", "x", "_", "("]), st.sampled_from([".pdf", "", "th", ")"]))
