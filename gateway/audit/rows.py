@@ -38,7 +38,7 @@ _LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
 # A host name or IPv4 address, or a bracketed IPv6 address; then an optional port.
 _HOST = re.compile(rf"(?:{_LABEL}(?:\.{_LABEL})*|\[[0-9A-Fa-f:.]+\])(?::\d{{1,5}})?")
 _MAX_HOST = 253
-_MODEL = re.compile(r"[A-Za-z0-9._:/@+-]{1,200}")
+_MODEL = re.compile(r"[A-Za-z0-9._:/-]{1,128}")  # as MODEL_NAME (review M1)
 _ENTITY = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
 _MAX_ENTITY_TYPES = 64
 _MAX_SESSION_ID = 512
@@ -87,7 +87,7 @@ def _host(value: str) -> str:
 
 def _model(value: str) -> str:
     if not _MODEL.fullmatch(value):
-        _refuse("model", "must be 1 to 200 of A-Z a-z 0-9 . _ : / @ + -")
+        _refuse("model", "must be 1 to 128 of A-Z a-z 0-9 . _ : / -")
     return value
 
 

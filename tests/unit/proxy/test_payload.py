@@ -59,12 +59,28 @@ def test_configured_model_wins() -> None:
     assert choose_model("qwen2.5:3b", "gpt-4o") == "qwen2.5:3b"
 
 
-@pytest.mark.parametrize("model", ["qwen2.5:3b", "gpt-4o-mini", "hf.co/org/model:Q4_K_M"])
+@pytest.mark.parametrize(
+    "model", ["qwen2.5:3b", "gpt-4o-mini", "hf.co/org/model:Q4_K_M", "m" * 128, "a_b"]
+)
 def test_requested_model_passes_when_none_is_configured(model: str) -> None:
     assert choose_model(None, model) == model
 
 
-@pytest.mark.parametrize("model", [None, "", "two words", 3, "x" * 201, "a\nb"])
+@pytest.mark.parametrize(
+    "model",
+    [
+        None,
+        "",
+        "two words",
+        3,
+        "x" * 129,
+        "a\nb",
+        "a\tb",
+        "jane.doe@example.org",  # review M1: an email in `model` would reach the upstream
+        "gpt-4o@jane.doe",
+        "m+1",
+    ],
+)
 def test_bad_or_missing_model_is_400(model: object) -> None:
     with pytest.raises(RequestRejected, match="model") as error:
         choose_model(None, model)

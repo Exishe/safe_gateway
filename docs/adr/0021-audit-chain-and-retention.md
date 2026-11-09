@@ -46,8 +46,9 @@ retention without making the rest unverifiable.
    - `upstream_host`: a host name, IPv4 address or bracketed IPv6 address with
      an optional port, at most 253 characters. A URL, path, query or user
      name is refused.
-   - `model`: 1 to 200 characters of `A-Z a-z 0-9 . _ : / @ + -`. No spaces,
-     so no sentence fits.
+   - `model`: 1 to 128 characters of `A-Z a-z 0-9 . _ : / -`. No spaces,
+     so no sentence fits, and no `@`, so no email address (ADR 0019 amendment
+     1, review M1; it was 200 characters with `@` and `+` before).
    - `entity_counts`: a dict of type names (`[A-Z][A-Z0-9_]{0,63}`, at most 64)
      to counts, stored as canonical JSON.
    - `masked_payload_sha256`: 64 lowercase hex characters.

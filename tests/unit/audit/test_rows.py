@@ -75,7 +75,9 @@ def test_hosts_with_optional_port_are_accepted(host: str) -> None:
     assert request_content(**valid(upstream_host=host))["upstream_host"] == host
 
 
-@pytest.mark.parametrize("model", ["qwen2.5:3b", "library/llama3:latest", "gpt-4o", "m@v+1"])
+@pytest.mark.parametrize(
+    "model", ["qwen2.5:3b", "library/llama3:latest", "gpt-4o", "hf.co/org/m:Q4_K_M"]
+)
 def test_model_names_are_accepted(model: str) -> None:
     assert request_content(**valid(model=model))["model"] == model
 
@@ -90,7 +92,8 @@ def test_model_names_are_accepted(model: str) -> None:
         {"upstream_host": ""},
         {"model": "gpt 4"},
         {"model": ""},
-        {"model": "m" * 201},
+        {"model": "m" * 129},
+        {"model": "jane.doe@example.org"},  # review M1
         {"model": "John Smith asked about his card"},
         {"entity_counts": {"person": 1}},
         {"entity_counts": {"PERSON": -1}},

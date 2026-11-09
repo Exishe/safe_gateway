@@ -5,7 +5,7 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from gateway.cloud.providers import MODEL_NAME
+from gateway.cloud.providers import MODEL_NAME, MODEL_NAME_CHARS
 from gateway.proxy.errors import RequestRejected, invalid
 
 PLACEHOLDER_INSTRUCTION = (
@@ -112,7 +112,7 @@ def choose_model(configured: str | None, requested: object) -> str:
         return configured
     if not isinstance(requested, str) or not MODEL_NAME.fullmatch(requested):
         msg = (
-            "'model' is missing or not a model id (letters, digits and ._:/@+- only), "
+            f"'model' is missing or not a model id ({MODEL_NAME_CHARS}), "
             "and the gateway has no model configured"
         )
         raise invalid(msg)

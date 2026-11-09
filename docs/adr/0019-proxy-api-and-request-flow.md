@@ -68,8 +68,8 @@ user's browser, can send it requests.
    It is added on every request, so the request shape does not depend on what
    was found.
 5. Model: the configured `model` replaces the client's; without one the
-   client's passes through (letters, digits and `._:/@+-` only); with neither,
-   400.
+   client's passes through (letters, digits and `._:/-` only, at most 128
+   characters; amendment 1); with neither, 400.
 6. Forward through `gateway/cloud/` (ADR 0020). Only the gateway's own headers
    go upstream; the client's headers, its `Authorization` included, never do.
 7. Rehydrate. Non-streaming: every text field of the answer. Streaming: the
@@ -180,3 +180,13 @@ checker; it allows nothing new.
   tool support will escape them.
 - An OpenAI-shaped client cannot use an Anthropic key, and the reverse, until
   shape translation is added.
+
+## Amendment 1, 2026-11-09: closing free-text channels and local limits (security review)
+
+1. **Model ids (M1).** `MODEL_NAME` (`gateway/cloud/providers.py`) is now
+   `[A-Za-z0-9._:/-]{1,128}`: no `@`, `+` or whitespace. A client's `model`
+   was forwarded verbatim and stored in the audit `model` column, so
+   `jane.doe@example.org` could travel there unmasked. The client's id is a
+   400 when it does not fit; the configuration file and the audit row use the
+   same rule. Model ids in use (`gpt-4o-mini`, `claude-...`, `qwen2.5:3b`,
+   `hf.co/org/model:Q4_K_M`, Azure deployment names) fit.

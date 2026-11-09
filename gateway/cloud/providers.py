@@ -51,9 +51,12 @@ PROVIDERS: Mapping[Provider, ProviderInfo] = MappingProxyType(
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
-# A model id is forwarded as written, so it may not carry free text: `gpt-4o-mini`,
-# `claude-x`, `qwen2.5:3b`, `hf.co/org/model:Q4_K_M` and Azure deployment names fit.
-MODEL_NAME = re.compile(r"[A-Za-z0-9._:/@+-]{1,200}")
+# A model id is forwarded as written and stored in the audit log, so it may not carry
+# free text: `gpt-4o-mini`, `claude-x`, `qwen2.5:3b`, `hf.co/org/model:Q4_K_M` and Azure
+# deployment names fit. No `@` or whitespace, so not an email or a sentence (review M1).
+MODEL_NAME_MAX = 128
+MODEL_NAME_CHARS = "letters, digits and ._:/- only, at most 128 characters"
+MODEL_NAME = re.compile(rf"[A-Za-z0-9._:/-]{{1,{MODEL_NAME_MAX}}}")
 
 
 def is_loopback_host(host: str) -> bool:

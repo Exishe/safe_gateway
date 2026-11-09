@@ -170,6 +170,9 @@ def test_key_message_names_the_field_not_the_value(tmp_path: Path) -> None:
         ({"retention_days": 6}, "retention_days"),  # under the floor (review M10)
         ({"model": ""}, "model"),
         ({"model": 3}, "model"),
+        ({"model": "jane.doe@example.org"}, "model"),  # review M1: no @ in a model id
+        ({"model": "gpt 4"}, "model"),
+        ({"model": "m" * 129}, "model"),
         ({"proxy": {"max_body_bytes": 0}}, "max_body_bytes"),
         ({"proxy": {"cors_allow_origins": "*"}}, "cors_allow_origins"),
         ({"proxy": {"cors_allow_origins": ["*"]}}, "cors_allow_origins"),

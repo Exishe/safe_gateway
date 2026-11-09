@@ -7,7 +7,13 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from gateway.cloud.providers import MODEL_NAME, PROVIDERS, Provider, check_base_url
+from gateway.cloud.providers import (
+    MODEL_NAME,
+    MODEL_NAME_CHARS,
+    PROVIDERS,
+    Provider,
+    check_base_url,
+)
 from gateway.engine.types import EntityType
 
 DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024
@@ -167,7 +173,7 @@ def _base_url(data: Mapping[str, object], provider: Provider) -> str:
 def _model(data: Mapping[str, object], provider: Provider) -> str | None:
     model = _string(data, "model")
     if model is not None and not MODEL_NAME.fullmatch(model):
-        msg = "'model' may hold letters, digits and ._:/@+- only"
+        msg = f"'model' may hold {MODEL_NAME_CHARS}"
         raise ConfigError(msg)
     if model is None and provider is Provider.AZURE_OPENAI:
         msg = "'model' (the deployment name) is required for provider azure_openai"

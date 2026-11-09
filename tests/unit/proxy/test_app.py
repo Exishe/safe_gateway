@@ -327,3 +327,15 @@ def test_dev_ui_origins_need_the_flag(origin: str) -> None:
     response = client.post("/mask", json={"text": "x"}, headers=headers)
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == origin
+
+
+def test_a_model_id_holding_an_email_is_refused_before_anything_is_sent() -> None:
+    # Review M1: `model` is forwarded as written and lands in the audit log.
+    sink = RecordingSink()
+    response = _client(model=None, sink=sink).post(
+        "/v1/chat/completions",
+        json={"model": DATA.email, "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert response.status_code == 400
+    assert DATA.email not in response.text
+    assert [(e.outcome, e.model) for e in sink.events] == [("rejected", None)]
