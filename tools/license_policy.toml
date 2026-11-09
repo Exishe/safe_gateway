@@ -19,7 +19,8 @@ names = [
     "CC0 1.0 Universal (CC0 1.0) Public Domain Dedication",
     # Free-text spellings
     "BSD", "BSD 3-Clause", "BSD 2-Clause", "Apache 2.0", "Apache License 2.0",
-    "Apache License, Version 2.0", "Apache Software License 2.0", "PSF", "MPL 2.0",
+    "Apache License, Version 2.0", "Apache Software License 2.0", "Apache 2.0 License",
+    "PSF", "MPL 2.0",
 ]
 
 [forbidden]
@@ -42,3 +43,4 @@ packages = ["pymupdf", "pymupdfb", "pymupdf4llm", "fitz", "pdftext"]
 # package-name = "who reviewed it, when, and why it is acceptable"
 # Exceptions can only clear "review". They never clear "forbidden".
 regex = "Approved by the project owner on 2026-11-09 (Phase 1b, ADR 0012). Apache-2.0 AND CNRI-Python: the CNRI part is Python 1.6's license, permissive and OSI-approved, allowing commercial use with the notice kept. Pulled in by presidio-analyzer only. Attribute in THIRD_PARTY_NOTICES.md."
+torch = "Decided on 2026-11-09 (Phase 1c) on the precedent of the owner-approved regex exception; the owner may revoke it by deleting this line. License expression adds BSL-1.0 (Boost) and Apache-2.0 WITH LLVM-exception to MIT/BSD/Apache: both permissive and OSI-approved, commercial use allowed. Needed by GLiNER (Armenian NER). Attribute in THIRD_PARTY_NOTICES.md."
