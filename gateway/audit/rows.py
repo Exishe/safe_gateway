@@ -194,11 +194,11 @@ def stored_problem(row: Mapping[str, object]) -> str | None:
         return "column kind is neither request nor checkpoint"
     if row.get("local") not in (0, 1, None):
         return "column local is neither 0 nor 1"
-    bad = [c for c in ("prev_hash", "row_hash", "hmac") if not _is_hex64(row.get(c))]
+    bad = [c for c in ("prev_hash", "row_hash", "hmac") if not is_hex64(row.get(c))]
     return f"column {bad[0]} is not 64 hex characters" if bad else None
 
 
-def _is_hex64(value: object) -> bool:
+def is_hex64(value: object) -> bool:
     return isinstance(value, str) and HEX64.fullmatch(value) is not None
 
 
