@@ -52,7 +52,6 @@ def note(tmp_path: Path) -> Path:
 # ------------------------------------------------------------------ (a) nothing detected leaks
 
 
-@FINDING
 def test_known_value_repeated_where_detection_misses_it() -> None:
     """The SSN is detected in message 1 and is in the mapping as [SSN_1], yet message 2
     went upstream as `Scan saved as ref123-45-6780.pdf`: mask only replaces the spans

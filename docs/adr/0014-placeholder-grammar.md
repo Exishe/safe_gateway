@@ -42,3 +42,41 @@ a bound on how long a token can be.
   format and needs a new ADR (ADR 0001, consequences).
 - Property tests assert the round trip for detected and arbitrary spans, and
   that streamed output equals `rehydrate()` for random chunkings.
+
+## Amendment 1, 2026-11-09: known values, Unicode edges, a shared mapping (leak hunt 2)
+
+1. **Known values are masked wherever they recur.** Detection can miss a value it
+   found elsewhere (`ref123-45-6780.pdf`). Besides the spans it is given, `mask`
+   replaces every exact occurrence of a value the mapping holds, this text's spans
+   included; `mask_messages` detects every message before masking any, so a value
+   detected in a later message is also masked in an earlier one. Matching uses the
+   mapping's own key, the exact surface (ADR 0001 point 3): case-sensitive, no
+   normalisation; another spelling is left to detection. Literals are not swept:
+   they are not personal data, and point 4 decides where they are.
+2. **Boundary rule.** An occurrence counts unless a digit touches a digit edge of
+   the value or a letter (any script) touches a letter edge. So a letter or `_`
+   next to a number does not hide it (`ref123-45-6780.pdf`, `123-45-6780th`), and a
+   letter next to a name means another word (`Also` does not hold `Al`), while
+   `Al's` and `Al2` do. An edge that is neither digit nor letter (`+`, `(`) has no
+   condition. A digit next to a digit edge is another number, left to detection.
+3. **Overlaps.** At each start the longest value wins, and overlapping occurrences
+   are all found and united under point 5, so overlapping values are never split.
+4. **Cost.** All values are compiled into one regular expression shaped as a
+   prefix tree (flat below 24 levels, so values that prefix each other cannot
+   exhaust the compiler), cached on the mapping until a value is added and
+   dropped from `re`'s module-wide cache, which would otherwise keep the values
+   after the mapping is cleared. Compiling 5,000 values takes about 0.4 s, once
+   per change of the mapping; scanning 960k characters with them takes well under
+   a second (`tests/unit/engine/test_known.py`).
+5. **Numbering.** `mask_messages` numbers values in order of first detection
+   across messages, so an earlier message keeps its placeholders when a later turn
+   adds a message; a value swept in an earlier message takes the next number.
+6. **Unicode edges.** Point 3's "word character" is any Unicode word character
+   (`\w` without `re.ASCII`), so `PERSON_1` followed by a full-width 2 is not
+   restored. The token grammar itself stays ASCII: type names are spelled as
+   explicit `[Pp][Ee]...` classes, because Unicode case folding would accept the
+   long s or the Kelvin sign.
+7. **A shared mapping.** `Mapping` allocates under its own lock, so concurrent
+   requests on one session never share a number. `from_dict` refuses a counter
+   gap and a `[LITERAL_n]` that does not hold a placeholder-shaped token, as mask
+   never writes either.

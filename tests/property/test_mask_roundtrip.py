@@ -2,15 +2,15 @@
 
 import re
 
-from hypothesis import given
+from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from gateway.engine.detect import EngineConfig, detect
-from gateway.engine.mask import Mapping, mask
+from gateway.engine.mask import Mapping, mask, mask_messages
 from gateway.engine.placeholders import TOKEN
 from gateway.engine.rehydrate import rehydrate
 from gateway.engine.types import EntityType, Span
-from tests.strategies import any_spans, placeholder_texts, texts_with_identifiers
+from tests.strategies import any_spans, placeholder_texts, texts_with_identifiers, us_ssns
 
 NO_NER = EngineConfig(ner="off")
 WRITTEN = re.compile(r"\[[A-Z_]+_[0-9]+\]")  # a placeholder as mask writes it
@@ -49,9 +49,23 @@ def plain_texts_and_spans(draw: st.DrawFn) -> tuple[str, list[Span]]:
     return text, draw(any_spans(text, disjoint=True))
 
 
+def occurrences(text: str, value: str) -> set[int]:
+    return {i for i in range(len(text)) if text.startswith(value, i)}
+
+
 @given(plain_texts_and_spans())
-def test_text_outside_spans_is_unchanged(sample: tuple[str, list[Span]]) -> None:
+def test_text_outside_spans_is_unchanged_where_no_span_value_recurs(
+    sample: tuple[str, list[Span]],
+) -> None:
+    # Mask also replaces other occurrences of a span's value (ADR 0014 amendment 1);
+    # where there are none, nothing outside the spans changes.
     text, spans = sample
+    for span in spans:
+        surface = text[span.start : span.end]
+        assume(
+            occurrences(text, surface)
+            <= {s.start for s in spans if text[s.start : s.end] == surface}
+        )
     masked, _ = mask(text, spans)
     bounds = [0, *[i for s in spans for i in (s.start, s.end)], len(text)]
     outside = [text[a:b] for a, b in zip(bounds[0::2], bounds[1::2], strict=True)]
@@ -80,3 +94,13 @@ def test_one_mapping_shared_by_messages_round_trips_each(texts: list[str]) -> No
     mapping = Mapping()
     masked = [mask(text, detect(text, config=NO_NER), mapping)[0] for text in texts]
     assert [rehydrate(m, mapping) for m in masked] == [(text, []) for text in texts]
+
+
+@given(us_ssns(), st.sampled_from(["ref", "x", "_", "("]), st.sampled_from([".pdf", "", "th", ")"]))
+def test_a_detected_value_never_survives_glued_into_another_message(
+    ssn: str, before: str, after: str
+) -> None:
+    texts = [f"{before}{ssn}{after} was scanned", f"SSN {ssn}."]
+    masked, mapping = mask_messages(texts, config=NO_NER)
+    assert all(ssn not in m for m in masked)
+    assert [rehydrate(m, mapping) for m in masked] == [(t, []) for t in texts]

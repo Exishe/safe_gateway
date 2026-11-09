@@ -6,6 +6,7 @@ from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
 
 from gateway.engine.detect import EngineConfig, detect
+from gateway.engine.known import KnownValues
 from gateway.engine.placeholders import CANONICAL, MAX_COUNTER, TOKEN, canonical
 from gateway.engine.types import EntityType, Span
 
@@ -22,6 +23,7 @@ class Mapping:
         self._originals: dict[str, str] = {}
         self._placeholders: dict[str, str] = {}  # the same pairs, looked up by surface
         self._counters: dict[EntityType, int] = {}
+        self._known: KnownValues | None = None  # compiled on demand, dropped on change
         # Allocation reads the counter, then writes it: two threads must not interleave.
         self._lock = threading.Lock()
 
@@ -42,6 +44,8 @@ class Mapping:
             self._counters[entity_type] = number
             self._originals[placeholder] = surface
             self._placeholders[surface] = placeholder
+            if entity_type is not EntityType.LITERAL:
+                self._known = None
             return placeholder
 
     def original(self, placeholder: str) -> str | None:
@@ -49,11 +53,24 @@ class Mapping:
             return self._originals.get(placeholder)
 
     def known_values(self) -> dict[str, EntityType]:
-        """A snapshot of surface -> type for every value except placeholder-shaped text."""
+        """A snapshot of surface -> type for every value except placeholder-shaped text.
+
+        Literals are left out: they are not personal data, and the token grammar
+        decides where they are (ADR 0014 point 4).
+        """
         with self._lock:
-            pairs = list(self._placeholders.items())
+            return self._known_values_locked()
+
+    def known(self) -> KnownValues:
+        """The known values compiled for searching; rebuilt only after a value is added."""
+        with self._lock:
+            if self._known is None:
+                self._known = KnownValues(self._known_values_locked())
+            return self._known
+
+    def _known_values_locked(self) -> dict[str, EntityType]:
         known: dict[str, EntityType] = {}
-        for surface, placeholder in pairs:
+        for surface, placeholder in self._placeholders.items():
             match = CANONICAL.fullmatch(placeholder)
             if match is not None and match.group("type") != EntityType.LITERAL.value:
                 known[surface] = EntityType(match.group("type"))
@@ -116,6 +133,7 @@ class Mapping:
             self._originals.clear()
             self._placeholders.clear()
             self._counters.clear()
+            self._known = None
 
 
 @dataclass
@@ -166,20 +184,37 @@ def _regions(text: str, spans: Iterable[Span]) -> list[_Region]:
     return regions
 
 
-def mask(text: str, spans: Iterable[Span], mapping: Mapping | None = None) -> tuple[str, Mapping]:
-    """`text` with each span, and each placeholder-shaped token, replaced by a placeholder.
+def _remember(text: str, spans: Iterable[Span], mapping: Mapping) -> list[Span]:
+    """Give each span's value its placeholder now, so its repeats are found as known."""
+    spans = list(spans)
+    for region in _span_regions(text, spans):
+        mapping.placeholder_for(text[region.start : region.end], region.entity_type)
+    return spans
 
-    A given mapping is extended in place and returned, so several texts can share one.
-    """
-    mapping = Mapping() if mapping is None else mapping
+
+def _mask_remembered(text: str, spans: list[Span], mapping: Mapping) -> str:
+    # Every exact occurrence of a value the mapping holds is masked too, wherever
+    # detection missed it (ADR 0014 amendment 1). Overlaps unite, never drop.
+    known = mapping.known().spans(text)
     pieces: list[str] = []
     cursor = 0
-    for region in _regions(text, spans):
+    for region in _regions(text, [*spans, *known]):
         pieces.append(text[cursor : region.start])
         pieces.append(mapping.placeholder_for(text[region.start : region.end], region.entity_type))
         cursor = region.end
     pieces.append(text[cursor:])
-    return "".join(pieces), mapping
+    return "".join(pieces)
+
+
+def mask(text: str, spans: Iterable[Span], mapping: Mapping | None = None) -> tuple[str, Mapping]:
+    """`text` with each span, each placeholder-shaped token, and every other occurrence
+    of a value the mapping holds (this text's spans included) replaced by a placeholder.
+
+    A given mapping is extended in place and returned, so several texts can share one.
+    """
+    mapping = Mapping() if mapping is None else mapping
+    spans = _remember(text, spans, mapping)
+    return _mask_remembered(text, spans, mapping), mapping
 
 
 def mask_messages(
@@ -187,9 +222,12 @@ def mask_messages(
 ) -> tuple[list[str], Mapping]:
     """Detect and mask each text in order with one mapping (ADR 0002 point 1).
 
-    Numbering follows first appearance across the messages, so resending a
-    conversation gives each value the same placeholder on every turn.
+    Every text is detected before any is masked, so a value detected in a later
+    message is also masked where an earlier one holds it undetected. Numbering
+    follows first detection across the messages, so resending a conversation gives
+    each value the same placeholder on every turn.
     """
     mapping = Mapping()
-    masked = [mask(text, detect(text, lang=lang, config=config), mapping)[0] for text in texts]
+    detected = [_remember(text, detect(text, lang=lang, config=config), mapping) for text in texts]
+    masked = [_mask_remembered(t, s, mapping) for t, s in zip(texts, detected, strict=True)]
     return masked, mapping
