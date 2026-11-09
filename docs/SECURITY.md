@@ -69,15 +69,22 @@ with each phase; the threat model gets its full review before the first pilot.
   more reliably; the gazetteer covers known clients either way.
 - Each line goes to the model of its dominant alphabet, and neighbouring lines
   of one alphabet are read together, so a Russian name inside an English line
-  is read by the English model (ADR 0016).
+  is read by the English model (ADR 0016). A line that also holds letters of a
+  script with no spaCy model (Armenian, Greek and others) is read by GLiNER as
+  well.
 - Names written in capitals are handled by a heuristic. A line in which more
   than 70% of the letters are capitals is title-cased before the models read
-  it, because both models take case as a cue. A name in capitals inside an
-  otherwise lower-case line is read as written and is found less often; in a
-  heading in capitals, ordinary words may be masked as names.
+  it, because both models take case as a cue. Inside other lines, two or more
+  neighbouring words in capitals (three letters or more each) are title-cased
+  too. A single word in capitals inside a lower-case line is read as written
+  and is found less often; in a heading in capitals, or an acronym pair such as
+  "ACME LLC", ordinary words may be masked as names.
 - Dates are found by a format recognizer in every language: numeric forms
   (`12.03.1985`, `03/12/1985`, `1985-03-12`, `12.03.85`) and English or
-  Russian month names (`12 March 1985`, `March 12, 1985`, `12 марта 1985`).
+  Russian month names (`12 March 1985`, `March 12, 1985`, `12 марта 1985`,
+  `«12» марта 1985`, `12-MAR-1985`), including ranges and lists written
+  without spaces. Digits of other scripts (full width, Arabic-Indic) are read
+  as ASCII digits by every recognizer.
   Other forms (a Russian date without a year, Roman-numeral months, "the
   12th") are found only by the English model, and only in English text: the
   Russian model has no date label.

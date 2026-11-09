@@ -21,6 +21,20 @@ test result on synthetic data, not a recall figure:
 | URL with token | http(s) URLs with a secret query parameter | 100% |
 | Phone | example numbers of US, GB, DE, FR, IT, ES, NL, RU, AM, mobile and fixed line; E.164, international and national formats; ASCII, Arabic-Indic and full-width digits | 100% |
 
+Since leak hunt 1c, `tests/property/test_shape_detection.py` does the same for the shape
+recognizers of ADR 0023 (each value found at its exact offsets by its recognizer, and left
+with no letter or digit unmasked by `detect()`):
+
+| Type | Generated formats | Assertion |
+|------|-------------------|-----------|
+| `+` phone | `+99` (unassigned) and groups of 1-4 digits, 10-15 digits in all; gaps of one space, two spaces, dot, hyphen, slash or spaced hyphen; an optional bracketed group | 100% |
+| Passport shape | two letters (both capitals or both lower case) and seven digits | 100% |
+| ID card shape | two capitals, five digits, two capitals | 100% |
+| Card shape | 16 digits starting 2-6, 15 starting 3, 19 starting 3-6; contiguous, or grouped by four with each gap one space, two spaces, a dot or a hyphen, mixed | 100% |
+
+The date property test also generates the forms added in 1c: a quoted Russian day, and
+English and Russian month names between hyphens or slashes.
+
 CI runs these with the `ci` Hypothesis profile (500 derandomized examples each).
 
 Rules for this file:
@@ -82,10 +96,10 @@ document would take over 12 minutes. `gliner="all"` is therefore not a default.
 | License | CC-BY-4.0 (card: `license: other`, `license_name: cc-by-4.0`). Attribution: "Open PII Masking 500k", Ai4Privacy, https://huggingface.co/datasets/ai4privacy/open-pii-masking-500k-ai4privacy |
 | Sample | 10,000 English records of 30,160 in the shard, seed 20261109 (`random.Random(seed).sample`) |
 | Command | `uv run python -m tools.benchmark_openpii --sample 10000 --seed 20261109 --json docs/benchmarks/openpii-500k.json --markdown docs/benchmarks/openpii-500k.md` (the committed `.md` adds a header to the tables the command writes) |
-| Commit | 6b27eb43b422894f049e89932b32d2778a0a7e12 (tree clean). Previous run: 79d82b15215a812d69ad4e70b2e46b5a971e8b12 (harness), same engine as bc8662e |
+| Commit | 077f54580a57d9369a229bb11f000103bfc4049a (tree clean; engine as in cbdca9a, the leak hunt 1c fixes). Previous run, for the deltas: 050ff8c5dd7d3ccd4369a2fe56e658411adf114d, measured the same day from an unmodified `git archive` export of that commit with the same command |
 | Date | 2026-11-09 |
-| Engine | `detect(text, "auto", EngineConfig(ner="auto"))`: structured recognizers, the shape and keyword recognizers of ADR 0023, and spaCy `en_core_web_lg` 3.8.0 through Presidio. No GLiNER yet. Default phone regions. |
-| Run time | English 39.1 s; all eight languages 70 s in a 4-CPU container, single process |
+| Engine | `detect(text, "auto", EngineConfig(ner="auto"))`: structured recognizers (the date recognizer of ADR 0016 included), the shape and keyword recognizers of ADR 0023 as amended for leak hunt 1c, spaCy `en_core_web_lg` 3.8.0 through Presidio, and GLiNER `gliner_multi_pii-v1` only on lines holding letters of a script without a spaCy model (ADR 0016 amended). Default phone regions. |
+| Run time | English 97.9 s (050ff8c: 68.9 s); the other seven languages 42.0 s (050ff8c: 41.8 s); a shared 4-CPU container, single process, so times are rough. The English increase was not broken down; this run loads GLiNER, which 050ff8c never did on English text, for the few lines with letters of another script |
 
 Definitions. Masking recall: share of gold spans with at least 90% of their characters
 inside the union of any detected spans (what matters for privacy: the value was masked,
@@ -113,25 +127,25 @@ second table; they are reported, not dropped.
 | DRIVERLICENSENUM | DRIVER_LICENSE |
 | TIME, TITLE, AGE, SEX, GENDER | none: not covered |
 
-English, per dataset label (gold spans in the sample; the last column is the previous run):
+English, per dataset label (gold spans in the sample; the last column is the run at 050ff8c):
 
-| Dataset label | Maps to | Gold spans | Masking recall | Typed recall | Previous: masking / typed |
+| Dataset label | Maps to | Gold spans | Masking recall | Typed recall | 050ff8c: masking / typed |
 |---------------|---------|-----------:|---------------:|-------------:|--------------------------:|
-| GIVENNAME | PERSON | 7977 | 83.6% | 66.2% | 83.6% / 66.2% |
-| SURNAME | PERSON | 3061 | 85.4% | 70.8% | 85.4% / 70.8% |
+| GIVENNAME | PERSON | 7977 | 83.6% | 66.3% | 83.6% / 66.2% |
+| SURNAME | PERSON | 3061 | 85.4% | 70.9% | 85.4% / 70.8% |
 | CITY | LOCATION | 1648 | 86.6% | 46.1% | 86.6% / 46.1% |
 | STREET | ADDRESS/LOCATION | 1183 | 78.2% | 57.7% | 78.2% / 57.7% |
 | BUILDINGNUM | ADDRESS/LOCATION | 1030 | 37.6% | 18.6% | 37.6% / 18.6% |
 | ZIPCODE | ADDRESS/LOCATION | 377 | 30.2% | 2.3% | 30.2% / 2.3% |
-| DATE | DATE/DATE_OF_BIRTH | 1491 | 64.3% | 59.8% | 64.3% / 59.8% |
+| DATE | DATE/DATE_OF_BIRTH | 1491 | 88.1% | 83.7% | 88.1% / 83.7% |
 | EMAIL | EMAIL | 1155 | 99.1% | 98.5% | 99.1% / 98.5% |
-| TELEPHONENUM | PHONE | 1591 | 85.9% | 76.7% | 43.4% / 30.7% |
-| CREDITCARDNUMBER | CREDIT_CARD | 179 | 84.3% | 65.9% | 27.3% / 8.9% |
-| SOCIALNUM | NATIONAL_ID/SSN | 229 | 81.6% | 22.2% | 81.2% / 21.8% |
-| TAXNUM | NATIONAL_ID | 259 | 83.7% | 11.1% | 83.3% / 10.8% |
-| IDCARDNUM | NATIONAL_ID | 803 | 56.5% | 35.8% | 21.1% / 0.3% |
-| PASSPORTNUM | PASSPORT | 367 | 98.3% | 45.2% | 53.1% / 0.0% |
-| DRIVERLICENSENUM | DRIVER_LICENSE | 196 | 28.0% | 3.5% | 20.4% / 0.0% |
+| TELEPHONENUM | PHONE | 1591 | 85.9% | 76.7% | 85.9% / 76.7% |
+| CREDITCARDNUMBER | CREDIT_CARD | 179 | 84.3% | 65.9% | 84.3% / 65.9% |
+| SOCIALNUM | NATIONAL_ID/SSN | 229 | 81.6% | 22.2% | 81.6% / 22.2% |
+| TAXNUM | NATIONAL_ID | 259 | 83.7% | 11.1% | 83.7% / 11.1% |
+| IDCARDNUM | NATIONAL_ID | 803 | 56.5% | 35.8% | 56.5% / 35.8% |
+| PASSPORTNUM | PASSPORT | 367 | 98.3% | 45.2% | 98.3% / 45.2% |
+| DRIVERLICENSENUM | DRIVER_LICENSE | 196 | 29.0% | 4.0% | 28.0% / 3.5% |
 
 Not covered (no EntityType; the masking figure is incidental, from spans of other types):
 
@@ -147,17 +161,17 @@ English, precision per detected type:
 
 | Detected type | Detected spans | Precision (lower bound) |
 |---------------|---------------:|------------------------:|
-| PERSON | 6726 | 98.2% |
+| PERSON | 6729 | 98.2% |
 | LOCATION | 2093 | 95.8% |
-| DATE | 2054 | 83.6% |
-| ORG | 2576 | 73.3% |
+| DATE | 2375 | 85.7% |
+| ORG | 2576 | 73.2% |
 | EMAIL | 1149 | 100.0% |
 | PHONE | 1773 | 100.0% |
 | CREDIT_CARD | 121 | 100.0% |
 | SSN | 109 | 100.0% |
-| NATIONAL_ID | 399 | 100.0% |
+| NATIONAL_ID | 400 | 100.0% |
 | PASSPORT | 166 | 100.0% |
-| DRIVER_LICENSE | 8 | 100.0% |
+| DRIVER_LICENSE | 9 | 100.0% |
 
 How to read this.
 
@@ -183,30 +197,66 @@ How to read this.
 
 The same run, commit and revision, for the other languages in the shard. There is no NER
 model for these languages in the engine, so run with `EngineConfig(ner="off")`: names,
-places, dates and addresses are not detected and are not tabulated here (GIVENNAME,
-SURNAME, CITY, DATE and STREET read 0.0% in every one of these languages; every row is in
-`docs/benchmarks/openpii-500k.md`). Cells are masking recall / typed
-recall (gold spans). Records used: de, es, fr, it 10,000 each; nl 5,347, hi 6,938,
+places and addresses are not detected and are not tabulated here (GIVENNAME, SURNAME,
+CITY and STREET read 0.0% or close to it in every one of these languages; every row is in
+`docs/benchmarks/openpii-500k.md`). Dates come from the date recognizer alone. Cells are
+masking recall / typed recall (gold spans). Records used: de, es, fr, it 10,000 each; nl 5,347, hi 6,938,
 te 5,434 (all the shard has for them).
 
 | Dataset label | de | es | fr | it | nl | hi | te |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | EMAIL | 97.5% / 97.5% (1306) | 99.2% / 99.2% (1116) | 98.8% / 98.8% (1311) | 99.3% / 99.3% (1152) | 98.5% / 98.5% (602) | 99.0% / 99.0% (715) | 98.9% / 98.9% (566) |
-| TELEPHONENUM | 80.3% / 78.6% (1641) | 82.8% / 80.8% (1468) | 83.3% / 81.7% (1695) | 84.5% / 82.7% (1595) | 84.3% / 82.2% (787) | 78.1% / 74.8% (1162) | 72.7% / 70.4% (903) |
+| TELEPHONENUM | 80.4% / 78.7% (1641) | 82.8% / 80.8% (1468) | 83.3% / 81.7% (1695) | 84.5% / 82.7% (1595) | 84.3% / 82.2% (787) | 78.1% / 74.8% (1162) | 78.1% / 75.9% (903) |
 | CREDITCARDNUMBER | 79.4% / 79.0% (253) | 73.3% / 72.9% (218) | 74.5% / 74.0% (216) | 76.9% / 76.1% (260) | 78.6% / 78.6% (136) | 73.5% / 73.5% (136) | 61.2% / 60.0% (165) |
 | SOCIALNUM | 0.0% / 0.0% (275) | 47.7% / 6.5% (199) | 28.8% / 3.2% (218) | 0.0% / 0.0% (107) | 97.6% / 48.2% (85) | 64.6% / 8.0% (150) | 66.0% / 7.8% (203) |
 | TAXNUM | 11.9% / 0.8% (335) | 34.2% / 4.3% (277) | 31.0% / 4.6% (238) | 0.4% / 0.4% (250) | 95.9% / 0.0% (148) | 67.5% / 8.3% (216) | 66.9% / 9.3% (224) |
-| IDCARDNUM | 26.5% / 1.5% (833) | 2.2% / 2.2% (848) | 7.9% / 0.7% (793) | 4.3% / 4.3% (902) | 96.9% / 6.4% (421) | 1.1% / 1.1% (537) | 1.4% / 1.4% (556) |
-| PASSPORTNUM | 0.4% / 0.0% (432) | 50.8% / 50.8% (393) | 29.7% / 29.4% (363) | 51.0% / 50.7% (333) | 0.0% / 0.0% (192) | 99.5% / 99.1% (238) | 92.2% / 91.1% (259) |
+| IDCARDNUM | 30.4% / 5.5% (833) | 3.1% / 3.1% (848) | 13.6% / 6.5% (793) | 7.5% / 7.5% (902) | 96.9% / 6.4% (421) | 1.1% / 1.1% (537) | 1.4% / 1.4% (556) |
+| PASSPORTNUM | 0.4% / 0.0% (432) | 50.8% / 50.8% (393) | 29.7% / 29.4% (363) | 51.3% / 50.7% (333) | 0.0% / 0.0% (192) | 99.5% / 99.1% (238) | 92.2% / 91.1% (259) |
 | DRIVERLICENSENUM | 38.2% / 0.0% (235) | 0.5% / 0.0% (191) | 20.5% / 0.0% (195) | 72.7% / 0.0% (158) | 1.1% / 1.1% (87) | 0.0% / 0.0% (163) | 0.0% / 0.0% (171) |
+| DATE | 34.1% / 34.1% (989) | 31.4% / 31.4% (993) | 31.4% / 31.4% (1112) | 32.1% / 32.1% (1249) | 33.9% / 33.9% (509) | 68.5% / 68.5% (716) | 65.0% / 64.9% (762) |
 
 The high masking figures for nl (SOCIALNUM, TAXNUM, IDCARDNUM) sit next to typed recall
 of 48.2%, 0.0% and 6.4%: the values were covered by spans of other types, which this run
 does not break down. Read typed recall as the figure for the type itself. The document
-keywords are English and Russian only, so passports, ID cards and driving licences in
-these languages are found by shape alone.
+keywords are English, Russian and Armenian only, so passports, ID cards and driving
+licences in these languages are found by shape alone.
 
-### Changes since the previous run
+### Changes since the previous run (leak hunt 1c)
+
+Previous run: commit 050ff8c5dd7d3ccd4369a2fe56e658411adf114d, measured on 2026-11-09 from
+an unmodified export of that commit with the same command, sample and seed. The figures
+committed before this run were older (commit 6b27eb4, before the date recognizer), so they
+are not the baseline here: at 050ff8c English DATE already read 88.1% / 83.7%. What
+changed: the 15 fixes of leak hunt 1c (ADR 0016 and ADR 0023, amended 2026-11-09).
+Every label whose figures moved, masking recall / typed recall, 050ff8c -> this run:
+
+| Language | Dataset label | Gold spans | Masking recall | Typed recall |
+|---|---|---:|---:|---:|
+| en | DRIVERLICENSENUM | 196 | 28.0% -> 29.0% | 3.5% -> 4.0% |
+| en | GIVENNAME | 7977 | 83.6% -> 83.6% | 66.2% -> 66.3% |
+| en | SURNAME | 3061 | 85.4% -> 85.4% | 70.8% -> 70.9% |
+| de | IDCARDNUM | 833 | 26.5% -> 30.4% | 1.5% -> 5.5% |
+| de | TELEPHONENUM | 1641 | 80.3% -> 80.4% | 78.6% -> 78.7% |
+| es | IDCARDNUM | 848 | 2.2% -> 3.1% | 2.2% -> 3.1% |
+| es | BUILDINGNUM | 899 | 0.3% -> 0.4% | 0.0% -> 0.0% |
+| fr | IDCARDNUM | 793 | 7.9% -> 13.6% | 0.7% -> 6.5% |
+| it | IDCARDNUM | 902 | 4.3% -> 7.5% | 4.3% -> 7.5% |
+| it | PASSPORTNUM | 333 | 51.0% -> 51.3% | 50.7% -> 50.7% |
+| te | TELEPHONENUM | 903 | 72.7% -> 78.1% | 70.4% -> 75.9% |
+
+No label lost masking or typed recall in any language; every label not listed is
+unchanged. Precision (lower bound) stays 100.0% for every structured type in every
+language, on more spans: NATIONAL_ID de 84 -> 117, es 77 -> 86, fr 95 -> 141, it 100 -> 130
+and te 75 -> 71; te PHONE 1007 -> 1044. Precision did drop
+for one NER type: English ORG 73.3% -> 73.2% (2576 spans both times, 1890 -> 1888 overlapping
+a gold span); this run does not isolate which change caused it. English PERSON gained three
+spans (6726 -> 6729), all overlapping gold spans, and DATE lost one (2376 -> 2375, precision
+85.7% both times). This benchmark has no Russian or Armenian text, so the Russian series
+and number, the Armenian keywords and the mixed-script routing cannot show here; those
+fixes are asserted by `tests/unit/engine/test_leak_hunt_1c.py` and the property tests,
+not measured.
+
+### Earlier change: the ADR 0023 recognizers
 
 Previous run: commit 79d82b15215a812d69ad4e70b2e46b5a971e8b12, 2026-11-09 (engine
 unchanged up to bc8662e). This run: commit 6b27eb43b422894f049e89932b32d2778a0a7e12,
@@ -244,8 +294,8 @@ figures above are the shipped recognizers.
 - Armenian. Not in any Open PII release either. Since Phase 1c, Armenian text goes to
   GLiNER (ADR 0015), but no labelled Armenian dataset exists, so there is no recall
   figure; only throughput is measured (below).
-- The recall figures above were measured before GLiNER joined the engine and do not
-  include it. With the default `gliner="auto"`, GLiNER reads no Latin-script text, so
-  the English figures stand. Hindi and Telugu text (Devanagari, Telugu script) is now
+- With the default `gliner="auto"`, GLiNER reads Latin-script text only on lines that
+  also hold letters of a script without a spaCy model (ADR 0016 amended); the English run
+  above includes that. Hindi and Telugu text (Devanagari, Telugu script) is now
   routed to GLiNER when NER is on; their rows above were run with NER off and have not
   been re-measured with GLiNER.

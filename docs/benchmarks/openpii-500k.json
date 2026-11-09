@@ -26,19 +26,19 @@
       "ru": "ru_core_news_lg-3.8.0"
     },
     "coverage_threshold": 0.9,
-    "commit": "6b27eb43b422894f049e89932b32d2778a0a7e12",
+    "commit": "077f54580a57d9369a229bb11f000103bfc4049a",
     "tree_dirty": false,
     "date": "2026-11-09",
     "python": "3.12.3",
     "seconds": {
-      "de": 5.3,
-      "en": 39.1,
-      "es": 4.8,
-      "fr": 5.8,
-      "hi": 4.2,
-      "it": 4.9,
-      "nl": 2.5,
-      "te": 3.5
+      "de": 7.8,
+      "en": 97.9,
+      "es": 6.7,
+      "fr": 7.7,
+      "hi": 5.4,
+      "it": 6.6,
+      "nl": 3.4,
+      "te": 4.4
     }
   },
   "languages": [
@@ -84,8 +84,8 @@
       "language": "de",
       "label": "DATE",
       "total": 989,
-      "masked": 0,
-      "typed": 0
+      "masked": 338,
+      "typed": 338
     },
     {
       "language": "de",
@@ -119,8 +119,8 @@
       "language": "de",
       "label": "IDCARDNUM",
       "total": 833,
-      "masked": 221,
-      "typed": 13
+      "masked": 254,
+      "typed": 46
     },
     {
       "language": "de",
@@ -168,8 +168,8 @@
       "language": "de",
       "label": "TELEPHONENUM",
       "total": 1641,
-      "masked": 1319,
-      "typed": 1291
+      "masked": 1321,
+      "typed": 1293
     },
     {
       "language": "de",
@@ -224,15 +224,15 @@
       "language": "en",
       "label": "DATE",
       "total": 1491,
-      "masked": 959,
-      "typed": 893
+      "masked": 1314,
+      "typed": 1248
     },
     {
       "language": "en",
       "label": "DRIVERLICENSENUM",
       "total": 196,
-      "masked": 55,
-      "typed": 7
+      "masked": 57,
+      "typed": 8
     },
     {
       "language": "en",
@@ -252,8 +252,8 @@
       "language": "en",
       "label": "GIVENNAME",
       "total": 7977,
-      "masked": 6672,
-      "typed": 5288
+      "masked": 6673,
+      "typed": 5291
     },
     {
       "language": "en",
@@ -295,7 +295,7 @@
       "label": "SURNAME",
       "total": 3061,
       "masked": 2616,
-      "typed": 2170
+      "typed": 2171
     },
     {
       "language": "en",
@@ -343,7 +343,7 @@
       "language": "es",
       "label": "BUILDINGNUM",
       "total": 899,
-      "masked": 3,
+      "masked": 4,
       "typed": 0
     },
     {
@@ -364,8 +364,8 @@
       "language": "es",
       "label": "DATE",
       "total": 993,
-      "masked": 0,
-      "typed": 0
+      "masked": 312,
+      "typed": 312
     },
     {
       "language": "es",
@@ -399,8 +399,8 @@
       "language": "es",
       "label": "IDCARDNUM",
       "total": 848,
-      "masked": 19,
-      "typed": 19
+      "masked": 27,
+      "typed": 27
     },
     {
       "language": "es",
@@ -504,8 +504,8 @@
       "language": "fr",
       "label": "DATE",
       "total": 1112,
-      "masked": 0,
-      "typed": 0
+      "masked": 350,
+      "typed": 350
     },
     {
       "language": "fr",
@@ -539,8 +539,8 @@
       "language": "fr",
       "label": "IDCARDNUM",
       "total": 793,
-      "masked": 63,
-      "typed": 6
+      "masked": 108,
+      "typed": 52
     },
     {
       "language": "fr",
@@ -644,8 +644,8 @@
       "language": "hi",
       "label": "DATE",
       "total": 716,
-      "masked": 0,
-      "typed": 0
+      "masked": 491,
+      "typed": 491
     },
     {
       "language": "hi",
@@ -784,8 +784,8 @@
       "language": "it",
       "label": "DATE",
       "total": 1249,
-      "masked": 0,
-      "typed": 0
+      "masked": 401,
+      "typed": 401
     },
     {
       "language": "it",
@@ -819,14 +819,14 @@
       "language": "it",
       "label": "IDCARDNUM",
       "total": 902,
-      "masked": 39,
-      "typed": 39
+      "masked": 68,
+      "typed": 68
     },
     {
       "language": "it",
       "label": "PASSPORTNUM",
       "total": 333,
-      "masked": 170,
+      "masked": 171,
       "typed": 169
     },
     {
@@ -924,8 +924,8 @@
       "language": "nl",
       "label": "DATE",
       "total": 509,
-      "masked": 0,
-      "typed": 0
+      "masked": 173,
+      "typed": 173
     },
     {
       "language": "nl",
@@ -1064,8 +1064,8 @@
       "language": "te",
       "label": "DATE",
       "total": 762,
-      "masked": 0,
-      "typed": 0
+      "masked": 496,
+      "typed": 495
     },
     {
       "language": "te",
@@ -1148,8 +1148,8 @@
       "language": "te",
       "label": "TELEPHONENUM",
       "total": 903,
-      "masked": 657,
-      "typed": 636
+      "masked": 706,
+      "typed": 686
     },
     {
       "language": "te",
@@ -1182,6 +1182,12 @@
     },
     {
       "language": "de",
+      "type": "DATE",
+      "total": 515,
+      "hit": 515
+    },
+    {
+      "language": "de",
       "type": "EMAIL",
       "total": 1282,
       "hit": 1281
@@ -1195,8 +1201,8 @@
     {
       "language": "de",
       "type": "NATIONAL_ID",
-      "total": 84,
-      "hit": 84
+      "total": 117,
+      "hit": 117
     },
     {
       "language": "de",
@@ -1207,8 +1213,8 @@
     {
       "language": "de",
       "type": "PHONE",
-      "total": 1662,
-      "hit": 1662
+      "total": 1663,
+      "hit": 1663
     },
     {
       "language": "de",
@@ -1225,14 +1231,14 @@
     {
       "language": "en",
       "type": "DATE",
-      "total": 2054,
-      "hit": 1718
+      "total": 2375,
+      "hit": 2037
     },
     {
       "language": "en",
       "type": "DRIVER_LICENSE",
-      "total": 8,
-      "hit": 8
+      "total": 9,
+      "hit": 9
     },
     {
       "language": "en",
@@ -1249,14 +1255,14 @@
     {
       "language": "en",
       "type": "NATIONAL_ID",
-      "total": 399,
-      "hit": 399
+      "total": 400,
+      "hit": 400
     },
     {
       "language": "en",
       "type": "ORG",
       "total": 2576,
-      "hit": 1890
+      "hit": 1888
     },
     {
       "language": "en",
@@ -1267,8 +1273,8 @@
     {
       "language": "en",
       "type": "PERSON",
-      "total": 6726,
-      "hit": 6605
+      "total": 6729,
+      "hit": 6608
     },
     {
       "language": "en",
@@ -1290,6 +1296,12 @@
     },
     {
       "language": "es",
+      "type": "DATE",
+      "total": 473,
+      "hit": 473
+    },
+    {
+      "language": "es",
       "type": "EMAIL",
       "total": 1114,
       "hit": 1114
@@ -1297,8 +1309,8 @@
     {
       "language": "es",
       "type": "NATIONAL_ID",
-      "total": 77,
-      "hit": 77
+      "total": 86,
+      "hit": 86
     },
     {
       "language": "es",
@@ -1309,8 +1321,8 @@
     {
       "language": "es",
       "type": "PHONE",
-      "total": 1470,
-      "hit": 1470
+      "total": 1469,
+      "hit": 1469
     },
     {
       "language": "es",
@@ -1321,14 +1333,20 @@
     {
       "language": "fr",
       "type": "CREDIT_CARD",
-      "total": 182,
-      "hit": 182
+      "total": 181,
+      "hit": 181
+    },
+    {
+      "language": "fr",
+      "type": "DATE",
+      "total": 546,
+      "hit": 546
     },
     {
       "language": "fr",
       "type": "DRIVER_LICENSE",
-      "total": 1,
-      "hit": 1
+      "total": 2,
+      "hit": 2
     },
     {
       "language": "fr",
@@ -1345,8 +1363,8 @@
     {
       "language": "fr",
       "type": "NATIONAL_ID",
-      "total": 95,
-      "hit": 95
+      "total": 141,
+      "hit": 141
     },
     {
       "language": "fr",
@@ -1357,8 +1375,8 @@
     {
       "language": "fr",
       "type": "PHONE",
-      "total": 1791,
-      "hit": 1791
+      "total": 1790,
+      "hit": 1790
     },
     {
       "language": "fr",
@@ -1371,6 +1389,12 @@
       "type": "CREDIT_CARD",
       "total": 106,
       "hit": 106
+    },
+    {
+      "language": "hi",
+      "type": "DATE",
+      "total": 601,
+      "hit": 601
     },
     {
       "language": "hi",
@@ -1410,6 +1434,12 @@
     },
     {
       "language": "it",
+      "type": "DATE",
+      "total": 605,
+      "hit": 605
+    },
+    {
+      "language": "it",
       "type": "EMAIL",
       "total": 1152,
       "hit": 1152
@@ -1417,8 +1447,8 @@
     {
       "language": "it",
       "type": "NATIONAL_ID",
-      "total": 100,
-      "hit": 100
+      "total": 130,
+      "hit": 130
     },
     {
       "language": "it",
@@ -1443,6 +1473,12 @@
       "type": "CREDIT_CARD",
       "total": 107,
       "hit": 107
+    },
+    {
+      "language": "nl",
+      "type": "DATE",
+      "total": 269,
+      "hit": 269
     },
     {
       "language": "nl",
@@ -1482,6 +1518,12 @@
     },
     {
       "language": "te",
+      "type": "DATE",
+      "total": 627,
+      "hit": 627
+    },
+    {
+      "language": "te",
       "type": "EMAIL",
       "total": 570,
       "hit": 568
@@ -1489,8 +1531,8 @@
     {
       "language": "te",
       "type": "NATIONAL_ID",
-      "total": 75,
-      "hit": 75
+      "total": 71,
+      "hit": 71
     },
     {
       "language": "te",
@@ -1501,8 +1543,8 @@
     {
       "language": "te",
       "type": "PHONE",
-      "total": 1008,
-      "hit": 1008
+      "total": 1044,
+      "hit": 1044
     },
     {
       "language": "te",
