@@ -144,6 +144,12 @@ exception. Status codes come from `fastapi.status`, because the stdlib `http`
 module is on the network list. A test pins both halves: the proxy may import
 the server side, and may not import a client.
 
+Writing that test found a gap: `httpx2` (installed with `huggingface_hub`, and
+the client Starlette's TestClient prefers), `httpcore` and `httpcore2` are full
+HTTP clients that the network list did not name, so any package, the engine
+included, could have imported them. They are now on the list. This narrows the
+checker; it allows nothing new.
+
 ## Consequences
 
 - Agentic clients that rely on tools, and anything that sends images, get a

@@ -206,6 +206,45 @@ def test_proxy_may_use_cloud_but_not_an_sdk_directly() -> None:
     assert len(violations("from openai import OpenAI", "gateway/proxy/app.py")) == 1
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import uvicorn",
+        "from fastapi import FastAPI, status",
+        "from starlette.middleware.cors import CORSMiddleware",
+        "from gateway.cloud.upstream import Upstream",
+        "import anyio",
+    ],
+)
+def test_proxy_may_serve_on_loopback(source: str) -> None:
+    # ADR 0019: the server side needs no allowance; uvicorn and FastAPI are not clients.
+    assert violations(source, "gateway/proxy/server.py") == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import httpx",
+        "import httpx2",
+        "import httpcore",
+        "from httpcore2 import ConnectionPool",
+        "from http import HTTPStatus",
+        "import socket",
+        "import ssl",
+    ],
+)
+def test_proxy_may_not_hold_client_network_code(source: str) -> None:
+    # ADR 0019: status codes come from fastapi.status, never the stdlib http module.
+    assert len(violations(source, "gateway/proxy/app.py")) == 1
+
+
+def test_the_proxy_package_as_written_passes() -> None:
+    assert check_paths([REPO / "gateway" / "proxy"], REPO) == []
+    assert (
+        check_paths([REPO / "gateway" / "config.py", REPO / "gateway" / "secrets.py"], REPO) == []
+    )
+
+
 def test_main_fails_on_a_path_that_does_not_exist(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

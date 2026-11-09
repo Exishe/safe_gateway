@@ -31,8 +31,11 @@ NETWORK_MODULES = frozenset(
         "google.generativeai",
         "grpc",
         "http",
+        "httpcore",
+        "httpcore2",
         "httplib2",
         "httpx",
+        "httpx2",  # installed with huggingface_hub; Starlette's TestClient prefers it
         "huggingface_hub",
         "imaplib",
         "litellm",
