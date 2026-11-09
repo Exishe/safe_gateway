@@ -46,6 +46,16 @@ with each phase; the threat model gets its full review before the first pilot.
   The gateway shows such placeholders to the user instead of guessing (ADR 0003).
 - Russian and Armenian coverage is weaker than English, and it is measured
   separately.
+- Armenian names, organisations and places are found only through the
+  customer's gazetteer: there is no Armenian NER model until GLiNER
+  (Phase 1c). Structured identifiers in Armenian text are found as usual.
+- The Russian NER model sometimes misses a name at the start of a sentence
+  or splits it (observed in Phase 1b testing). Names mid-sentence are found
+  more reliably; the gazetteer covers known clients either way.
+- Each paragraph goes to the model of its dominant alphabet, so a Russian
+  name inside an English paragraph is read by the English model.
+- Without the NER models installed (`safeguard models pull`), names,
+  organisations, places and dates are not detected; `safeguard scan` says so.
 - OCR mistakes are not corrected. If a scan turns a digit into a look-alike
   letter ("O" for "0"), the card or SSN no longer passes its checksum or format
   and is not found. Reading letters as digits would also turn ordinary words

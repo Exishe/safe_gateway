@@ -14,11 +14,16 @@ against.
 
 ## Status
 
-Phase 1a of 8. `safeguard scan FILE` finds structured identifiers in a text
-file: card numbers, IBANs, US SSNs, Russian INN and SNILS, emails, phones, IP
-addresses, URLs with tokens, and names or codenames from a customer list. Names
-in general, addresses and dates need the NER step (Phase 1b). Masking, the
-proxy and the UI come later. The build order and exit criteria for each phase
+Phase 1b of 8. `safeguard scan FILE` finds, in a text file:
+
+- names, organisations, places and dates in English and Russian, after
+  `safeguard models pull` downloads the NER models (Armenian names: through
+  the customer list only, until Phase 1c);
+- card numbers, IBANs, US SSNs, Russian INN and SNILS, emails, phones, IP
+  addresses and URLs with tokens, in any language;
+- names or codenames from a customer list (`--gazetteer clients.csv`).
+
+Street addresses, masking, the proxy and the UI come later. The build order and exit criteria for each phase
 are in [docs/plans/](docs/plans/), and design decisions are in
 [docs/adr/](docs/adr/).
 

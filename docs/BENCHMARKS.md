@@ -34,6 +34,18 @@ Rules for this file:
 - ai4privacy OpenPII is licensed CC-BY-4.0; cite it wherever these numbers are
   shown to customers.
 
+## NER throughput (measured, not asserted)
+
+Measured 2026-11-09 in a 4-CPU Linux container, spaCy 3.8.18, models
+3.8.0 already loaded, NER component only (Phase 1b):
+
+| Model | Load | Per 100 KB | 1 MB |
+|-------|------|------------|------|
+| en_core_web_lg | 2.1 s | 0.84 s | 9.8 s |
+| ru_core_news_lg | 1.9 s | 0.77 s | 8.2 s |
+
+With NER off, 1 MB of structured-only scanning takes about 0.5 s.
+
 ## Recall per entity type
 
 | Entity type | Language | Dataset (version) | Recall | Precision | Command | Commit | Date |

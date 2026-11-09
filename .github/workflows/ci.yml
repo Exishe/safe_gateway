@@ -34,6 +34,12 @@ jobs:
       - name: Install
         run: uv sync --locked
 
+      # NER models are downloaded fresh on every run and checked against the
+      # pinned SHA-256, so the `models` tests run in CI too (ADR 0012). Not
+      # cached on purpose: a poisoned cache would skip that check (zizmor).
+      - name: Pull NER models (verified against pinned SHA-256)
+        run: uv run safeguard models pull
+
       - name: Format
         run: uv run ruff format --check .
 

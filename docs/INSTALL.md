@@ -23,6 +23,7 @@ Then, in the repository:
 ```bash
 uv sync                          # installs Python 3.12 if missing, plus dev tools
 scripts/install-git-hooks.sh     # turns on the pre-commit gate
+uv run safeguard models pull    # English and Russian NER models, about 900 MB, SHA-256 checked
 uv run pytest
 ```
 
