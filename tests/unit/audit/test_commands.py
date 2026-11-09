@@ -5,6 +5,7 @@ from pathlib import Path
 import keyring
 import pytest
 from keyring.backends.fail import Keyring as NoKeyring
+from keyring.errors import KeyringError
 
 from gateway.audit import commands
 from gateway.audit.export import verify_export
@@ -218,3 +219,25 @@ def test_purge_refuses_a_config_the_gateway_would_refuse(
     assert main(["audit", "purge"]) == 2
     assert "retention_dayz" in capsys.readouterr().err
     assert len(all_rows(db)) == 3
+
+
+class LeakyKeyring(NoKeyring):
+    """A backend whose error message repeats what it was handling."""
+
+    def get_password(self, service: str, username: str) -> str | None:
+        msg = f"backend failed near secret-material-{service}-{username}"
+        raise KeyringError(msg)
+
+
+def test_a_keychain_error_prints_its_type_not_its_message(
+    db: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Security review M8: the backend's message was printed, and some backends put
+    what they read into it."""
+    del db
+    monkeypatch.setattr(commands, "default_key_provider", KeyringKeyProvider)
+    keyring.set_keyring(LeakyKeyring())  # the conftest fixture restores the previous one
+    assert main(["audit", "verify"]) == 2
+    err = capsys.readouterr().err
+    assert "secret-material" not in err
+    assert "KeyringError" in err

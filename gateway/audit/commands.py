@@ -174,7 +174,8 @@ def run(args: argparse.Namespace) -> int:
     try:
         return handler(args)
     except KeyringError as error:
-        _err(f"cannot read the OS keychain: {error}")
+        # The type only, as gateway/secrets.py does: some backends repeat what they read.
+        _err(f"cannot read the OS keychain ({type(error).__name__})")
     except (NotAnAuditLog, DeviceKeyMissing, ValueError, OSError) as error:
         _err(str(error))
     return CANNOT
