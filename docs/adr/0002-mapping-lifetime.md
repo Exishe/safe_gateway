@@ -35,3 +35,21 @@ answers, which the client already holds in rehydrated (real) form.
   the response ends.
 - If a user edits an old message, numbering can shift between turns. That only
   confuses the model; it cannot reveal a value.
+
+## Amendment 2026-11-09: the disk store as built
+
+`gateway/engine/session_disk.py` holds `EncryptedMappingStore`; it is used only
+when a `SessionStore` is built with `persist=...`, so the default stays
+memory-only and writes nothing. It stores the mapping (placeholder to original
+value, as JSON) encrypted with Fernet in `<SAFEGUARD_HOME>/sessions/` (default
+`~/.safeguard/sessions`), one file per session, written to a temporary file and
+renamed, mode 0600 in a 0700 directory. The plaintext is never written. Each
+session has its own key from `Fernet.generate_key()`. The key is held by a
+`KeyProvider`; the default, `gateway/secrets.py`, uses `keyring` with service
+`safeguard-gateway`. File name and key name are both the sha256 of the session
+id, so neither reveals the id and an expired file can be matched to its key. A
+wrong key or a changed or truncated file raises `InvalidToken`; no partial
+mapping is returned. Delete and expiry remove the file and the key, and
+`purge_older_than(seconds)` does the same for files not written for that long.
+Encryption protects the files at rest; it does not protect against another
+process of the same user, which can ask the keychain for the key.

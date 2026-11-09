@@ -1,6 +1,7 @@
-"""Mappings kept between mask and rehydrate, in memory only (ADR 0002 point 2).
+"""Mappings kept between mask and rehydrate (ADR 0002 points 2 and 3).
 
-The opt-in encrypted disk store of ADR 0002 point 3 is not built yet.
+Memory only by default. Given an `EncryptedMappingStore`, each mapping is also kept
+encrypted on disk so it survives a restart, and is removed with the session.
 """
 
 import secrets
@@ -10,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from gateway.engine.mask import Mapping
+from gateway.engine.session_disk import EncryptedMappingStore, StoredMappingNotFound
 
 DEFAULT_TTL_SECONDS = 30 * 60
 _ID_BYTES = 32  # token_urlsafe(32): 43 characters, 256 bits
@@ -23,6 +25,7 @@ class SessionNotFound(KeyError):  # noqa: N818  (reads as what happened, like Ke
 class _Session:
     mapping: Mapping
     last_used: float
+    saved_size: int = 0  # entries on disk at the last save; growth means a re-save
 
 
 class SessionStore:
@@ -32,12 +35,14 @@ class SessionStore:
         self,
         ttl_seconds: float = DEFAULT_TTL_SECONDS,
         clock: Callable[[], float] = time.monotonic,
+        persist: EncryptedMappingStore | None = None,
     ) -> None:
         if ttl_seconds <= 0:
             msg = f"session ttl must be positive, got {ttl_seconds}"
             raise ValueError(msg)
         self.ttl_seconds = ttl_seconds
         self._clock = clock
+        self._persist = persist
         self._sessions: dict[str, _Session] = {}
         # The proxy serves requests from worker threads.
         self._lock = threading.Lock()
@@ -46,19 +51,31 @@ class SessionStore:
         session_id = secrets.token_urlsafe(_ID_BYTES)
         mapping = Mapping() if mapping is None else mapping  # an empty Mapping is falsy
         with self._lock:
-            self._sessions[session_id] = _Session(mapping, self._clock())
+            session = _Session(mapping, self._clock())
+            self._sessions[session_id] = session
+            self._save(session_id, session)
         return session_id
 
     def get(self, session_id: str) -> Mapping:
         """The session's mapping; using it restarts the idle timer."""
         with self._lock:
-            session = self._sessions.get(session_id)
             now = self._clock()
+            session = self._sessions.get(session_id) or self._restore(session_id, now)
             if session is None or self._expired(session, now):
                 self._drop(session_id)
                 raise SessionNotFound
             session.last_used = now
+            if len(session.mapping) != session.saved_size:  # the caller added entries
+                self._save(session_id, session)
             return session.mapping
+
+    def save(self, session_id: str) -> None:
+        """Write the session's current mapping to disk (no-op when memory-only)."""
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                raise SessionNotFound
+            self._save(session_id, session)
 
     def delete(self, session_id: str) -> bool:
         with self._lock:
@@ -83,7 +100,26 @@ class SessionStore:
     def _expired(self, session: _Session, now: float) -> bool:
         return now - session.last_used > self.ttl_seconds
 
+    def _save(self, session_id: str, session: _Session) -> None:
+        if self._persist is not None:
+            self._persist.save(session_id, session.mapping)
+            session.saved_size = len(session.mapping)
+
+    def _restore(self, session_id: str, now: float) -> _Session | None:
+        """A session saved by an earlier process; its idle timer starts now."""
+        if self._persist is None:
+            return None
+        try:
+            mapping = self._persist.load(session_id)
+        except StoredMappingNotFound:
+            return None
+        session = _Session(mapping, now, saved_size=len(mapping))
+        self._sessions[session_id] = session
+        return session
+
     def _drop(self, session_id: str) -> bool:
+        if self._persist is not None:
+            self._persist.delete(session_id)
         session = self._sessions.pop(session_id, None)
         if session is None:
             return False

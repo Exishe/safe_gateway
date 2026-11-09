@@ -10,7 +10,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+    "cryptography>=50.0.2",
     "httpx>=0.28.1",
+    "keyring>=25.7.0",
     "phonenumbers>=9.0.43",
     "presidio-analyzer>=2.2.366",
     "spacy>=3.8.0,<3.9.0",
