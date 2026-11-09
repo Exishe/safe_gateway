@@ -30,6 +30,31 @@ uv run pytest
 On Windows the same steps work with `winget install astral-sh.uv` and the
 Tesseract and Ollama Windows installers. The git hooks need Git Bash.
 
+### Running the local proxy (Phase 4)
+
+`uv run safeguard serve` listens on `http://127.0.0.1:8787` (`--port` changes
+the port; any host but 127.0.0.1 is refused). Point an OpenAI-compatible client
+at `http://127.0.0.1:8787/v1`, or an Anthropic-compatible one at
+`http://127.0.0.1:8787`. Without a configuration file it forwards to a local
+Ollama on `http://127.0.0.1:11434/v1`, so nothing leaves the machine.
+
+To use a cloud model, write `~/.safeguard/config.toml` (or
+`$SAFEGUARD_HOME/config.toml`; ADR 0020 lists every field):
+
+```toml
+provider = "openai"       # anthropic | openai | azure_openai | ollama
+model = "gpt-4o-mini"     # optional; replaces the model the client asks for
+```
+
+and put the API key in the OS keychain, never in the file. The keyring command
+prompts for it, so it does not land in your shell history:
+
+```bash
+uv run keyring set safeguard-gateway api-key:openai
+```
+
+The gateway reads the key once at start-up; restart it after changing the key.
+
 ### Claude Code
 
 Open the repository in Claude Code. It reads `CLAUDE.md`, the hooks in

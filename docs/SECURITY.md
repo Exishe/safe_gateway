@@ -30,6 +30,7 @@ with each phase; the threat model gets its full review before the first pilot.
 | Commit gate: the Claude Code hook refuses a command that runs git next to `--no-verify` (or an abbreviation), `-n`, `hooksPath` or `GIT_CONFIG_*` outside the commit message, including inside `bash -c` and `$(...)`; it treats every git alias call as a commit and refuses commits while any alias holds `--no-verify`, `-n` or `hooksPath` | Claude Code hook before Bash |
 | bash-guard: no `rm -rf`, `curl`/`wget` only to loopback (every non-option word counts as a host; `--proxy` must be loopback; `-K`, `--config`, `--resolve`, `--connect-to`, `wget -i/-e` refused), no git settings or variables that run commands (`core.sshCommand`, `alias.x=!...`, `GIT_SSH_COMMAND`, `GIT_CONFIG_*`), no `git push` to a URL, no `gh gist create`; it looks through wrappers with option values (`sudo -u root`, `timeout -s KILL 5`, `env -C dir`), `bash -c`, `eval`, `find -exec`, `$(...)` and backticks | Claude Code hook before Bash |
 | Permission list: only named commands run without a prompt (pytest, ruff, ty, `python -m tools.*`, `safeguard`, uv sync/add/lock, git status/diff/log/show/add/commit, push to `origin claude/*`); `gh gist`, `gh api`, `git -c` and `git push http*` are denied | `.claude/settings.json` |
+| Proxy: refuses to bind anywhere but 127.0.0.1; Host, Origin, content-type and body-size checks before any route; an integration test asserts no Faker value reaches the upstream body | `safeguard serve` start-up, every request, every test run |
 | Bandit, pip-audit, Semgrep, zizmor | CI on every push |
 | Model downloads (`safeguard models pull`): pinned SHA-256 per file; redirects only over https to a fixed list of hosts; a per-file byte cap; partial downloads deleted; a model counts as installed only with a completion marker for its current pin (ADR 0006, amended) | every `models pull`, `models list` and model load |
 
@@ -97,6 +98,19 @@ with each phase; the threat model gets its full review before the first pilot.
   around 3 seconds. Configuring only the regions a customer needs reduces this;
   a single-pass matcher is deferred (ADR 0013).
 - The audit log is tamper-evident, not tamper-proof. See the next section.
+- The local proxy (`safeguard serve`, ADR 0019) listens on 127.0.0.1 only and
+  refuses other Host headers, browser origins that are not allowed, non-JSON
+  POSTs and bodies over 4 MiB. Any program running as the same user can still
+  call it, as it can read that user's files and keychain. It is a convenience
+  boundary against the network and web pages, not against local malware.
+- The proxy forwards text only. Requests with images, files, audio or tool
+  calls are refused, not masked (ADR 0019).
+- `/mask` returns the session's placeholder map to the caller, because the
+  extension restores answers itself (ADR 0002 point 2). The map is personal
+  data; the caller must keep it in memory and drop it with the session.
+- Upstream requests go only to the configured base URL, over HTTPS unless it
+  is this machine, without following redirects and ignoring proxy settings in
+  the environment (ADR 0020). A corporate HTTPS proxy is not supported yet.
 - Pilot installers are unsigned (see [INSTALL.md](INSTALL.md)).
 - The repository guards match names, not behaviour. Code that builds module
   names at run time can get past the no-egress check. CI and code review are
