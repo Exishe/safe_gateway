@@ -91,6 +91,7 @@ known-first-party = ["gateway", "tools"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
     "S101",    # assert is how pytest works
+    "S104",    # tests name 0.0.0.0 to check that it is refused
     "S603",    # tests run our own hook scripts with fixed arguments
     "PLR2004", # literal values in assertions are the point
     "INP001",  # test dirs are not packages
