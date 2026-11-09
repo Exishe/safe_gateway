@@ -10,21 +10,33 @@ from gateway.engine.types import EntityType, Span
 # 4 (Visa), 5 (Mastercard) or 6 (Discover, UnionPay). A Luhn-valid number
 # starting with 0, 1, 7, 8 or 9 is far more likely an order or account number.
 _ISSUER_DIGITS = "23456"
+# Maestro also issues 12-digit numbers. Twelve digits is a common length for order,
+# account and national numbers, so a 12-digit card needs a Maestro IIN (50, 56-69),
+# Luhn, and a run of exactly twelve digits: never part of a longer number.
+_MAESTRO_LENGTH = 12
+_MAESTRO_PREFIXES = frozenset({"50", *(str(prefix) for prefix in range(56, 70))})
 
 
 class CreditCardRecognizer:
     name = "credit_card"
 
     def find(self, text: str) -> list[Span]:
-        def is_card(start: int, end: int) -> bool:
-            digits = digits_of(text[start:end])
-            return digits[0] in _ISSUER_DIGITS and luhn_valid(digits)
+        found = []
+        for run in digit_runs(text):
+            whole = (run[0][0], run[-1][1])
 
-        return [
-            Span(start, end, EntityType.CREDIT_CARD, 1.0, self.name)
-            for run in digit_runs(text)
-            for start, end in accepted_windows(run, 13, 19, is_card)
-        ]
+            def is_card(start: int, end: int, whole: tuple[int, int] = whole) -> bool:
+                digits = digits_of(text[start:end])
+                if len(digits) == _MAESTRO_LENGTH:
+                    maestro = digits[:2] in _MAESTRO_PREFIXES and (start, end) == whole
+                    return maestro and luhn_valid(digits)
+                return digits[0] in _ISSUER_DIGITS and luhn_valid(digits)
+
+            found.extend(
+                Span(start, end, EntityType.CREDIT_CARD, 1.0, self.name)
+                for start, end in accepted_windows(run, _MAESTRO_LENGTH, 19, is_card)
+            )
+        return found
 
 
 CREDIT_CARD = CreditCardRecognizer()

@@ -29,8 +29,9 @@ DOCUMENTS_PER_FORMAT = 20
 STRUCTURED = EngineConfig(ner="off")
 
 
-# Card types the card recognizer covers (13 to 19 digits). Faker's "maestro" makes
-# 12-digit numbers, which it does not: see the strict xfail at the end of this file.
+# Card types for the generated corpus. Faker's "maestro" is left out: some of its
+# prefixes (0604) are not Maestro IINs. 12-digit Maestro numbers with a real IIN are
+# covered by the test at the end of this file and the recognizer's unit tests.
 CARD_TYPES = ("visa16", "visa13", "visa19", "mastercard", "amex", "discover", "jcb16")
 
 
@@ -160,11 +161,6 @@ def test_generated_documents_round_trip_without_leaking(kind: str, tmp_path: Pat
             assert value not in raw, (kind, number, value)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="engine finding (Phase 3 corpus): 12-digit Maestro numbers are not detected; "
-    "the card recognizer accepts 13 to 19 digits",
-)
 def test_twelve_digit_maestro_numbers_are_detected() -> None:
     value = "676343636590"  # Faker maestro, Luhn-valid  # pragma: allowlist secret
     spans = detect(f"card {value} on file", config=STRUCTURED)

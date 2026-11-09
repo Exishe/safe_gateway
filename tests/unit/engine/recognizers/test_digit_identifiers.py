@@ -89,6 +89,32 @@ def test_luhn_valid_numbers_with_impossible_prefixes_are_not_cards(number: str) 
     assert found(CREDIT_CARD, f"order {number}") == []
 
 
+@pytest.mark.parametrize(
+    "number",
+    [
+        "676343636590",  # pragma: allowlist secret  (Faker maestro)
+        "501800000009",  # pragma: allowlist secret
+        "5698 0012 3451",  # pragma: allowlist secret
+        "691234567895",  # pragma: allowlist secret
+    ],
+)
+def test_twelve_digit_maestro_numbers_are_cards(number: str) -> None:
+    assert found(CREDIT_CARD, f"card {number} on file") == [number]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ref 411111111117 ok",  # pragma: allowlist secret  (Luhn-valid, not a Maestro IIN)
+        "ref 701234567892 ok",  # pragma: allowlist secret  (Luhn-valid, not a Maestro IIN)
+        "ref 501800000008 ok",  # pragma: allowlist secret  (Maestro IIN, Luhn-invalid)
+        "tel 501800000009 77",  # pragma: allowlist secret  (12 digits inside a longer run)
+    ],
+)
+def test_other_twelve_digit_numbers_are_not_cards(text: str) -> None:
+    assert found(CREDIT_CARD, text) == []
+
+
 def test_card_in_arabic_indic_digits_is_found_at_its_original_offsets() -> None:
     card = "".join(chr(0x660 + int(c)) if c.isdigit() else c for c in CARD)
     assert found(CREDIT_CARD, f"رقم {card} هنا") == [card]
