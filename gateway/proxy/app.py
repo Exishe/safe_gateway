@@ -4,6 +4,7 @@ Every outbound byte goes through `gateway.cloud.upstream`; this package holds no
 client network code. Nothing here logs or audits request or response text.
 """
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -323,6 +324,10 @@ class _Gateway:
         masked = await run_in_threadpool(_mask_texts, texts, self.engine_config, mapping)
         if session_id is None:
             session_id = self.sessions.create(mapping)
+        else:
+            # get() saved before masking; the entries just added must reach disk too (M11).
+            with contextlib.suppress(SessionNotFound):  # expired meanwhile: 404 next time
+                await run_in_threadpool(self.sessions.save, session_id)
         return session_id, mapping, masked
 
     async def delete_session(self, session_id: str) -> Response:

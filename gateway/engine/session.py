@@ -37,6 +37,7 @@ class SessionStore:
         ttl_seconds: float = DEFAULT_TTL_SECONDS,
         clock: Callable[[], float] = time.monotonic,
         persist: EncryptedMappingStore | None = None,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         # NaN compares false with everything, so `<= 0` alone would accept it and never expire.
         if not math.isfinite(ttl_seconds) or ttl_seconds <= 0:
@@ -45,9 +46,15 @@ class SessionStore:
         self.ttl_seconds = ttl_seconds
         self._clock = clock
         self._persist = persist
+        # Files on disk carry wall-clock times; the idle timer runs on `clock`.
+        self._wall_clock = wall_clock
         self._sessions: dict[str, _Session] = {}
         # The proxy serves requests from worker threads.
         self._lock = threading.Lock()
+        if persist is not None:
+            # Sessions idle past their TTL while no gateway ran are deleted at start-up,
+            # not left on disk until someone asks for them (security review M11).
+            persist.purge_older_than(ttl_seconds, now=wall_clock())
 
     def create(self, mapping: Mapping | None = None) -> str:
         session_id = secrets.token_urlsafe(_ID_BYTES)
@@ -71,6 +78,8 @@ class SessionStore:
             session.last_used = now
             if len(session.mapping) != session.saved_size:  # the caller added entries
                 self._save(session_id, session)
+            elif self._persist is not None:
+                self._persist.touch(session_id, self._wall_clock())
             return session.mapping
 
     def save(self, session_id: str) -> None:
@@ -117,16 +126,23 @@ class SessionStore:
         if self._persist is not None:
             self._persist.save(session_id, session.mapping)
             session.saved_size = len(session.mapping)
+            # Saving writes the file, so its time is now the last use as well.
 
     def _restore(self, session_id: str, now: float) -> _Session | None:
-        """A session saved by an earlier process; its idle timer starts now."""
+        """A session saved by an earlier process, idle since its file was last written.
+
+        Its idle timer does not restart: a restart must not revive a stale session
+        (security review M11).
+        """
         if self._persist is None:
             return None
+        written = self._persist.last_used(session_id)
         try:
             mapping = self._persist.load(session_id)
         except StoredMappingNotFound:
             return None
-        session = _Session(mapping, now, saved_size=len(mapping))
+        idle = 0.0 if written is None else max(self._wall_clock() - written, 0.0)
+        session = _Session(mapping, now - idle, saved_size=len(mapping))
         self._sessions[session_id] = session
         return session
 

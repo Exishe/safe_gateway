@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import httpx
 import pytest
 from starlette.testclient import TestClient
@@ -8,6 +10,7 @@ from gateway.config import ProxyConfig
 from gateway.engine.mask import Mapping
 from gateway.engine.rehydrate import rehydrate
 from gateway.engine.session import SessionStore
+from gateway.engine.session_disk import EncryptedMappingStore, InMemoryKeyProvider
 from gateway.proxy.app import MAX_SESSIONS, create_app
 from tests.proxy_fakes import FakeUpstream, PersonalData, RecordingSink
 
@@ -181,3 +184,16 @@ def test_foreign_origin_is_refused_and_listed_origin_gets_cors() -> None:
 def test_foreign_host_header_is_refused() -> None:
     response = _client().get("/health", headers={"host": "rebind.example"})
     assert response.status_code == 400
+
+
+def test_mask_saves_the_session_after_adding_entries(tmp_path: Path) -> None:
+    """Security review M11: /mask saved the session before masking into it, so the new
+    entries never reached disk and a restart lost them."""
+    disk = EncryptedMappingStore(tmp_path / "sessions", InMemoryKeyProvider())
+    client = _client(sessions=SessionStore(persist=disk))
+    first = client.post("/mask", json={"text": f"Mail {DATA.email}."}).json()
+    session_id = first["session_id"]
+    client.post("/mask", json={"text": f"Card {DATA.card}.", "session_id": session_id})
+    stored = disk.load(session_id).to_dict()
+    assert DATA.email in stored.values()
+    assert DATA.card in stored.values()

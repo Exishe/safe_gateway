@@ -7,6 +7,7 @@ key are named by sha256 of the session id, so a directory listing or a keychain
 listing does not reveal ids, and a purge can find the key of an old file.
 """
 
+import contextlib
 import hashlib
 import json
 import os
@@ -101,11 +102,23 @@ class EncryptedMappingStore:
         """Remove the file and the key; True if either existed."""
         return self._remove(self.key_id(session_id))
 
-    def purge_older_than(self, seconds: float) -> int:
-        """Delete files (and their keys) not written for more than `seconds`."""
+    def last_used(self, session_id: str) -> float | None:
+        """When the session was last saved or touched (wall clock), or None without a file."""
+        try:
+            return self.path_for(session_id).stat().st_mtime
+        except FileNotFoundError:
+            return None
+
+    def touch(self, session_id: str, when: float) -> None:
+        """Record a use that changed nothing, so a restart sees the session as used."""
+        with contextlib.suppress(FileNotFoundError):
+            os.utime(self.path_for(session_id), (when, when))
+
+    def purge_older_than(self, seconds: float, now: float | None = None) -> int:
+        """Delete files (and their keys) not saved or touched for more than `seconds`."""
         if not self.directory.is_dir():
             return 0
-        cutoff = time.time() - seconds
+        cutoff = (time.time() if now is None else now) - seconds
         purged = 0
         for path in self.directory.glob(f"*{_SUFFIX}"):
             try:

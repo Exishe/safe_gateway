@@ -1,6 +1,7 @@
 import hashlib
 import os
 import stat
+import time
 from pathlib import Path
 
 import keyring
@@ -10,7 +11,7 @@ from keyring.backend import KeyringBackend
 from keyring.errors import PasswordDeleteError
 
 from gateway.engine.mask import Mapping
-from gateway.engine.session import SessionStore
+from gateway.engine.session import SessionNotFound, SessionStore
 from gateway.engine.session_disk import (
     EncryptedMappingStore,
     InMemoryKeyProvider,
@@ -297,3 +298,59 @@ def test_expiry_seen_by_contains_removes_the_stored_file_and_key(
     assert session_id not in store
     assert files(disk) == []
     assert keys.get(disk.key_id(session_id)) is None
+
+
+# ------------------------------------------------------------------ security review M11
+
+
+class WallClock:
+    """time.time() shifted by `offset` seconds, so a test can step into the future."""
+
+    def __init__(self) -> None:
+        self.offset = 0.0
+
+    def __call__(self) -> float:
+        return time.time() + self.offset
+
+
+def test_a_persisting_store_purges_stale_files_when_it_starts(
+    disk: EncryptedMappingStore, keys: InMemoryKeyProvider
+) -> None:
+    """purge_older_than was never called: a session file outlived its TTL on disk."""
+    stale = SessionStore(persist=disk).create(make_mapping())
+    fresh = SessionStore(persist=disk).create(make_mapping())
+    old = time.time() - 3600
+    os.utime(disk.path_for(stale), (old, old))
+    SessionStore(ttl_seconds=60, persist=disk)
+    assert not disk.path_for(stale).exists()
+    assert keys.get(EncryptedMappingStore.key_id(stale)) is None
+    assert disk.path_for(fresh).exists()
+
+
+def test_a_restored_session_keeps_its_last_use(disk: EncryptedMappingStore) -> None:
+    """_restore gave a stale session a fresh TTL: restarting revived it."""
+    wall = WallClock()
+    session_id = SessionStore(ttl_seconds=60, persist=disk, wall_clock=wall).create(make_mapping())
+    restarted = SessionStore(ttl_seconds=60, persist=disk, wall_clock=wall)
+    wall.offset = 70  # idle for longer than the TTL while the gateway was down
+    with pytest.raises(SessionNotFound):
+        restarted.get(session_id)
+    assert not disk.path_for(session_id).exists()
+
+
+def test_a_restored_session_inside_its_ttl_is_served(disk: EncryptedMappingStore) -> None:
+    wall = WallClock()
+    session_id = SessionStore(ttl_seconds=60, persist=disk, wall_clock=wall).create(make_mapping())
+    wall.offset = 50
+    restarted = SessionStore(ttl_seconds=60, persist=disk, wall_clock=wall)
+    assert restarted.get(session_id).to_dict() == make_mapping().to_dict()
+
+
+def test_use_without_changes_is_recorded_on_disk(disk: EncryptedMappingStore) -> None:
+    """The file's time is the session's last use, so a restart keeps a busy session."""
+    wall = WallClock()
+    store = SessionStore(ttl_seconds=60, persist=disk, wall_clock=wall)
+    session_id = store.create(make_mapping())
+    wall.offset = 40
+    store.get(session_id)
+    assert disk.path_for(session_id).stat().st_mtime == pytest.approx(wall(), abs=1)
