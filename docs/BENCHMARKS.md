@@ -82,10 +82,10 @@ document would take over 12 minutes. `gliner="all"` is therefore not a default.
 | License | CC-BY-4.0 (card: `license: other`, `license_name: cc-by-4.0`). Attribution: "Open PII Masking 500k", Ai4Privacy, https://huggingface.co/datasets/ai4privacy/open-pii-masking-500k-ai4privacy |
 | Sample | 10,000 English records of 30,160 in the shard, seed 20261109 (`random.Random(seed).sample`) |
 | Command | `uv run python -m tools.benchmark_openpii --sample 10000 --seed 20261109 --json docs/benchmarks/openpii-500k.json --markdown docs/benchmarks/openpii-500k.md` (the committed `.md` adds a header to the tables the command writes) |
-| Commit | 79d82b15215a812d69ad4e70b2e46b5a971e8b12 (harness; tree clean) |
+| Commit | 6b27eb43b422894f049e89932b32d2778a0a7e12 (tree clean). Previous run: 79d82b15215a812d69ad4e70b2e46b5a971e8b12 (harness), same engine as bc8662e |
 | Date | 2026-11-09 |
-| Engine | `detect(text, "auto", EngineConfig(ner="auto"))`: structured recognizers plus spaCy `en_core_web_lg` 3.8.0 through Presidio. No GLiNER yet. Default phone regions. |
-| Run time | English 37.6 s; all eight languages 70 s in a 4-CPU container, single process |
+| Engine | `detect(text, "auto", EngineConfig(ner="auto"))`: structured recognizers, the shape and keyword recognizers of ADR 0016, and spaCy `en_core_web_lg` 3.8.0 through Presidio. No GLiNER yet. Default phone regions. |
+| Run time | English 39.1 s; all eight languages 70 s in a 4-CPU container, single process |
 
 Definitions. Masking recall: share of gold spans with at least 90% of their characters
 inside the union of any detected spans (what matters for privacy: the value was masked,
@@ -113,25 +113,25 @@ second table; they are reported, not dropped.
 | DRIVERLICENSENUM | DRIVER_LICENSE |
 | TIME, TITLE, AGE, SEX, GENDER | none: not covered |
 
-English, per dataset label (gold spans in the sample):
+English, per dataset label (gold spans in the sample; the last column is the previous run):
 
-| Dataset label | Maps to | Gold spans | Masking recall | Typed recall |
-|---------------|---------|-----------:|---------------:|-------------:|
-| GIVENNAME | PERSON | 7977 | 83.6% | 66.2% |
-| SURNAME | PERSON | 3061 | 85.4% | 70.8% |
-| CITY | LOCATION | 1648 | 86.6% | 46.1% |
-| STREET | ADDRESS/LOCATION | 1183 | 78.2% | 57.7% |
-| BUILDINGNUM | ADDRESS/LOCATION | 1030 | 37.6% | 18.6% |
-| ZIPCODE | ADDRESS/LOCATION | 377 | 30.2% | 2.3% |
-| DATE | DATE/DATE_OF_BIRTH | 1491 | 64.3% | 59.8% |
-| EMAIL | EMAIL | 1155 | 99.1% | 98.5% |
-| TELEPHONENUM | PHONE | 1591 | 43.4% | 30.7% |
-| CREDITCARDNUMBER | CREDIT_CARD | 179 | 27.3% | 8.9% |
-| SOCIALNUM | NATIONAL_ID/SSN | 229 | 81.2% | 21.8% |
-| TAXNUM | NATIONAL_ID | 259 | 83.3% | 10.8% |
-| IDCARDNUM | NATIONAL_ID | 803 | 21.1% | 0.3% |
-| PASSPORTNUM | PASSPORT | 367 | 53.1% | 0.0% |
-| DRIVERLICENSENUM | DRIVER_LICENSE | 196 | 20.4% | 0.0% |
+| Dataset label | Maps to | Gold spans | Masking recall | Typed recall | Previous: masking / typed |
+|---------------|---------|-----------:|---------------:|-------------:|--------------------------:|
+| GIVENNAME | PERSON | 7977 | 83.6% | 66.2% | 83.6% / 66.2% |
+| SURNAME | PERSON | 3061 | 85.4% | 70.8% | 85.4% / 70.8% |
+| CITY | LOCATION | 1648 | 86.6% | 46.1% | 86.6% / 46.1% |
+| STREET | ADDRESS/LOCATION | 1183 | 78.2% | 57.7% | 78.2% / 57.7% |
+| BUILDINGNUM | ADDRESS/LOCATION | 1030 | 37.6% | 18.6% | 37.6% / 18.6% |
+| ZIPCODE | ADDRESS/LOCATION | 377 | 30.2% | 2.3% | 30.2% / 2.3% |
+| DATE | DATE/DATE_OF_BIRTH | 1491 | 64.3% | 59.8% | 64.3% / 59.8% |
+| EMAIL | EMAIL | 1155 | 99.1% | 98.5% | 99.1% / 98.5% |
+| TELEPHONENUM | PHONE | 1591 | 85.9% | 76.7% | 43.4% / 30.7% |
+| CREDITCARDNUMBER | CREDIT_CARD | 179 | 84.3% | 65.9% | 27.3% / 8.9% |
+| SOCIALNUM | NATIONAL_ID/SSN | 229 | 81.6% | 22.2% | 81.2% / 21.8% |
+| TAXNUM | NATIONAL_ID | 259 | 83.7% | 11.1% | 83.3% / 10.8% |
+| IDCARDNUM | NATIONAL_ID | 803 | 56.5% | 35.8% | 21.1% / 0.3% |
+| PASSPORTNUM | PASSPORT | 367 | 98.3% | 45.2% | 53.1% / 0.0% |
+| DRIVERLICENSENUM | DRIVER_LICENSE | 196 | 28.0% | 3.5% | 20.4% / 0.0% |
 
 Not covered (no EntityType; the masking figure is incidental, from spans of other types):
 
@@ -147,28 +147,34 @@ English, precision per detected type:
 
 | Detected type | Detected spans | Precision (lower bound) |
 |---------------|---------------:|------------------------:|
-| PERSON | 6731 | 98.2% |
-| LOCATION | 2103 | 95.9% |
-| DATE | 2108 | 84.1% |
-| ORG | 2593 | 73.5% |
+| PERSON | 6726 | 98.2% |
+| LOCATION | 2093 | 95.8% |
+| DATE | 2054 | 83.6% |
+| ORG | 2576 | 73.3% |
 | EMAIL | 1149 | 100.0% |
-| PHONE | 1227 | 100.0% |
-| CREDIT_CARD | 21 | 100.0% |
-| SSN | 144 | 100.0% |
-| NATIONAL_ID | 127 | 100.0% |
+| PHONE | 1773 | 100.0% |
+| CREDIT_CARD | 121 | 100.0% |
+| SSN | 109 | 100.0% |
+| NATIONAL_ID | 399 | 100.0% |
+| PASSPORT | 166 | 100.0% |
+| DRIVER_LICENSE | 8 | 100.0% |
 
 How to read this.
 
-- These are the engine as shipped in Phase 1b, on a dataset whose values are synthetic and
-  often invalid by construction. The structured recognizers validate (Luhn for cards,
-  area rules for SSNs, libphonenumber for phones), so synthetic numbers that fail those
-  checks are not detected. A one-off check of the full English validation shard (not part
-  of the committed command) found 513 of 575 gold card numbers failing the Luhn check. The
+- The dataset's values are synthetic and often invalid by construction. A one-off check of
+  the full English validation shard (not part of the committed command) found 513 of 575
+  gold card numbers failing the Luhn check. Since ADR 0016, Luhn-invalid numbers of an
+  exact card shape, `+` numbers that libphonenumber rejects, and numbers after a phone
+  keyword are masked at lower scores (0.55 to 0.85), so they are found; a customer who
+  raises a type's threshold above those scores gets the validated-only behaviour back. The
   property tests in `tests/property/` still assert 100% on valid generated identifiers;
-  this benchmark does not contradict them, and it does not show how real documents behave.
-- Types with no recognizer yet (PASSPORT, DRIVER_LICENSE, a general NATIONAL_ID, ADDRESS
-  parts) have 0% or near-0% typed recall by construction; any masking recall there comes
-  from other recognizers matching part of the value.
+  this benchmark does not show how real documents behave.
+- PASSPORT, DRIVER_LICENSE and a general NATIONAL_ID are found only by shape (`AA9999999`,
+  `AA99999AA`) or after a document keyword in English or Russian (ADR 0016), so typed
+  recall stays low where the dataset writes a bare code with no keyword. ADDRESS parts
+  have no recognizer; any masking recall there comes from other recognizers.
+- The gap between masking and typed recall for phones and cards means those values were
+  covered, at least in part, by spans of another type; this run does not break down which.
 - Names and places are NER results from a general-purpose model, measured here for the
   first time. The gap between masking and typed recall for PERSON, CITY and STREET means
   those values were covered by spans of another type; this run does not break down which.
@@ -186,17 +192,45 @@ te 5,434 (all the shard has for them).
 | Dataset label | de | es | fr | it | nl | hi | te |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | EMAIL | 97.5% / 97.5% (1306) | 99.2% / 99.2% (1116) | 98.8% / 98.8% (1311) | 99.3% / 99.3% (1152) | 98.5% / 98.5% (602) | 99.0% / 99.0% (715) | 98.9% / 98.9% (566) |
-| TELEPHONENUM | 46.0% / 43.2% (1641) | 37.5% / 35.0% (1468) | 38.9% / 36.1% (1695) | 37.8% / 34.7% (1595) | 44.3% / 41.2% (787) | 34.8% / 30.4% (1162) | 39.0% / 36.4% (903) |
-| CREDITCARDNUMBER | 12.2% / 11.8% (253) | 9.6% / 9.1% (218) | 10.1% / 9.7% (216) | 12.6% / 11.9% (260) | 7.3% / 7.3% (136) | 11.7% / 11.7% (136) | 10.9% / 9.6% (165) |
-| SOCIALNUM | 0.0% / 0.0% (275) | 47.7% / 6.5% (199) | 27.5% / 3.2% (218) | 0.0% / 0.0% (107) | 97.6% / 48.2% (85) | 64.6% / 8.0% (150) | 66.0% / 7.8% (203) |
-| TAXNUM | 11.6% / 0.5% (335) | 34.2% / 4.3% (277) | 30.2% / 3.7% (238) | 0.0% / 0.0% (250) | 95.9% / 0.0% (148) | 67.5% / 8.3% (216) | 66.9% / 9.3% (224) |
-| IDCARDNUM | 0.1% / 0.0% (833) | 0.0% / 0.0% (848) | 7.1% / 0.0% (793) | 0.0% / 0.0% (902) | 96.4% / 0.0% (421) | 0.0% / 0.0% (537) | 0.0% / 0.0% (556) |
-| PASSPORTNUM | 0.0% / 0.0% (432) | 0.0% / 0.0% (393) | 0.2% / 0.0% (363) | 0.0% / 0.0% (333) | 0.0% / 0.0% (192) | 0.0% / 0.0% (238) | 0.0% / 0.0% (259) |
-| DRIVERLICENSENUM | 37.8% / 0.0% (235) | 0.0% / 0.0% (191) | 20.5% / 0.0% (195) | 72.7% / 0.0% (158) | 0.0% / 0.0% (87) | 0.0% / 0.0% (163) | 0.0% / 0.0% (171) |
+| TELEPHONENUM | 80.3% / 78.6% (1641) | 82.8% / 80.8% (1468) | 83.3% / 81.7% (1695) | 84.5% / 82.7% (1595) | 84.3% / 82.2% (787) | 78.1% / 74.8% (1162) | 72.7% / 70.4% (903) |
+| CREDITCARDNUMBER | 79.4% / 79.0% (253) | 73.3% / 72.9% (218) | 74.5% / 74.0% (216) | 76.9% / 76.1% (260) | 78.6% / 78.6% (136) | 73.5% / 73.5% (136) | 61.2% / 60.0% (165) |
+| SOCIALNUM | 0.0% / 0.0% (275) | 47.7% / 6.5% (199) | 28.8% / 3.2% (218) | 0.0% / 0.0% (107) | 97.6% / 48.2% (85) | 64.6% / 8.0% (150) | 66.0% / 7.8% (203) |
+| TAXNUM | 11.9% / 0.8% (335) | 34.2% / 4.3% (277) | 31.0% / 4.6% (238) | 0.4% / 0.4% (250) | 95.9% / 0.0% (148) | 67.5% / 8.3% (216) | 66.9% / 9.3% (224) |
+| IDCARDNUM | 26.5% / 1.5% (833) | 2.2% / 2.2% (848) | 7.9% / 0.7% (793) | 4.3% / 4.3% (902) | 96.9% / 6.4% (421) | 1.1% / 1.1% (537) | 1.4% / 1.4% (556) |
+| PASSPORTNUM | 0.4% / 0.0% (432) | 50.8% / 50.8% (393) | 29.7% / 29.4% (363) | 51.0% / 50.7% (333) | 0.0% / 0.0% (192) | 99.5% / 99.1% (238) | 92.2% / 91.1% (259) |
+| DRIVERLICENSENUM | 38.2% / 0.0% (235) | 0.5% / 0.0% (191) | 20.5% / 0.0% (195) | 72.7% / 0.0% (158) | 1.1% / 1.1% (87) | 0.0% / 0.0% (163) | 0.0% / 0.0% (171) |
 
 The high masking figures for nl (SOCIALNUM, TAXNUM, IDCARDNUM) sit next to typed recall
-of 48.2%, 0.0% and 0.0%: the values were covered by spans of other types, which this run
-does not break down. Read typed recall as the figure for the type itself.
+of 48.2%, 0.0% and 6.4%: the values were covered by spans of other types, which this run
+does not break down. Read typed recall as the figure for the type itself. The document
+keywords are English and Russian only, so passports, ID cards and driving licences in
+these languages are found by shape alone.
+
+### Changes since the previous run
+
+Previous run: commit 79d82b15215a812d69ad4e70b2e46b5a971e8b12, 2026-11-09 (engine
+unchanged up to bc8662e). This run: commit 6b27eb43b422894f049e89932b32d2778a0a7e12,
+2026-11-09, same command, sample and seed. What changed: the six shape and keyword
+recognizers of ADR 0016 (`+` phones, keyword-gated phones, Luhn-invalid card shapes,
+`AA9999999` passports, `AA99999AA` ID cards, keyword-gated document numbers). Masking
+recall, previous -> this run:
+
+| Dataset label | en | de | es | fr | it | nl | hi | te |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| TELEPHONENUM | 43.4% -> 85.9% | 46.0% -> 80.3% | 37.5% -> 82.8% | 38.9% -> 83.3% | 37.8% -> 84.5% | 44.3% -> 84.3% | 34.8% -> 78.1% | 39.0% -> 72.7% |
+| CREDITCARDNUMBER | 27.3% -> 84.3% | 12.2% -> 79.4% | 9.6% -> 73.3% | 10.1% -> 74.5% | 12.6% -> 76.9% | 7.3% -> 78.6% | 11.7% -> 73.5% | 10.9% -> 61.2% |
+| PASSPORTNUM | 53.1% -> 98.3% | 0.0% -> 0.4% | 0.0% -> 50.8% | 0.2% -> 29.7% | 0.0% -> 51.0% | 0.0% -> 0.0% | 0.0% -> 99.5% | 0.0% -> 92.2% |
+| IDCARDNUM | 21.1% -> 56.5% | 0.1% -> 26.5% | 0.0% -> 2.2% | 7.1% -> 7.9% | 0.0% -> 4.3% | 96.4% -> 96.9% | 0.0% -> 1.1% | 0.0% -> 1.4% |
+| DRIVERLICENSENUM | 20.4% -> 28.0% | 37.8% -> 38.2% | 0.0% -> 0.5% | 20.5% -> 20.5% | 72.7% -> 72.7% | 0.0% -> 1.1% | 0.0% -> 0.0% | 0.0% -> 0.0% |
+
+No label lost masking or typed recall in any language. Smaller gains: en SOCIALNUM
+81.2% -> 81.6% and TAXNUM 83.3% -> 83.7%; de TAXNUM 11.6% -> 11.9%; fr SOCIALNUM
+27.5% -> 28.8% and TAXNUM 30.2% -> 31.0%; it TAXNUM 0.0% -> 0.4%. Every other label,
+names, places, dates and e-mail included, is unchanged. Precision (lower bound) stays
+100.0% for every structured type in every language; the en NER types moved by at most
+0.5 points (DATE 84.1% -> 83.6%) because longer structured spans now win some overlaps.
+The prototype rules of the miss analysis were not run as part of this command; the
+figures above are the shipped recognizers.
 
 ### Russian and Armenian: not measured
 
