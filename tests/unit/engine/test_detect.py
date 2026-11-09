@@ -190,7 +190,8 @@ import unicodedata  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import gateway.engine.detect as detect_module  # noqa: E402
-from gateway.engine.ner import SPACY_MODEL_DIRS, ModelMissing  # noqa: E402
+from gateway.engine.model_marker import write_marker  # noqa: E402
+from gateway.engine.ner import SPACY_MODEL_DIRS, SPACY_MODEL_PINS, ModelMissing  # noqa: E402
 from gateway.engine.types import Span  # noqa: E402
 
 EN = "Zorvath Quillin joined Brightwater Analytics in Portland last March."
@@ -219,10 +220,11 @@ class RecordingNer:
 def fake_ner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     """Installed-looking model directories and a recording NER in place of Presidio."""
     monkeypatch.setenv("SAFEGUARD_HOME", str(tmp_path))
-    for directory in SPACY_MODEL_DIRS.values():
-        path = tmp_path / "models" / "spacy" / directory
+    for pin in SPACY_MODEL_PINS.values():
+        path = tmp_path / "models" / "spacy" / pin.model_id
         path.mkdir(parents=True)
         (path / "config.cfg").write_text("[nlp]\n", encoding="utf-8")
+        write_marker(path, pin)
     monkeypatch.setattr(RecordingNer, "calls", [], raising=False)
     monkeypatch.setattr(detect_module, "SpacyNerRecognizer", RecordingNer)
     return RecordingNer.calls
@@ -366,7 +368,7 @@ def test_a_forced_language_without_its_model_raises() -> None:
 
 # ------------------------------------------------------------------ GLiNER routing (Phase 1c)
 
-from gateway.engine.gliner_ner import GLINER_MODEL_DIR  # noqa: E402
+from gateway.engine.gliner_ner import GLINER_MODEL_DIR, GLINER_PIN  # noqa: E402
 
 UND = "Ζορβαθ Κουιλλίν από την Αθήνα."  # Greek: no spaCy model, script "und"
 
@@ -399,6 +401,7 @@ def fake_gliner(
     (path / "gliner_config.json").write_text('{"encoder_config": {}}', encoding="utf-8")
     for name in ("pytorch_model.bin", "tokenizer_config.json", "config.json"):
         (path / name).write_bytes(b"{}")
+    write_marker(path, GLINER_PIN)
     monkeypatch.setattr(RecordingGliner, "calls", [], raising=False)
     monkeypatch.setattr(RecordingGliner, "thresholds", [], raising=False)
     monkeypatch.setattr(detect_module, "GlinerRecognizer", RecordingGliner)

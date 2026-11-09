@@ -18,12 +18,19 @@ from functools import cache
 from pathlib import Path
 from typing import Protocol
 
+from gateway.engine.model_marker import Pin, is_installed
 from gateway.engine.ner import ModelMissing, models_home
 from gateway.engine.types import EntityType, Span
 
-# Where `safeguard models pull` (gateway/cloud/hub.py) installs the model; a test keeps
-# this name in step with the pinned download.
+# Where `safeguard models pull` (gateway/cloud/hub.py) installs the model, and the digest
+# over its pinned files that the completion marker must record (ADR 0006, amended
+# 2026-11-09). A test keeps both in step with the pinned download.
 GLINER_MODEL_DIR = "gliner_multi_pii-v1-1fcf13e85f4eef5394e1fcd406cf2ca9ea82351d"
+GLINER_PIN = Pin(
+    GLINER_MODEL_DIR,
+    # pragma: allowlist nextline secret
+    "5f3128bd424c6a546fb24aa9bb6cfadb9417d5384ef0ec676503a0b3ef879a80",
+)
 
 # GLiNER label -> ours. GLiNER is prompted with exactly these labels.
 GLINER_LABELS = {
@@ -61,7 +68,9 @@ GlinerLoader = Callable[[Path], GlinerModel]
 
 
 def _missing(path: Path) -> ModelMissing:
-    return ModelMissing(f"no GLiNER model at {path}; run `safeguard models pull --only gliner`")
+    return ModelMissing(
+        f"no complete, verified GLiNER model at {path}; run `safeguard models pull --only gliner`"
+    )
 
 
 def is_gliner_model(path: Path) -> bool:
@@ -76,9 +85,14 @@ def is_gliner_model(path: Path) -> bool:
 
 
 def gliner_model_dir() -> Path:
-    """The installed GLiNER directory; ModelMissing if it is not installed."""
-    path = models_home() / "gliner" / GLINER_MODEL_DIR
-    if not is_gliner_model(path):
+    """The installed GLiNER directory; ModelMissing if it is not installed.
+
+    Installed means the completion marker of a verified pull for the current pin, the
+    same test `safeguard models pull` and `models list` use. The recognizer and the
+    loader still check the directory's shape before anything reads it.
+    """
+    path = models_home() / "gliner" / GLINER_PIN.model_id
+    if not is_installed(path, GLINER_PIN):
         raise _missing(path)
     return path
 

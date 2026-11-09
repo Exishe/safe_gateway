@@ -15,11 +15,26 @@ from functools import cache
 from pathlib import Path
 from typing import Protocol
 
+from gateway.engine.model_marker import Pin, is_installed
 from gateway.engine.types import EntityType, Span
 
-# Where `safeguard models pull` (gateway/cloud/models.py) unpacks each model. The engine
-# only reads them; a test keeps these names in step with the pinned downloads.
-SPACY_MODEL_DIRS = {"en": "en_core_web_lg-3.8.0", "ru": "ru_core_news_lg-3.8.0"}
+# Where `safeguard models pull` (gateway/cloud/models.py) unpacks each model, and the
+# wheel digest its completion marker must record (ADR 0006, amended 2026-11-09). The
+# engine only reads them; a test keeps both in step with the pinned downloads. Public
+# digests, not secrets, hence the pragmas for detect-secrets.
+SPACY_MODEL_PINS = {
+    "en": Pin(
+        "en_core_web_lg-3.8.0",
+        # pragma: allowlist nextline secret
+        "293e9547a655b25499198ab15a525b05b9407a75f10255e405e8c3854329ab63",
+    ),
+    "ru": Pin(
+        "ru_core_news_lg-3.8.0",
+        # pragma: allowlist nextline secret
+        "90bd584be86772b647e1b15cdc62e09d3a7182284ee23da95e19c2bf71aa0189",
+    ),
+}
+SPACY_MODEL_DIRS = {lang: pin.model_id for lang, pin in SPACY_MODEL_PINS.items()}
 
 # spaCy label -> Presidio entity (ADR 0012 point 5). Presidio's default mapping lacks FAC.
 SPACY_TO_PRESIDIO = {
@@ -75,16 +90,25 @@ def _is_model(path: Path) -> bool:
 
 
 def _missing(lang: str, path: Path) -> ModelMissing:
-    return ModelMissing(f"no {lang} NER model at {path}; run `safeguard models pull --only {lang}`")
+    return ModelMissing(
+        f"no complete, verified {lang} NER model at {path}; "
+        f"run `safeguard models pull --only {lang}`"
+    )
 
 
 def model_dir(lang: str) -> Path:
-    """The installed model directory for `lang`; ModelMissing if it is not installed."""
-    if lang not in SPACY_MODEL_DIRS:
+    """The installed model directory for `lang`; ModelMissing if it is not installed.
+
+    Installed means the completion marker of a verified pull for the current pin, the
+    same test `safeguard models pull` and `models list` use; a bare or half-unpacked
+    directory is missing.
+    """
+    if lang not in SPACY_MODEL_PINS:
         msg = f"no NER model is defined for language {lang!r}"
         raise ValueError(msg)
-    path = models_home() / "spacy" / SPACY_MODEL_DIRS[lang]
-    if not _is_model(path):
+    pin = SPACY_MODEL_PINS[lang]
+    path = models_home() / "spacy" / pin.model_id
+    if not is_installed(path, pin):
         raise _missing(lang, path)
     return path
 

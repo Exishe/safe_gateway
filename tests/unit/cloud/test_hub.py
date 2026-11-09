@@ -21,7 +21,7 @@ from gateway.cloud.hub import (
     pull,
 )
 from gateway.cloud.models import ModelDownloadError
-from gateway.engine.gliner_ner import GLINER_MODEL_DIR, is_gliner_model
+from gateway.engine.gliner_ner import GLINER_MODEL_DIR, GLINER_PIN, is_gliner_model
 from gateway.engine.model_marker import MARKER, Pin, write_marker
 
 GLINER_CONFIG = json.dumps({"model_name": "example/backbone", "max_len": 384}).encode()
@@ -183,6 +183,8 @@ def test_a_config_naming_another_backbone_installs_nothing() -> None:
 
 def test_the_pinned_model_is_the_one_the_engine_loads() -> None:
     assert GLINER_MODEL.directory_name == GLINER_MODEL_DIR
+    # The engine accepts exactly the marker that `safeguard models pull` writes.
+    assert GLINER_MODEL.pin == GLINER_PIN
     files = {(f.repo, f.path) for f in GLINER_MODEL.files}
     assert files == {
         ("urchade/gliner_multi_pii-v1", "gliner_config.json"),

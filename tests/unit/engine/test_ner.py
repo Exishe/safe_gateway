@@ -17,11 +17,13 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from gateway.cloud.models import SPACY_MODELS, install_dir
+from gateway.engine.model_marker import Pin, write_marker
 from gateway.engine.ner import (
     IGNORED_SPACY_LABELS,
     OVERLAP,
     SPACY_MAX_LENGTH,
     SPACY_MODEL_DIRS,
+    SPACY_MODEL_PINS,
     SPACY_TO_PRESIDIO,
     WINDOW,
     ModelMissing,
@@ -311,7 +313,23 @@ def test_model_dir_returns_the_pulled_directory(
     expected = tmp_path / "models" / "spacy" / SPACY_MODEL_DIRS["en"]
     expected.mkdir(parents=True)
     (expected / "config.cfg").write_text("[nlp]\n", encoding="utf-8")
+    write_marker(expected, SPACY_MODEL_PINS["en"])
     assert model_dir("en") == expected
+
+
+@pytest.mark.parametrize("marker", [None, "0" * 64])
+def test_model_dir_refuses_an_unmarked_or_outdated_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, marker: str | None
+) -> None:
+    # What an interrupted pull leaves (M3): the model files, but no marker for the current pin.
+    monkeypatch.setenv("SAFEGUARD_HOME", str(tmp_path))
+    path = tmp_path / "models" / "spacy" / SPACY_MODEL_DIRS["en"]
+    path.mkdir(parents=True)
+    (path / "config.cfg").write_text("[nlp]\n", encoding="utf-8")
+    if marker is not None:
+        write_marker(path, Pin(SPACY_MODEL_DIRS["en"], marker))
+    with pytest.raises(ModelMissing, match=r"safeguard models pull --only en"):
+        model_dir("en")
 
 
 def test_model_dir_refuses_a_language_without_a_model() -> None:
@@ -323,9 +341,11 @@ def test_engine_and_models_pull_agree_on_where_models_live(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SAFEGUARD_HOME", str(tmp_path))
-    assert set(SPACY_MODEL_DIRS) == set(SPACY_MODELS)
+    assert set(SPACY_MODEL_DIRS) == set(SPACY_MODELS) == set(SPACY_MODEL_PINS)
     for lang, spec in SPACY_MODELS.items():
         assert SPACY_MODEL_DIRS[lang] == spec.directory_name
+        # The engine accepts exactly the marker that `safeguard models pull` writes.
+        assert SPACY_MODEL_PINS[lang] == spec.pin
         with pytest.raises(ModelMissing) as missing:
             model_dir(lang)
         assert str(install_dir(spec)) in str(missing.value)

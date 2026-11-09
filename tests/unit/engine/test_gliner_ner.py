@@ -18,12 +18,14 @@ import pytest
 from gateway.engine import gliner_ner
 from gateway.engine.gliner_ner import (
     GLINER_LABELS,
+    GLINER_PIN,
     GlinerRecognizer,
     gliner_model_dir,
     is_gliner_model,
     load_gliner,
     word_windows,
 )
+from gateway.engine.model_marker import Pin, write_marker
 from gateway.engine.ner import ModelMissing
 from gateway.engine.types import EntityType as E
 
@@ -131,7 +133,22 @@ def test_gliner_model_dir_names_the_pull_command(
     with pytest.raises(ModelMissing, match="safeguard models pull --only gliner"):
         gliner_model_dir()
     path = installed(tmp_path / "models" / "gliner" / gliner_ner.GLINER_MODEL_DIR)
+    write_marker(path, GLINER_PIN)
     assert gliner_model_dir() == path
+
+
+@pytest.mark.parametrize("marker", [None, "0" * 64])
+def test_gliner_model_dir_refuses_an_unmarked_or_outdated_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, marker: str | None
+) -> None:
+    # Every file is there, but the marker that a completed pull writes last is not (M3).
+    monkeypatch.setenv("SAFEGUARD_HOME", str(tmp_path))
+    path = installed(tmp_path / "models" / "gliner" / gliner_ner.GLINER_MODEL_DIR)
+    assert is_gliner_model(path)
+    if marker is not None:
+        write_marker(path, Pin(gliner_ner.GLINER_MODEL_DIR, marker))
+    with pytest.raises(ModelMissing, match="safeguard models pull --only gliner"):
+        gliner_model_dir()
 
 
 # ------------------------------------------------------------------ windows
