@@ -69,8 +69,74 @@ def test_a_restored_value_is_never_scanned_again() -> None:
     assert rehydrate("[LITERAL_1] [PERSON_1]", mapping) == ("[PERSON_2] Boris", [])
 
 
+def test_rule_3_left_edge_sees_text_before_the_scan_start() -> None:
+    mapping = Mapping()
+    mapping.placeholder_for("Anna", EntityType.PERSON)
+    assert rehydrate("XPERSON_1", mapping) == ("XPERSON_1", [])
+
+
 def test_empty_mapping_lists_every_token() -> None:
     assert rehydrate("[PERSON_1] PERSON 2", Mapping()) == (
         "[PERSON_1] PERSON 2",
         ["[PERSON_1]", "PERSON 2"],
     )
+
+
+# ------------------------------------------------------------------ streaming (ADR 0004 point 3)
+
+from gateway.engine.placeholders import MAX_PARTIAL  # noqa: E402
+from gateway.engine.rehydrate import StreamingRehydrator  # noqa: E402
+
+ANSWER = (
+    "Dear [PERSON_1], PERSON 2 wrote to [email-1]. [PERSON_7] is unknown; "
+    "only person 1 of 3 signed. Born [DATE_OF_BIRTH_1], PERSON_12 and XPERSON_1."
+)
+
+
+def stream(chunks: list[str], mapping: Mapping) -> tuple[str, list[str]]:
+    rehydrator = StreamingRehydrator(mapping)
+    out = "".join(rehydrator.feed(chunk) for chunk in chunks) + rehydrator.close()
+    return out, rehydrator.unresolved
+
+
+def test_a_split_placeholder_is_held_then_restored(mapping: Mapping) -> None:
+    rehydrator = StreamingRehydrator(mapping)
+    assert rehydrator.feed("Dear [PER") == "Dear "
+    assert rehydrator.feed("SON_1], hi") == "Anna Petrova, hi"
+    assert rehydrator.close() == ""
+
+
+def test_the_next_chunk_decides_an_unbracketed_token(mapping: Mapping) -> None:
+    assert stream(["see PERSON_1", "2 now"], mapping) == ("see PERSON_12 now", ["PERSON_12"])
+    assert stream(["see PERSON_1", "x now"], mapping) == ("see PERSON_1x now", [])
+    assert stream(["see PERSON_1", ". now"], mapping) == ("see Anna Petrova. now", [])
+
+
+def test_plain_text_is_emitted_at_once(mapping: Mapping) -> None:
+    rehydrator = StreamingRehydrator(mapping)
+    assert rehydrator.feed("nothing to hold here. ") == "nothing to hold here. "
+    assert rehydrator.feed("lower case person") == "lower case person"
+
+
+def test_the_held_tail_never_exceeds_the_longest_partial_token(mapping: Mapping) -> None:
+    rehydrator = StreamingRehydrator(mapping)
+    for char in "x [MEDICAL_RECORD_NUMBER_123456 and on [PERSON 1" * 3:
+        rehydrator.feed(char)
+        assert rehydrator.held <= MAX_PARTIAL
+    rehydrator.feed("[MEDICAL_RECORD_NUMBER_123456")
+    assert rehydrator.held == MAX_PARTIAL
+
+
+def test_close_flushes_an_unfinished_token(mapping: Mapping) -> None:
+    assert stream(["the end [PERSON_"], mapping) == ("the end [PERSON_", [])
+    assert stream(["the end PERSON_1"], mapping) == ("the end Anna Petrova", [])
+
+
+def test_every_two_chunk_split_matches_rehydrate(mapping: Mapping) -> None:
+    expected = rehydrate(ANSWER, mapping)
+    for cut in range(len(ANSWER) + 1):
+        assert stream([ANSWER[:cut], ANSWER[cut:]], mapping) == expected, cut
+
+
+def test_one_character_chunks_match_rehydrate(mapping: Mapping) -> None:
+    assert stream(list(ANSWER), mapping) == rehydrate(ANSWER, mapping)
