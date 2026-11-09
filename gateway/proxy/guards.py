@@ -5,7 +5,9 @@ Other programs on the machine and pages in the user's browser can all reach
 
 - the Host header must name 127.0.0.1 or localhost, so a page cannot read answers
   through DNS rebinding (its own domain pointed at 127.0.0.1);
-- a request with an Origin header is refused unless that origin is allowed;
+- a request with an Origin header is refused unless that origin is allowed, or, when
+  the gateway serves its own web UI, it is the very origin the request was sent to
+  (browsers send Origin on same-origin POST and DELETE; ADR 0024);
 - the body is capped, from Content-Length and again while it is read.
 """
 
@@ -25,11 +27,17 @@ def _error(status: int, error_type: str, message: str) -> JSONResponse:
 
 class LocalOnlyGuard:
     def __init__(
-        self, app: ASGIApp, *, max_body_bytes: int, allowed_origins: Collection[str] = ()
+        self,
+        app: ASGIApp,
+        *,
+        max_body_bytes: int,
+        allowed_origins: Collection[str] = (),
+        allow_same_origin: bool = False,
     ) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
         self.allowed_origins = frozenset(allowed_origins)
+        self.allow_same_origin = allow_same_origin
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":  # lifespan
@@ -41,13 +49,22 @@ class LocalOnlyGuard:
             return
         await self._capped(scope, receive, send)
 
+    def _origin_allowed(self, origin: str, host: str) -> bool:
+        if origin in self.allowed_origins:
+            return True
+        # The Host was checked above, so this origin is a page served from this very
+        # loopback address and port: the gateway's own UI. A page anywhere else cannot
+        # claim it, and a rebinding page fails the Host check first.
+        return self.allow_same_origin and origin == f"http://{host.lower()}"
+
     def _refusal(self, headers: Headers) -> JSONResponse | None:
-        if not _LOCAL_HOST.fullmatch(headers.get("host", "")):
+        host = headers.get("host", "")
+        if not _LOCAL_HOST.fullmatch(host):
             return _error(
                 400, "invalid_request_error", "the Host header must be 127.0.0.1 or localhost"
             )
         origin = headers.get("origin")
-        if origin is not None and origin not in self.allowed_origins:
+        if origin is not None and not self._origin_allowed(origin, host):
             return _error(403, "forbidden", "requests from this origin are not allowed")
         length = headers.get("content-length")
         if length is not None:

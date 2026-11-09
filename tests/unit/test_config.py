@@ -85,6 +85,17 @@ cors_allow_origins = ["chrome-extension://abcdefghijklmnop"]
     )
 
 
+def test_dev_ui_flag_is_off_unless_set() -> None:
+    assert parse_config({}).proxy.allow_dev_ui is False
+    assert parse_config({"proxy": {"allow_dev_ui": True}}).proxy.allow_dev_ui is True
+
+
+@pytest.mark.parametrize("value", ["yes", 1, "true", []])
+def test_dev_ui_flag_must_be_a_boolean(value: object) -> None:
+    with pytest.raises(ConfigError, match="allow_dev_ui"):
+        parse_config({"proxy": {"allow_dev_ui": value}})
+
+
 def test_provider_default_base_url_is_filled_in() -> None:
     assert parse_config({"provider": "anthropic"}).base_url == "https://api.anthropic.com"
 

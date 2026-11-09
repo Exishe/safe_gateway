@@ -99,12 +99,21 @@ def _check_and_purge(sink: AuditLogSink, path: Path, retention_days: int | None)
         raise StartupError(msg)
 
 
+def default_ui_dir() -> Path:
+    """The web UI as `npm run build` writes it in a source checkout (ADR 0024)."""
+    return Path(__file__).resolve().parents[2] / "apps" / "web" / "dist"
+
+
 def build_app(
     config: GatewayConfig,
     read_key: Callable[[str], ApiKey | None] | None = None,
     audit: AuditSink | None = None,
+    ui_dir: Path | None = None,
 ) -> FastAPI:
-    """The app for `config`: the key from the keychain, the gazetteer from its file."""
+    """The app for `config`: the key from the keychain, the gazetteer from its file.
+
+    The UI in `ui_dir` (default: the repository's build) is served when it exists.
+    """
     read_key = read_key or read_api_key
     provider = config.provider
     key = None
@@ -127,7 +136,12 @@ def build_app(
             raise StartupError(msg) from None
     engine = EngineConfig(thresholds=config.thresholds, gazetteer=gazetteer)
     return create_app(
-        upstream, engine_config=engine, model=config.model, proxy=config.proxy, audit=audit
+        upstream,
+        engine_config=engine,
+        model=config.model,
+        proxy=config.proxy,
+        ui_dir=ui_dir if ui_dir is not None else default_ui_dir(),
+        audit=audit,
     )
 
 

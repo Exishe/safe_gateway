@@ -27,7 +27,7 @@ _TOP_FIELDS = frozenset(
         "proxy",
     }
 )
-_PROXY_FIELDS = frozenset({"max_body_bytes", "cors_allow_origins"})
+_PROXY_FIELDS = frozenset({"max_body_bytes", "cors_allow_origins", "allow_dev_ui"})
 _KEY_LIKE_NAME = re.compile(r"key|token|secret|passw|credential|auth|bearer", re.IGNORECASE)
 _KEY_LIKE_VALUE = re.compile(r"\s*sk-", re.IGNORECASE)
 _API_VERSION = re.compile(r"\d{4}-\d{2}-\d{2}(-preview)?")
@@ -48,6 +48,8 @@ class ProxyConfig:
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES
     # Origins allowed to call the proxy from a browser; empty means none (ADR 0019).
     cors_allow_origins: tuple[str, ...] = ()
+    # Also allow the Vite dev server's origins, for working on apps/web (ADR 0024).
+    allow_dev_ui: bool = False
 
 
 @dataclass(frozen=True)
@@ -221,9 +223,14 @@ def _proxy(data: Mapping[str, object]) -> ProxyConfig:
     ):
         msg = "'cors_allow_origins' must be a list of origins such as chrome-extension://<id>"
         raise ConfigError(msg)
+    allow_dev_ui = table.get("allow_dev_ui", False)
+    if not isinstance(allow_dev_ui, bool):
+        msg = "'allow_dev_ui' must be true or false"
+        raise ConfigError(msg)
     return ProxyConfig(
         max_body_bytes=_positive_int(table, "max_body_bytes", DEFAULT_MAX_BODY_BYTES),
         cors_allow_origins=tuple(origins),
+        allow_dev_ui=allow_dev_ui,
     )
 
 

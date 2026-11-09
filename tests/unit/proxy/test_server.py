@@ -123,6 +123,19 @@ def test_gazetteer_is_loaded(tmp_path: Path) -> None:
     assert masked == ["About [CODENAME_1]."]
 
 
+def test_the_repository_web_build_is_the_default_ui() -> None:
+    expected = Path(server.__file__).resolve().parents[2] / "apps" / "web" / "dist"
+    assert server.default_ui_dir() == expected
+
+
+def test_build_app_serves_the_ui_dir_it_is_given(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("<!doctype html><title>ui</title>", encoding="utf-8")
+    app = build_app(GatewayConfig(), ui_dir=tmp_path)
+    page = TestClient(app, base_url="http://127.0.0.1").get("/")
+    assert page.status_code == 200
+    assert "<title>ui</title>" in page.text
+
+
 def test_unreadable_gazetteer_is_a_startup_error(tmp_path: Path) -> None:
     with pytest.raises(StartupError, match="gazetteer"):
         build_app(GatewayConfig(gazetteer=tmp_path / "missing.csv"))

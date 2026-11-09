@@ -9,10 +9,11 @@ import hashlib
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import anyio
@@ -26,8 +27,8 @@ from gateway import __version__
 from gateway.cloud.providers import ApiShape
 from gateway.cloud.upstream import Upstream, UpstreamError, UpstreamReply, UpstreamStream
 from gateway.config import ProxyConfig
-from gateway.engine.detect import EngineConfig, detect
-from gateway.engine.mask import Mapping, mask, mask_messages
+from gateway.engine.detect import EngineConfig
+from gateway.engine.mask import Mapping, mask_messages
 from gateway.engine.session import SessionNotFound, SessionStore
 from gateway.proxy.anthropic_shape import ANTHROPIC
 from gateway.proxy.audit import (
@@ -37,12 +38,14 @@ from gateway.proxy.audit import (
     NullAuditSink,
     entity_counts,
 )
+from gateway.proxy.detections import Detection, mask_with_detections
 from gateway.proxy.errors import RequestRejected, invalid
 from gateway.proxy.guards import LocalOnlyGuard
 from gateway.proxy.openai_shape import OPENAI
 from gateway.proxy.payload import choose_model, encode_json, parse_json_object
 from gateway.proxy.shape import Body, Shape
 from gateway.proxy.sse import SSEDecoder, SSEEvent, encode
+from gateway.proxy.ui import UiFiles, has_ui
 
 _log = logging.getLogger(__name__)
 
@@ -59,6 +62,8 @@ AUDIT_FAILED_MESSAGE = (
     "the audit log could not be written, so the gateway forwards nothing more; "
     "run `safeguard audit verify` and restart `safeguard serve`"
 )
+# The Vite dev server, allowed only with `[proxy] allow_dev_ui = true` (ADR 0024).
+DEV_UI_ORIGINS = ("http://127.0.0.1:5173", "http://localhost:5173")
 
 
 @dataclass
@@ -128,10 +133,6 @@ def _require_json(request: Request) -> None:
     if content_type != "application/json":
         msg = "Content-Type must be application/json"
         raise RequestRejected(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "invalid_request_error", msg)
-
-
-def _mask_texts(texts: Sequence[str], config: EngineConfig, mapping: Mapping) -> list[str]:
-    return [mask(text, detect(text, config=config), mapping)[0] for text in texts]
 
 
 def _mask_request(texts: list[str], config: EngineConfig) -> tuple[list[str], Mapping]:
@@ -292,10 +293,11 @@ class _Gateway:
             _require_json(request)
             texts, session_id = _mask_request_fields(parse_json_object(await request.body()))
             async with self.session_lock:
-                session_id, mapping, masked = await self._mask_in_session(texts, session_id)
+                session_id, mapping, masked, found = await self._mask_in_session(texts, session_id)
                 result = {
                     "session_id": session_id,
                     "masked": masked,
+                    "detections": found,
                     "mapping": mapping.to_dict(),
                     "entities": entity_counts(mapping),
                 }
@@ -307,7 +309,7 @@ class _Gateway:
 
     async def _mask_in_session(
         self, texts: list[str], session_id: str | None
-    ) -> tuple[str, Mapping, list[str]]:
+    ) -> tuple[str, Mapping, list[str], list[list[Detection]]]:
         self.sessions.purge_expired()
         if session_id is None:
             if len(self.sessions) >= MAX_SESSIONS:
@@ -321,14 +323,16 @@ class _Gateway:
                 # Never created under a client's id: it could be someone else's namespace.
                 msg = "no such session; omit session_id to start a new one"
                 raise RequestRejected(404, "not_found", msg) from None
-        masked = await run_in_threadpool(_mask_texts, texts, self.engine_config, mapping)
+        masked, found = await run_in_threadpool(
+            mask_with_detections, texts, self.engine_config, mapping
+        )
         if session_id is None:
             session_id = self.sessions.create(mapping)
         else:
             # get() saved before masking; the entries just added must reach disk too (M11).
             with contextlib.suppress(SessionNotFound):  # expired meanwhile: 404 next time
                 await run_in_threadpool(self.sessions.save, session_id)
-        return session_id, mapping, masked
+        return session_id, mapping, masked, found
 
     async def delete_session(self, session_id: str) -> Response:
         timer = _Timer("/session")
@@ -513,6 +517,12 @@ def _add_routes(app: FastAPI, gateway: _Gateway, model: str | None) -> None:
         return JSONResponse(body, headers=_NO_STORE)
 
 
+def _browser_origins(proxy: ProxyConfig) -> tuple[str, ...]:
+    if proxy.allow_dev_ui:
+        return (*proxy.cors_allow_origins, *DEV_UI_ORIGINS)
+    return proxy.cors_allow_origins
+
+
 def create_app(  # noqa: PLR0913  (keyword-only options, each with a safe default)
     upstream: Upstream,
     *,
@@ -521,6 +531,7 @@ def create_app(  # noqa: PLR0913  (keyword-only options, each with a safe defaul
     proxy: ProxyConfig | None = None,
     audit: AuditSink | None = None,
     sessions: SessionStore | None = None,
+    ui_dir: Path | None = None,
 ) -> FastAPI:
     proxy = proxy or ProxyConfig()
     gateway = _Gateway(
@@ -545,17 +556,23 @@ def create_app(  # noqa: PLR0913  (keyword-only options, each with a safe defaul
         lifespan=lifespan,
     )
     _add_routes(app, gateway, model)
-    if proxy.cors_allow_origins:  # Phase 7: the extension's origin (ADR 0019)
+    serve_ui = ui_dir is not None and has_ui(ui_dir)
+    if serve_ui and ui_dir is not None:
+        # Mounted after the routes, so an API path always wins over a file.
+        app.mount("/", UiFiles(ui_dir), name="ui")
+    origins = _browser_origins(proxy)
+    if origins:  # Phase 7: the extension's origin (ADR 0019); the dev UI (ADR 0024)
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=list(proxy.cors_allow_origins),
+            allow_origins=list(origins),
             allow_methods=["GET", "POST", "DELETE"],
             allow_headers=["content-type", "authorization", "x-api-key", "anthropic-version"],
         )
-    # Added last, so it runs first: nothing reaches a route or CORS before it.
+    # Added last, so it runs first: nothing reaches a route, a file or CORS before it.
     app.add_middleware(
         LocalOnlyGuard,
         max_body_bytes=proxy.max_body_bytes,
-        allowed_origins=proxy.cors_allow_origins,
+        allowed_origins=origins,
+        allow_same_origin=serve_ui,
     )
     return app

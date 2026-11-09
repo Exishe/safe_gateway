@@ -78,3 +78,48 @@ def test_chunked_body_over_the_cap_is_413() -> None:
 def test_lifespan_passes_through() -> None:
     with _client() as client:  # runs startup and shutdown through the guard
         assert client.get("/echo").status_code == 200
+
+
+def _same_origin_client(*, allow: bool) -> TestClient:
+    app = Starlette(routes=[Route("/echo", _echo, methods=["GET", "POST"])])
+    guarded = LocalOnlyGuard(app, max_body_bytes=CAP, allow_same_origin=allow)
+    return TestClient(guarded, base_url="http://127.0.0.1:8787")
+
+
+@pytest.mark.parametrize(
+    ("host", "origin"),
+    [
+        ("127.0.0.1:8787", "http://127.0.0.1:8787"),
+        ("localhost:8787", "http://localhost:8787"),
+        ("LOCALHOST:8787", "http://localhost:8787"),
+    ],
+)
+def test_the_served_ui_may_call_its_own_origin(host: str, origin: str) -> None:
+    client = _same_origin_client(allow=True)
+    response = client.post("/echo", headers={"host": host, "origin": origin}, content=b"x")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://127.0.0.1:9999",  # another server on this machine
+        "https://127.0.0.1:8787",
+        "http://localhost:8787",  # not the Host the request was sent to
+        "http://evil.example:8787",
+        "null",
+        "http://127.0.0.1:8787/",
+    ],
+)
+def test_other_origins_stay_refused_when_the_ui_is_served(origin: str) -> None:
+    client = _same_origin_client(allow=True)
+    headers = {"host": "127.0.0.1:8787", "origin": origin}
+    response = client.post("/echo", headers=headers, content=b"x")
+    assert response.status_code == 403
+
+
+def test_same_origin_is_refused_when_no_ui_is_served() -> None:
+    client = _same_origin_client(allow=False)
+    headers = {"host": "127.0.0.1:8787", "origin": "http://127.0.0.1:8787"}
+    response = client.post("/echo", headers=headers, content=b"x")
+    assert response.status_code == 403
