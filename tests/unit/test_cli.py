@@ -223,3 +223,82 @@ def test_scan_no_ner_skips_the_models_without_a_warning(
         assert main(["scan", "--no-ner", str(note)]) == 0
 
     assert caplog.records == []
+
+
+# ------------------------------------------------------------------ safeguard mask (Phase 2)
+
+import stat  # noqa: E402
+
+from gateway.engine.mask import Mapping  # noqa: E402
+from gateway.engine.rehydrate import rehydrate  # noqa: E402
+
+CARD = "4111 1111 1111 1111"  # pragma: allowlist secret
+
+
+@pytest.fixture
+def note(tmp_path: Path) -> Path:
+    path = tmp_path / "note.txt"
+    path.write_text(NOTE, encoding="utf-8")
+    return path
+
+
+def test_mask_writes_placeholders_to_the_output_file(
+    note: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "note.masked.txt"
+    assert main(["mask", "--no-ner", str(note), "-o", str(out)]) == 0
+
+    masked = out.read_text(encoding="utf-8")
+    assert masked == "Client email [EMAIL_1]\ncard [CREDIT_CARD_1] on file.\n"
+    assert "anna.petrova" not in masked
+    assert CARD not in masked
+    assert capsys.readouterr().out == ""
+
+
+def test_mask_prints_to_stdout_without_an_output_file(
+    note: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["mask", "--no-ner", str(note)]) == 0
+    assert capsys.readouterr().out == "Client email [EMAIL_1]\ncard [CREDIT_CARD_1] on file.\n"
+
+
+def test_mask_json_map_restores_the_original_and_is_private(
+    note: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out, map_path = tmp_path / "masked.txt", tmp_path / "map.json"
+    assert main(["mask", "--no-ner", str(note), "-o", str(out), "--json-map", str(map_path)]) == 0
+
+    mapping = Mapping.from_dict(json.loads(map_path.read_text(encoding="utf-8")))
+    assert rehydrate(out.read_text(encoding="utf-8"), mapping) == (NOTE, [])
+    assert stat.S_IMODE(map_path.stat().st_mode) == 0o600
+    assert "personal data" in capsys.readouterr().err
+
+
+def test_mask_refuses_to_overwrite_its_input(
+    note: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["mask", "--no-ner", str(note), "-o", str(note)]) == 2
+    assert note.read_text(encoding="utf-8") == NOTE
+    assert main(["mask", "--no-ner", str(note), "--json-map", str(note)]) == 2
+    assert note.read_text(encoding="utf-8") == NOTE
+    assert "input file" in capsys.readouterr().err
+
+
+def test_mask_of_a_missing_or_non_utf8_file_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["mask", str(tmp_path / "missing.txt")]) == 2
+    legacy = tmp_path / "legacy.txt"
+    legacy.write_bytes("Café".encode("cp1252"))
+    assert main(["mask", str(legacy)]) == 2
+    assert "cannot read" in capsys.readouterr().err
+
+
+def test_mask_uses_a_gazetteer(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    note = tmp_path / "note.txt"
+    note.write_text("Project Bluebird moves to Q3.", encoding="utf-8")
+    clients = tmp_path / "clients.csv"
+    clients.write_text("value,entity_type\nBluebird,\n", encoding="utf-8")
+
+    assert main(["mask", "--no-ner", "--gazetteer", str(clients), str(note)]) == 0
+    assert capsys.readouterr().out == "Project [CODENAME_1] moves to Q3."

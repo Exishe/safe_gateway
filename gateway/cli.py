@@ -1,7 +1,8 @@
-"""The `safeguard` command line: `scan` and `models`; `mask`, `serve`, `audit` come later."""
+"""The `safeguard` command line: `scan`, `mask` and `models`; `serve`, `audit` come later."""
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from gateway.cloud.models import (
     pull,
 )
 from gateway.engine.detect import EngineConfig, detect
+from gateway.engine.mask import mask
 from gateway.engine.recognizers.gazetteer import load_gazetteer
 from gateway.engine.types import Span
 
@@ -33,6 +35,27 @@ def _build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--json", action="store_true", help="print JSON instead of a table")
     scan.add_argument("--gazetteer", type=Path, help="CSV of names and codenames to always find")
     scan.add_argument(
+        "--no-ner",
+        action="store_true",
+        help="skip names, organisations, places and dates (no model is loaded)",
+    )
+
+    mask_parser = commands.add_parser(
+        "mask", help="replace the personal data in a UTF-8 text file with placeholders"
+    )
+    mask_parser.add_argument("file", type=Path)
+    mask_parser.add_argument(
+        "-o", "--output", type=Path, help="write the masked text here instead of stdout"
+    )
+    mask_parser.add_argument(
+        "--json-map",
+        type=Path,
+        help="also write the placeholder -> original map as JSON (personal data; mode 0600)",
+    )
+    mask_parser.add_argument(
+        "--gazetteer", type=Path, help="CSV of names and codenames to always find"
+    )
+    mask_parser.add_argument(
         "--no-ner",
         action="store_true",
         help="skip names, organisations, places and dates (no model is loaded)",
@@ -109,6 +132,49 @@ def _scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    return a.resolve() == b.resolve() or (a.exists() and b.exists() and a.samefile(b))
+
+
+def _write_private(path: Path, content: str) -> None:
+    """Write `content` readable by the owner only: the map holds the original values."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    path.chmod(0o600)  # O_CREAT's mode does not apply to a file that already existed
+
+
+def _mask(args: argparse.Namespace) -> int:
+    for target in (args.output, args.json_map):
+        if target is not None and _same_file(target, args.file):
+            print(
+                f"safeguard: {target} is the input file; refusing to overwrite it", file=sys.stderr
+            )
+            return 2
+    try:
+        # Strict UTF-8: replacing bytes would break the exact round trip back to the file.
+        text = args.file.read_bytes().decode("utf-8")
+        gazetteer = load_gazetteer(args.gazetteer) if args.gazetteer else None
+    except (OSError, ValueError) as error:
+        print(f"safeguard: cannot read input: {error}", file=sys.stderr)
+        return 2
+
+    config = EngineConfig(gazetteer=gazetteer, ner="off" if args.no_ner else "auto")
+    masked, mapping = mask(text, detect(text, config=config))
+    if args.output is None:
+        print(masked, end="")
+    else:
+        args.output.write_text(masked, encoding="utf-8", newline="")
+    if args.json_map is not None:
+        _write_private(args.json_map, json.dumps(mapping.to_dict(), ensure_ascii=False, indent=2))
+        print(
+            f"safeguard: warning: {args.json_map} holds the original values, so it is personal "
+            "data. Keep it on this device and delete it when you no longer need it.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def _models_list() -> int:
     print(f"{'LANG':<6}{'MODEL':<18}{'VERSION':<9}{'STATUS':<11}PATH")
     for lang, spec in SPACY_MODELS.items():
@@ -150,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "scan":
         return _scan(args)
+    if args.command == "mask":
+        return _mask(args)
     if args.command == "models":
         return _models(args)
     parser.print_help()
