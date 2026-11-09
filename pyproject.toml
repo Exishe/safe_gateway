@@ -52,6 +52,7 @@ known-first-party = ["gateway", "tools"]
     "S603",    # tests run our own hook scripts with fixed arguments
     "PLR2004", # literal values in assertions are the point
     "INP001",  # test dirs are not packages
+    "RUF001",  # Cyrillic and Armenian test text is intended, not a lookalike
 ]
 "tools/**" = [
     "T201",    # these are CLI tools; print is their output
