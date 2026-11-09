@@ -195,3 +195,42 @@ def test_main_fails_on_a_path_that_does_not_exist(
 def test_main_fails_when_there_is_nothing_to_check(tmp_path: Path) -> None:
     (tmp_path / "gateway").mkdir()
     assert main(["--root", str(tmp_path)]) == 1
+
+
+# ---- security review 2 (M1): routes to a download that name no network module
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import spacy.cli",
+        "from spacy.cli import download",
+        "from spacy import cli",
+        'import spacy\nspacy.cli.download("en_core_web_lg")',
+        'import spacy as sp\nsp.cli.download("en_core_web_lg")',
+        "import tldextract",
+        "from presidio_analyzer.nlp_engine import NlpEngineProvider",
+        "import presidio_analyzer.nlp_engine as ne\nne.NlpEngineProvider()",
+        'import sys\nsys.modules["socket"]',
+        'import sys\nsys.modules.get("socket")',
+        'getattr(__builtins__, "__import__")("socket")',
+        'globals()["__builtins__"]',
+        "import pickle",
+        "from pickle import loads",
+        "import marshal",
+    ],
+)
+def test_engine_rejects_hidden_download_and_code_loading_routes(source: str) -> None:
+    assert violations(source, "gateway/engine/detect.py") != []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import spacy\nspacy.load(path)",
+        "from presidio_analyzer.nlp_engine import SpacyNlpEngine",
+        "import sys\nsys.stderr.write('x')",
+    ],
+)
+def test_engine_allows_loading_a_model_from_disk(source: str) -> None:
+    assert violations(source, "gateway/engine/ner.py") == []

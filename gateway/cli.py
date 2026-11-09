@@ -253,3 +253,7 @@ def main(argv: list[str] | None = None) -> int:
         return _models(args)
     parser.print_help()
     return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

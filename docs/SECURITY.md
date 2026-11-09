@@ -25,8 +25,11 @@ with each phase; the threat model gets its full review before the first pilot.
 |---------|---------------|
 | AST check of every module under `gateway/` except `gateway/cloud/`: network modules and LLM SDKs everywhere; also process, dynamic-import and cloud/proxy imports in the engine | Claude Code hook on every edit, git pre-commit, CI |
 | Tests run with sockets disabled (`pytest-socket`) | every test run |
-| License check of the runtime dependency closure, extras included, on Linux on every push and on macOS and Windows only on version tags or manual dispatch; PyMuPDF and pdftext denied by name | Claude Code hook before and after installs, CI |
-| Scan for keys (detect-secrets) and identifier-shaped data | Claude Code hook before commits, which also refuses commits that skip the git hook; git pre-commit on staged files; CI on every tracked file |
+| License check of the runtime dependency closure, extras included, on Linux on every push and on macOS and Windows only on version tags or manual dispatch; PyMuPDF and pdftext denied by name, also when named by a git URL, wheel or sdist file, directory, `uvx`/`uv tool`/`uv run --with` or a requirements file | Claude Code hook before and after installs, CI |
+| Scan for keys (detect-secrets) and identifier-shaped data | Claude Code hook before commits; git pre-commit on staged files; CI on every tracked file |
+| Commit gate: the Claude Code hook refuses a command that runs git next to `--no-verify` (or an abbreviation), `-n`, `hooksPath` or `GIT_CONFIG_*` outside the commit message, including inside `bash -c` and `$(...)`; it treats every git alias call as a commit and refuses commits while any alias holds `--no-verify`, `-n` or `hooksPath` | Claude Code hook before Bash |
+| bash-guard: no `rm -rf`, `curl`/`wget` only to loopback (every non-option word counts as a host; `--proxy` must be loopback; `-K`, `--config`, `--resolve`, `--connect-to`, `wget -i/-e` refused), no git settings or variables that run commands (`core.sshCommand`, `alias.x=!...`, `GIT_SSH_COMMAND`, `GIT_CONFIG_*`), no `git push` to a URL, no `gh gist create`; it looks through wrappers with option values (`sudo -u root`, `timeout -s KILL 5`, `env -C dir`), `bash -c`, `eval`, `find -exec`, `$(...)` and backticks | Claude Code hook before Bash |
+| Permission list: only named commands run without a prompt (pytest, ruff, ty, `python -m tools.*`, `safeguard`, uv sync/add/lock, git status/diff/log/show/add/commit, push to `origin claude/*`); `gh gist`, `gh api`, `git -c` and `git push http*` are denied | `.claude/settings.json` |
 | Bandit, pip-audit, Semgrep, zizmor | CI on every push |
 
 ## Limits
@@ -97,8 +100,21 @@ with each phase; the threat model gets its full review before the first pilot.
   the whole file. Customers should store periodic exports elsewhere.
 - Pilot installers are unsigned (see [INSTALL.md](INSTALL.md)).
 - The repository guards match names, not behaviour. Code that builds module
-  names at run time, or a shell command hidden inside `bash -c`, can get past
-  them. CI and code review are the backstops (ADR 0010).
+  names at run time can get past the no-egress check. CI and code review are
+  the backstops (ADR 0010).
+- The Bash guards read the command line, not what it does when it runs. Known
+  ways past them: a command built at run time (`$x`, `$'\x63url'`, base64 piped
+  to `sh`), a script file that is written first and run later, `env -S`,
+  wrappers they do not know (`flock`, `taskset`), sudo's own `VAR=value`,
+  git plumbing that writes commits without hooks (`commit-tree`,
+  `update-ref`), and variables exported in an earlier shell. The commit gate
+  scans the project directory Claude Code was started in, so a commit made in
+  another worktree relies on that worktree's git pre-commit hook. The git
+  pre-commit hook, CI over every tracked file, and the cloud session's network
+  policy are the backstops.
+- The commit gate errs towards refusing: a command that runs git and mentions
+  `hooksPath` or `--no-verify` outside a commit message is refused, and so are
+  all commits while a git alias with `-n` exists.
 
 Compliance with GDPR, HIPAA or any other regime remains the customer's
 responsibility. The gateway provides controls and evidence for it.

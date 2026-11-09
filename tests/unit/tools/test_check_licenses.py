@@ -207,3 +207,45 @@ def test_project_name_comes_from_pyproject() -> None:
     from tools import check_licenses  # noqa: PLC0415
 
     assert expected == check_licenses.PROJECT
+
+
+# ---- security review 2 (M8): other install spellings
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("uv add git+https://github.com/pymupdf/PyMuPDF", ["pymupdf"]),
+        ("uv add git+https://github.com/pymupdf/PyMuPDF.git@1.24.0", ["pymupdf"]),
+        ("pip install 'https://example.com/x.zip#egg=pdftext'", ["pdftext"]),
+        ("uv add ./PyMuPDF-1.0-py3-none-any.whl", ["pymupdf"]),
+        ("pip install dist/pdftext-0.3.1.tar.gz", ["pdftext"]),
+        ("uv add --editable ./PyMuPDF", ["pymupdf"]),
+        ("uvx --from pymupdf python -c 1", ["pymupdf"]),
+        ("uvx pymupdf4llm@0.1", ["pymupdf4llm"]),
+        ("uv tool install pymupdf", ["pymupdf"]),
+        ("uv tool run --with=pdftext rich", ["pdftext"]),
+        ("uv run --with pymupdf python -c 1", ["pymupdf"]),
+        ("uv pip install --upgrade-package=pymupdf rich", ["pymupdf"]),
+        ("bash -c 'uv add pymupdf'", ["pymupdf"]),
+        ("uv run pytest -k pymupdf", []),
+        ("uv tool install ruff", []),
+    ],
+)
+def test_denied_names_in_other_install_spellings(command: str, expected: list[str]) -> None:
+    assert denied_names_in_command(command, POLICY) == expected
+
+
+def test_requirements_files_are_read_and_vetted(tmp_path: Path) -> None:
+    (tmp_path / "reqs.txt").write_text("rich>=13  # a comment\n-r more.txt\n\n")
+    (tmp_path / "more.txt").write_text("--hash=sha256:00\nPyMuPDF==1.24 ; python_version>'3'\n")
+
+    assert denied_names_in_command("pip install -r reqs.txt", POLICY, tmp_path) == ["pymupdf"]
+    assert denied_names_in_command("uv add --requirements=more.txt", POLICY, tmp_path) == [
+        "pymupdf"
+    ]
+    assert denied_names_in_command("uv pip sync more.txt", POLICY, tmp_path) == ["pymupdf"]
+
+
+def test_a_missing_requirements_file_is_not_an_error(tmp_path: Path) -> None:
+    assert denied_names_in_command("pip install -r nowhere.txt", POLICY, tmp_path) == []

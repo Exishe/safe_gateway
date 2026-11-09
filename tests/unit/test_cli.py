@@ -362,3 +362,26 @@ def test_mask_uses_a_gazetteer(tmp_path: Path, capsys: pytest.CaptureFixture[str
 
     assert main(["mask", "--no-ner", "--gazetteer", str(clients), str(note)]) == 0
     assert capsys.readouterr().out == "Project [CODENAME_1] moves to Q3."
+
+
+# ---- security review 2 (M9): `python -m` runs the CLI
+
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+
+
+@pytest.mark.parametrize("module", ["gateway.cli", "gateway"])
+def test_python_dash_m_runs_the_cli(tmp_path: Path, module: str) -> None:
+    note = tmp_path / "note.txt"
+    note.write_text("nothing to see here\n")
+
+    result = subprocess.run(
+        [sys.executable, "-m", module, "scan", str(note)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip()

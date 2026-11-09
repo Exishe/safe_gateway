@@ -98,6 +98,41 @@ def test_settings_deny_destructive_and_secret_reading_commands() -> None:
     assert "Read(./.env)" in deny
 
 
+def test_settings_allow_only_specific_commands_without_a_prompt() -> None:
+    allow = json.loads((REPO / ".claude" / "settings.json").read_text())["permissions"]["allow"]
+    # A wildcard over a whole tool runs anything: `uv run bash -c ...`, `git -c alias.x=!...`.
+    for broad in ("Bash(uv run *)", "Bash(git *)", "Bash(gh *)", "Bash(uv *)", "Bash(*)"):
+        assert broad not in allow
+    assert not [rule for rule in allow if rule.startswith("Bash(gh ")]
+    for specific in (
+        "Bash(uv run pytest *)",
+        "Bash(uv run ruff *)",
+        "Bash(uv run ty *)",
+        "Bash(uv run python -m tools.*)",
+        "Bash(uv run safeguard *)",
+        "Bash(git status*)",
+        "Bash(git diff*)",
+        "Bash(git log*)",
+        "Bash(git add *)",
+        "Bash(git commit *)",
+        "Bash(git push origin claude/*)",
+        "Bash(git push -u origin claude/*)",
+    ):
+        assert specific in allow
+
+
+def test_settings_deny_publishing_and_git_config_overrides() -> None:
+    deny = json.loads((REPO / ".claude" / "settings.json").read_text())["permissions"]["deny"]
+    for rule in (
+        "Bash(gh gist *)",
+        "Bash(gh api *)",
+        "Bash(gh repo edit *)",
+        "Bash(git -c *)",
+        "Bash(git push http*)",
+    ):
+        assert rule in deny
+
+
 # ---- review fixes (Important #3, #6)
 
 

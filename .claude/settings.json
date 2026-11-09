@@ -2,19 +2,33 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(uv run *)",
-      "Bash(uv sync)",
-      "Bash(uv sync *)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run ty *)",
+      "Bash(uv run python -m tools.*)",
+      "Bash(uv run safeguard *)",
+      "Bash(uv sync*)",
       "Bash(uv add *)",
-      "Bash(uv lock *)",
+      "Bash(uv lock*)",
       "Bash(pytest *)",
-      "Bash(git *)",
-      "Bash(gh *)"
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push -u origin claude/*)",
+      "Bash(git push origin claude/*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
       "Bash(rm -fr *)",
       "Bash(wget *)",
+      "Bash(gh gist *)",
+      "Bash(gh api *)",
+      "Bash(gh repo edit *)",
+      "Bash(git -c *)",
+      "Bash(git push http*)",
       "Read(./.env)",
       "Read(./.env.*)"
     ]

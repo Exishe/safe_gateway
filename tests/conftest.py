@@ -1,4 +1,9 @@
+import importlib.abc
+import importlib.machinery
 import os
+import sys
+from collections.abc import Sequence
+from types import ModuleType
 
 import pytest
 import urllib3  # noqa: F401  (see below)
@@ -13,6 +18,55 @@ from hypothesis import settings
 settings.register_profile("dev", max_examples=100)
 settings.register_profile("ci", max_examples=500, derandomize=True, deadline=None)
 settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "dev"))
+
+# No test installs anything: pip (which spacy.cli.download runs) and uv stay offline, so
+# a test that reaches an installer fails instead of fetching a package.
+os.environ["PIP_NO_INDEX"] = "1"
+os.environ["UV_OFFLINE"] = "1"
+
+
+def _refuse_download(*_args: object, **_kwargs: object) -> None:
+    message = "tests never download models: spacy.cli.download was called (ADR 0012)"
+    raise RuntimeError(message)
+
+
+class _SpacyCliLoader(importlib.abc.Loader):
+    """Runs spaCy's own loader for spacy.cli, then replaces its download()."""
+
+    def __init__(self, loader: importlib.abc.Loader) -> None:
+        self._loader = loader
+
+    def create_module(self, spec: importlib.machinery.ModuleSpec) -> ModuleType | None:
+        return self._loader.create_module(spec)
+
+    def exec_module(self, module: ModuleType) -> None:
+        self._loader.exec_module(module)
+        module.__dict__["download"] = _refuse_download
+
+
+class _NoSpacyDownloads(importlib.abc.MetaPathFinder):
+    """Patches spacy.cli when something imports it, so the suite never imports spaCy itself."""
+
+    def find_spec(
+        self, fullname: str, path: Sequence[str] | None, target: ModuleType | None = None
+    ) -> importlib.machinery.ModuleSpec | None:
+        if fullname != "spacy.cli":
+            return None
+        spec = importlib.machinery.PathFinder.find_spec(fullname, path, target)
+        if spec is not None and spec.loader is not None:
+            spec.loader = _SpacyCliLoader(spec.loader)
+        return spec
+
+
+sys.meta_path.insert(0, _NoSpacyDownloads())
+
+
+@pytest.fixture(autouse=True)
+def _no_spacy_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-applies the patch each test, in case a test replaced spacy.cli.download."""
+    cli = sys.modules.get("spacy.cli")
+    if cli is not None:
+        monkeypatch.setattr(cli, "download", _refuse_download)
 
 
 @pytest.fixture(autouse=True)

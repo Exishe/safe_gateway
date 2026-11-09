@@ -71,16 +71,26 @@ ENGINE_ONLY_MODULES = frozenset(
         "gateway.cloud",
         "gateway.proxy",
         "importlib",
+        "marshal",
         "multiprocessing",
+        "pickle",
+        "_pickle",
         "pkgutil",
         "pty",
         "runpy",
+        "shelve",
+        # spacy.cli.download pip-installs a model; tldextract fetches the suffix list.
+        "spacy.cli",
         "starlette",
         "subprocess",
+        "tldextract",
         "uvicorn",
     }
 )
 DYNAMIC_BUILTINS = frozenset({"__import__", "eval", "exec"})
+# Presidio's NlpEngineProvider downloads a spaCy model it cannot find (ADR 0012).
+ENGINE_FORBIDDEN_NAMES = frozenset({"NlpEngineProvider"})
+BUILTINS_NAMES = frozenset({"__builtins__", "__import__"})
 OS_PROCESS_FUNCTIONS = frozenset({"system", "popen", "startfile"})
 OS_PROCESS_PREFIXES = ("exec", "spawn", "posix_spawn", "fork")
 
@@ -145,12 +155,60 @@ def _imported_names(node: ast.AST, path: str) -> Iterator[list[str]]:
         yield [module, *(f"{module}.{alias.name}" for alias in node.names)]
 
 
-def _os_aliases(tree: ast.AST) -> set[str]:
-    aliases = set()
+def _module_aliases(tree: ast.AST) -> dict[str, str]:
+    """Local name -> module for every `import a.b [as c]`: `import a.b` binds `a`."""
+    aliases: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            aliases.update(alias.asname or alias.name for alias in node.names if alias.name == "os")
+            for alias in node.names:
+                if alias.asname:
+                    aliases[alias.asname] = alias.name
+                else:
+                    top = alias.name.split(".", 1)[0]
+                    aliases[top] = top
     return aliases
+
+
+def _dotted_name(node: ast.Attribute, aliases: dict[str, str]) -> str | None:
+    """`sp.cli.download` -> "spacy.cli.download" when `import spacy as sp`."""
+    parts: list[str] = []
+    current: ast.AST = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name) or current.id not in aliases:
+        return None
+    return ".".join([aliases[current.id], *reversed(parts)])
+
+
+def _attribute_detail(node: ast.Attribute, aliases: dict[str, str], rules: RuleSet) -> str | None:
+    """`spacy.cli.download(...)` after `import spacy`: no import line names spacy.cli."""
+    if node.attr in ENGINE_FORBIDDEN_NAMES:
+        return f"uses {node.attr}"
+    dotted = _dotted_name(node, aliases)
+    if dotted is None or _is_forbidden(dotted.split(".", 1)[0], rules.forbidden_modules):
+        return None  # the import itself is already reported
+    if dotted == "sys.modules" or dotted.startswith("sys.modules."):
+        return "uses sys.modules"
+    hits = [entry for entry in rules.forbidden_modules if _is_forbidden(dotted, frozenset({entry}))]
+    return f"uses '{min(hits)}'" if hits else None
+
+
+def _hidden_route_detail(node: ast.AST, aliases: dict[str, str], rules: RuleSet) -> str | None:
+    """Routes to the network or to code loading that a plain import check misses."""
+    if isinstance(node, ast.Attribute):
+        return _attribute_detail(node, aliases, rules)
+    if isinstance(node, ast.ImportFrom):
+        names = {alias.name for alias in node.names}
+        if names & ENGINE_FORBIDDEN_NAMES:
+            return f"imports {min(names & ENGINE_FORBIDDEN_NAMES)}"
+        if node.module == "sys" and "modules" in names:
+            return "imports sys.modules"
+    if isinstance(node, ast.Name) and node.id == "__builtins__":
+        return "uses __builtins__"
+    if isinstance(node, ast.Constant) and node.value in BUILTINS_NAMES:
+        return f"names {node.value} in a string"
+    return None
 
 
 def _dynamic_code_detail(node: ast.AST, os_names: set[str]) -> str | None:
@@ -188,20 +246,23 @@ def check_source(source: str, path: str, rules: RuleSet) -> list[Violation]:
         line = getattr(error, "lineno", None) or 1
         return [Violation(path, line, f"cannot parse file: {error}")]
 
-    os_names = _os_aliases(tree)
-    found: list[Violation] = []
+    aliases = _module_aliases(tree)
+    os_names = {name for name, module in aliases.items() if module == "os"}
+    found: set[Violation] = set()
     for node in ast.walk(tree):
         line = getattr(node, "lineno", 1)
         for candidates in _imported_names(node, path):
             hit = next((m for m in candidates if _is_forbidden(m, rules.forbidden_modules)), None)
             if hit:
                 detail = f"imports '{hit}', not allowed in {rules.name} code"
-                found.append(Violation(path, line, detail))
+                found.add(Violation(path, line, detail))
         if rules.forbid_dynamic_code:
-            detail = _dynamic_code_detail(node, os_names)
+            detail = _dynamic_code_detail(node, os_names) or _hidden_route_detail(
+                node, aliases, rules
+            )
             if detail:
-                found.append(Violation(path, line, f"{detail}, not allowed in {rules.name} code"))
-    return sorted(found, key=lambda v: v.line)
+                found.add(Violation(path, line, f"{detail}, not allowed in {rules.name} code"))
+    return sorted(found, key=lambda v: (v.line, v.detail))
 
 
 def _python_files(paths: list[Path]) -> Iterator[Path]:

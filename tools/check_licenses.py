@@ -8,6 +8,7 @@ Two modes:
 """
 
 import argparse
+import contextlib
 import re
 import sys
 import tomllib
@@ -16,9 +17,16 @@ from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from packaging.requirements import InvalidRequirement, Requirement
-from packaging.utils import canonicalize_name
+from packaging.utils import (
+    InvalidSdistFilename,
+    InvalidWheelFilename,
+    canonicalize_name,
+    parse_sdist_filename,
+    parse_wheel_filename,
+)
 
 from tools.shell import simple_commands
 
@@ -39,12 +47,40 @@ _TEXT_MARKERS: tuple[tuple[tuple[str, ...], Status], ...] = (
     (("redistribution and use in source and binary forms",), "allowed"),
     (("mozilla public license", "2.0"), "allowed"),
 )
-_INSTALL_VERBS: tuple[tuple[str, ...], ...] = (
-    ("uv", "add"),
-    ("uv", "pip", "install"),
-    ("pip", "install"),
-    ("python", "-m", "pip", "install"),
+InstallMode = Literal["every-word", "files", "tool", "options"]
+# How each install spelling names what it installs:
+# every-word: every word and option value; files: requirements files;
+# tool: the first word (the tool) and package options; options: only package options.
+_INSTALL_VERBS: tuple[tuple[tuple[str, ...], InstallMode], ...] = (
+    (("uv", "add"), "every-word"),
+    (("uv", "pip", "install"), "every-word"),
+    (("uv", "pip", "sync"), "files"),
+    (("uv", "tool", "install"), "every-word"),
+    (("uv", "tool", "run"), "tool"),
+    (("uvx",), "tool"),
+    (("uv", "run"), "options"),
+    (("pip", "install"), "every-word"),
+    (("python", "-m", "pip", "install"), "every-word"),
 )
+# Options whose value is the next word; the ones in _PACKAGE_OPTIONS name a package.
+_VALUE_OPTIONS = frozenset(
+    {
+        "-c", "-f", "-i", "-p", "--cache-dir", "--config-file", "--constraint", "--constraints",
+        "--default-index", "--directory", "--env-file", "--extra", "--extra-index-url",
+        "--find-links", "--group", "--index", "--index-url", "--optional", "--override",
+        "--overrides", "--package", "--project", "--python",
+    }
+)  # fmt: skip
+_PACKAGE_OPTIONS = frozenset(
+    {
+        "-e", "-w", "-P", "--editable", "--from", "--reinstall-package", "--upgrade-package",
+        "--with", "--with-editable",
+    }
+)  # fmt: skip
+_REQUIREMENT_FILE_OPTIONS = frozenset(
+    {"-r", "--requirement", "--requirements", "--with-requirements"}
+)
+_MAX_INCLUDE_DEPTH = 3
 
 
 @dataclass(frozen=True)
@@ -222,26 +258,95 @@ def check(dists: Iterable[DistInfo], policy: Policy) -> list[str]:
     return problems
 
 
-def _install_arguments(command: list[str]) -> list[str]:
-    for verb in _INSTALL_VERBS:
+def _install_arguments(command: list[str]) -> tuple[InstallMode, list[str]] | None:
+    for verb, mode in _INSTALL_VERBS:
         for start in range(len(command) - len(verb) + 1):
             if tuple(command[start : start + len(verb)]) == verb:
-                return command[start + len(verb) :]
-    return []
+                return mode, command[start + len(verb) :]
+    return None
 
 
-def denied_names_in_command(command: str, policy: Policy) -> list[str]:
+def _requirements_in_file(path: Path, depth: int = 0) -> list[str]:
+    """Each requirement a requirements file names, following `-r` includes."""
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []  # nothing to install from a file that is not there
+    found: list[str] = []
+    for line in lines:
+        text = line.split(" #", 1)[0].strip()
+        if not text or text.startswith("#"):
+            continue
+        words = text.split()
+        option, _, value = words[0].partition("=")
+        value = value or (words[1] if len(words) > 1 else "")
+        if option in _REQUIREMENT_FILE_OPTIONS and depth < _MAX_INCLUDE_DEPTH:
+            found.extend(_requirements_in_file(path.parent / value, depth + 1))
+        elif option in {"-e", "--editable"}:
+            found.append(value)
+        elif not text.startswith("-"):
+            found.append(text)
+    return found
+
+
+def _install_specs(mode: InstallMode, arguments: list[str], base: Path) -> list[str]:
+    """What an install command names: requirements, URLs, paths, wheel files."""
+    specs: list[str] = []
+    tool_seen = mode != "tool"
+    words = iter(arguments)
+    for word in words:
+        if word.startswith("-"):
+            option, has_value, value = word.partition("=")
+            takes_value = option in _VALUE_OPTIONS | _PACKAGE_OPTIONS | _REQUIREMENT_FILE_OPTIONS
+            if takes_value and not has_value:
+                value = next(words, "")
+            if option in _REQUIREMENT_FILE_OPTIONS:
+                specs.extend(_requirements_in_file(base / value))
+            elif option in _PACKAGE_OPTIONS or (mode == "every-word" and value):
+                specs.append(value)
+        elif mode == "files":
+            specs.extend(_requirements_in_file(base / word))
+        elif mode == "every-word":
+            specs.append(word)
+        elif not tool_seen:
+            specs.append(word)
+            tool_seen = True
+        else:
+            break  # the words after the tool are its own arguments
+    return specs
+
+
+def _candidate_names(spec: str) -> set[str]:
+    """Every package name `spec` could install: `pkg==1`, a git URL, a wheel or a directory."""
+    names: set[str] = set()
+    with contextlib.suppress(InvalidRequirement):
+        names.add(Requirement(spec).name)
+    egg = re.search(r"[#&]egg=([\w.-]+)", spec)
+    if egg:
+        names.add(egg.group(1))
+    path = urlsplit(spec).path if "://" in spec else spec
+    for part in re.split(r"[/\\]", path):
+        segment = part.split("@", 1)[0].removesuffix(".git")
+        if segment.endswith(".whl"):
+            with contextlib.suppress(InvalidWheelFilename):
+                names.add(parse_wheel_filename(segment)[0])
+        elif segment.endswith((".tar.gz", ".zip")):
+            with contextlib.suppress(InvalidSdistFilename):
+                names.add(parse_sdist_filename(segment)[0])
+        names.add(segment)
+    return {canonicalize_name(name) for name in names if name}
+
+
+def denied_names_in_command(command: str, policy: Policy, base: Path | None = None) -> list[str]:
+    """Denied packages that `command` would install; requirements files are read from `base`."""
+    base = base or Path.cwd()
     denied: set[str] = set()
     for simple in simple_commands(command):
-        for argument in _install_arguments(simple):
-            if argument.startswith("-"):
-                continue
-            try:
-                name = canonicalize_name(Requirement(argument).name)
-            except InvalidRequirement:
-                continue
-            if name in policy.denied_packages:
-                denied.add(name)
+        found = _install_arguments(simple)
+        if found is None:
+            continue
+        for spec in _install_specs(*found, base):
+            denied.update(_candidate_names(spec) & policy.denied_packages)
     return sorted(denied)
 
 
