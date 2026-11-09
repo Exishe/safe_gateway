@@ -10,14 +10,15 @@ import sqlite3
 import threading
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import TracebackType
 from typing import Self
 
 from gateway.audit.chain import GENESIS_HASH, head_hmac, row_hash, row_hmac
 from gateway.audit.db import SCHEMA_VERSION, AuditLogError, check_schema, read_head
-from gateway.audit.rows import format_ts, is_hex64, request_content
+from gateway.audit.rows import checkpoint_content, format_ts, is_hex64, request_content
 from gateway.audit.verify import VerifyResult, verify_connection
 from gateway.engine.session_disk import KeyProvider
 from gateway.secrets import device_key, load_device_key
@@ -80,6 +81,13 @@ class AuditChainBroken(AuditLogError):  # noqa: N818  (reads as what happened)
 
 class DeviceKeyMissing(AuditLogError):  # noqa: N818
     """The log has rows but this keychain has no device key for it."""
+
+
+@dataclass(frozen=True)
+class PurgeResult:
+    deleted: int
+    checkpoint_id: int | None
+    purged_through_id: int | None
 
 
 def utc_now() -> datetime:
@@ -222,6 +230,57 @@ class AuditLog:
             )
             self._append(content, head_hash)
             return head_id + 1
+
+    def purge(self, *, older_than_days: int) -> PurgeResult:
+        """Delete the oldest rows older than the cutoff behind a checkpoint (ADR 0021 point 9)."""
+        if type(older_than_days) is not int or older_than_days < 1:
+            msg = "the retention period must be a whole number of days, at least 1"
+            raise ValueError(msg)
+        with self._lock, self._transaction():
+            now = self._clock()
+            cutoff = format_ts(now - timedelta(days=older_than_days))
+            # Purging a broken log would delete the evidence of what broke it.
+            checked = verify_connection(self._connection, self._key)
+            if not checked.ok:
+                msg = (
+                    f"row {checked.first_bad_id} is {checked.reason} ({checked.detail}); "
+                    "not purging a log that fails verification"
+                )
+                raise AuditChainBroken(msg)
+            head_id, head_hash = self._checked_head()
+            through = self._purge_limit(cutoff)
+            if through is None:
+                return PurgeResult(0, None, None)
+            (through_hash,) = self._connection.execute(
+                "SELECT row_hash FROM audit_log WHERE id = ?", (through,)
+            ).fetchone()
+            (count,) = self._connection.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE id <= ?", (through,)
+            ).fetchone()
+            content = checkpoint_content(
+                row_id=head_id + 1,
+                ts_utc=format_ts(now),
+                purged_through_id=through,
+                purged_through_hash=through_hash,
+                purged_count=count,
+                purged_before_utc=cutoff,
+            )
+            self._append(content, head_hash)
+            self._connection.execute("DELETE FROM audit_log WHERE id <= ?", (through,))
+            return PurgeResult(count, head_id + 1, through)
+
+    def _purge_limit(self, cutoff: str) -> int | None:
+        """The last id of the run of old rows at the start, so only a prefix is ever deleted."""
+        (oldest, newest) = self._connection.execute(
+            "SELECT MIN(id), MAX(id) FROM audit_log"
+        ).fetchone()
+        if oldest is None:
+            return None
+        (first_young,) = self._connection.execute(
+            "SELECT MIN(id) FROM audit_log WHERE ts_utc >= ?", (cutoff,)
+        ).fetchone()
+        through = newest if first_young is None else first_young - 1
+        return through if through >= oldest else None
 
     def verify(self) -> VerifyResult:
         with self._lock:
