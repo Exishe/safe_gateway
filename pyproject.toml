@@ -16,6 +16,7 @@ dependencies = [
     "keyring>=25.7.0",
     "phonenumbers>=9.0.43",
     "presidio-analyzer>=2.2.366",
+    "protobuf>=7.36.2",
     "spacy>=3.8.0,<3.9.0",
     "torch>=2.15.0",
 ]
