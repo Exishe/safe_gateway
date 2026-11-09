@@ -13,6 +13,7 @@ from gateway.cloud.models import (
     SPACY_MODELS,
     ModelDownloadError,
     install_dir,
+    installed,
     open_client,
     pull,
 )
@@ -188,13 +189,14 @@ def _mask(args: argparse.Namespace) -> int:
 
 def _models_list() -> int:
     print(f"{'LANG':<6}{'MODEL':<18}{'VERSION':<9}{'STATUS':<11}PATH")
+    # "installed" only with a marker for the current pin: a bare directory may be a cut-short pull.
     for lang, spec in SPACY_MODELS.items():
-        path = install_dir(spec)
-        status = "installed" if path.is_dir() else "missing"
-        print(f"{lang:<6}{spec.name:<18}{spec.version:<9}{status:<11}{path}")
-    path = hub.install_dir(GLINER_MODEL)
-    status = "installed" if path.is_dir() else "missing"
-    print(f"{'other':<6}{GLINER_MODEL.name:<18}{GLINER_MODEL.revision[:7]:<9}{status:<11}{path}")
+        status = "installed" if installed(spec) else "missing"
+        print(f"{lang:<6}{spec.name:<18}{spec.version:<9}{status:<11}{install_dir(spec)}")
+    gliner = GLINER_MODEL
+    status = "installed" if hub.installed(gliner) else "missing"
+    path = hub.install_dir(gliner)
+    print(f"{'other':<6}{gliner.name:<18}{gliner.revision[:7]:<9}{status:<11}{path}")
     return 0
 
 
@@ -208,7 +210,7 @@ def _models_pull(only: str | None) -> int:
         wanted = [SPACY_MODELS[only]]
     with open_client() as client:
         for spec in wanted:
-            if install_dir(spec).is_dir():
+            if installed(spec):
                 print(f"{spec.name} {spec.version}: already installed at {install_dir(spec)}")
                 continue
             print(f"{spec.name} {spec.version}: downloading {spec.url}", flush=True)
@@ -221,7 +223,7 @@ def _models_pull(only: str | None) -> int:
         if only not in {None, "gliner"}:
             return 0
         gliner = GLINER_MODEL
-        if hub.install_dir(gliner).is_dir():
+        if hub.installed(gliner):
             print(f"{gliner.name}: already installed at {hub.install_dir(gliner)}")
             return 0
         print(f"{gliner.name}: downloading {len(gliner.files)} pinned files", flush=True)

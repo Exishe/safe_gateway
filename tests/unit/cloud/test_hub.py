@@ -17,10 +17,12 @@ from gateway.cloud.hub import (
     HubModelSpec,
     hub_url,
     install_dir,
+    installed,
     pull,
 )
 from gateway.cloud.models import ModelDownloadError
 from gateway.engine.gliner_ner import GLINER_MODEL_DIR, is_gliner_model
+from gateway.engine.model_marker import MARKER, Pin, write_marker
 
 GLINER_CONFIG = json.dumps({"model_name": "example/backbone", "max_len": 384}).encode()
 BACKBONE_CONFIG = json.dumps({"model_type": "deberta-v2", "hidden_size": 8}).encode()
@@ -96,16 +98,59 @@ def test_pull_installs_every_file_and_the_offline_config(home: Path) -> None:
     assert loaded["max_len"] == 384
     assert is_gliner_model(target)
     assert len(calls) == len(PAYLOADS)
+    assert installed(spec)
+    assert (target / MARKER).is_file()
+
+
+def test_the_pin_covers_every_pinned_file() -> None:
+    spec = spec_for(PAYLOADS)
+    assert spec.pin.model_id == spec.directory_name
+    # One digest over all files: a change to any one of them makes an old install outdated.
+    for index, file in enumerate(spec.files):
+        moved = HubFile(file.repo, file.revision, file.path, "0" * 64)
+        other = HubModelSpec(
+            spec.name,
+            spec.revision,
+            spec.backbone,
+            (*spec.files[:index], moved, *spec.files[index + 1 :]),
+        )
+        assert other.pin.sha256 != spec.pin.sha256, file.path
+    # The order the files are listed in is not part of what is pinned.
+    shuffled = HubModelSpec(spec.name, spec.revision, spec.backbone, spec.files[::-1])
+    assert shuffled.pin == spec.pin
 
 
 @pytest.mark.usefixtures("home")
-def test_a_present_install_is_kept_without_a_download() -> None:
+def test_a_verified_install_is_kept_without_a_download() -> None:
     spec = spec_for(PAYLOADS)
-    install_dir(spec).mkdir(parents=True)
+    with serving(PAYLOADS, []) as client:
+        pull(spec, client)
     calls: list[str] = []
     with serving(PAYLOADS, calls) as client:
         assert pull(spec, client) == install_dir(spec)
     assert calls == []
+
+
+@pytest.mark.parametrize("pin_sha256", [None, "0" * 64])
+def test_an_unmarked_or_outdated_directory_is_missing_and_replaced(
+    home: Path, pin_sha256: str | None
+) -> None:
+    spec = spec_for(PAYLOADS)
+    target = install_dir(spec)
+    target.mkdir(parents=True)
+    (target / "pytorch_model.bin").write_bytes(b"\x00\x01wei")  # a download cut short
+    if pin_sha256 is not None:
+        write_marker(target, Pin(spec.directory_name, pin_sha256))
+    assert not installed(spec)
+    calls: list[str] = []
+
+    with serving(PAYLOADS, calls) as client:
+        assert pull(spec, client) == target
+
+    assert len(calls) == len(PAYLOADS)
+    assert installed(spec)
+    assert (target / "pytorch_model.bin").read_bytes() == b"\x00\x01weights"
+    assert [p.name for p in (home / "gliner").iterdir()] == [target.name]  # nothing staged
 
 
 def test_a_wrong_digest_installs_nothing(home: Path) -> None:

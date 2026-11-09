@@ -177,7 +177,14 @@ def test_models_list_shows_each_model_as_missing_then_installed(
     assert "xx_gliner" in out
     assert out.count("missing") == 3
 
+    # A directory alone is not an install: a pull may have been cut short (M3).
     (tmp_path / "sg" / "models" / "spacy" / "xx_en-1.0.0").mkdir(parents=True)
+    (tmp_path / "sg" / "models" / "gliner" / f"xx_gliner-{GLINER_REVISION}").mkdir(parents=True)
+    assert main(["models", "list"]) == 0
+    assert capsys.readouterr().out.count("missing") == 3
+
+    assert main(["models", "pull", "--only", "en"]) == 0
+    capsys.readouterr()
     assert main(["models", "list"]) == 0
     out = capsys.readouterr().out
     assert out.count("missing") == 2
@@ -209,6 +216,27 @@ def test_models_pull_installs_every_model_and_skips_what_is_there(
     gliner_dir = tmp_path / "sg" / "models" / "gliner"
     assert [p.name for p in gliner_dir.iterdir()] == [f"xx_gliner-{GLINER_REVISION}"]
     assert "already installed" in capsys.readouterr().out
+
+
+@pytest.mark.usefixtures("fake_models")
+def test_models_pull_replaces_directories_left_without_a_marker(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spacy_dir = tmp_path / "sg" / "models" / "spacy" / "xx_en-1.0.0"
+    gliner_dir = tmp_path / "sg" / "models" / "gliner" / f"xx_gliner-{GLINER_REVISION}"
+    for leftover in (spacy_dir, gliner_dir):
+        leftover.mkdir(parents=True)
+        (leftover / "partial.bin").write_bytes(b"\x00")
+
+    assert main(["models", "pull"]) == 0
+
+    out = capsys.readouterr().out
+    assert "already installed" not in out
+    assert out.count("verified and installed") == 3
+    assert (spacy_dir / "config.cfg").is_file()
+    assert (gliner_dir / "pytorch_model.bin").read_bytes() == b"weights"
+    assert not (spacy_dir / "partial.bin").exists()
+    assert not (gliner_dir / "partial.bin").exists()
 
 
 @pytest.mark.usefixtures("fake_models")

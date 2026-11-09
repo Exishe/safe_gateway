@@ -4,6 +4,10 @@ This is the only code that fetches model files. Each wheel is pinned by URL
 and SHA-256, streamed to a temporary file, verified, and only its model data
 directory (`<name>/<name>-<version>/`) is unpacked. The engine later loads that
 directory by path and never by name, so spaCy's own downloader never runs.
+
+An install is the unpacked directory renamed into place with a completion marker
+written into it last (`gateway/engine/model_marker.py`). A directory without a marker
+for the current pin, such as one left by an interrupted pull, is missing and replaced.
 """
 
 import hashlib
@@ -16,6 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import httpx
+
+from gateway.engine.model_marker import Pin, is_installed, write_marker
 
 # One answer to "where do models live", shared with the engine that reads them.
 from gateway.engine.ner import models_home
@@ -43,6 +49,11 @@ class ModelSpec:
     @property
     def directory_name(self) -> str:
         return f"{self.name}-{self.version}"
+
+    @property
+    def pin(self) -> Pin:
+        """What the install's marker records: the directory and the wheel's digest."""
+        return Pin(self.directory_name, self.sha256)
 
 
 def _spacy_wheel(name: str, version: str, sha256: str) -> ModelSpec:
@@ -72,15 +83,20 @@ def install_dir(spec: ModelSpec) -> Path:
     return models_home() / "spacy" / spec.directory_name
 
 
+def installed(spec: ModelSpec) -> bool:
+    """Whether `spec` is installed: its directory carries a marker for the current pin."""
+    return is_installed(install_dir(spec), spec.pin)
+
+
 def open_client() -> httpx.Client:
     # Redirects: GitHub serves release assets from its storage host.
     return httpx.Client(follow_redirects=True, timeout=httpx.Timeout(60.0))
 
 
 def pull(spec: ModelSpec, client: httpx.Client) -> Path:
-    """Download, verify and unpack `spec`; return its directory. A present install is kept."""
+    """Download, verify and unpack `spec`; return its directory. A verified install is kept."""
     target = install_dir(spec)
-    if target.is_dir():
+    if installed(spec):
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
     # Staged next to the target, so the final rename stays on one file system.
@@ -91,8 +107,22 @@ def pull(spec: ModelSpec, client: httpx.Client) -> Path:
         _download(spec, client, wheel)
         unpacked = Path(staging) / "model"
         _unpack(spec, wheel, unpacked)
-        unpacked.rename(target)
+        move_into_place(unpacked, target, spec.pin)
     return target
+
+
+def move_into_place(staged: Path, target: Path, pin: Pin) -> None:
+    """Make the verified directory `staged` the install at `target`, then mark it.
+
+    `staged` lies in a staging directory next to `target`. Whatever is at `target`
+    (an unmarked or outdated directory, or a link, never followed) is moved into that
+    staging directory and deleted with it. The marker comes last, so an install cut
+    short at any point before it counts as missing.
+    """
+    if target.is_symlink() or target.exists():
+        target.replace(staged.parent / "replaced")
+    staged.replace(target)
+    write_marker(target, pin)
 
 
 def _download(spec: ModelSpec, client: httpx.Client, destination: Path) -> None:

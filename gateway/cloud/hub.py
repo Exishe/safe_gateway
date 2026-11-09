@@ -7,17 +7,21 @@ would resolve over the network for the tokenizer and the encoder config. The ins
 therefore also holds the backbone's tokenizer files and config, and the
 `gliner_config.json` that GLiNER reads embeds that config as `encoder_config`; the
 pinned original is kept beside it, byte for byte, as `gliner_config.source.json`.
+As for wheels, the install is renamed into place and its completion marker written last.
 """
 
+import hashlib
 import json
 import re
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 import httpx
 
-from gateway.cloud.models import ModelDownloadError, download_verified
+from gateway.cloud.models import ModelDownloadError, download_verified, move_into_place
+from gateway.engine.model_marker import Pin, is_installed
 from gateway.engine.ner import models_home
 
 _HUB = "https://huggingface.co"
@@ -56,6 +60,17 @@ class HubModelSpec:
     @property
     def directory_name(self) -> str:
         return f"{self.name}-{self.revision}"
+
+    @property
+    def pin(self) -> Pin:
+        """What the install's marker records: the directory and a digest over every file."""
+        return Pin(self.directory_name, files_sha256(self.files))
+
+
+def files_sha256(files: Iterable[HubFile]) -> str:
+    """One SHA-256 over every pinned file's source and digest, in any listed order."""
+    lines = sorted(f"{f.repo}@{f.revision}/{f.path} {f.sha256}\n" for f in files)
+    return hashlib.sha256("".join(lines).encode()).hexdigest()
 
 
 def hub_url(file: HubFile) -> str:
@@ -119,10 +134,15 @@ def install_dir(spec: HubModelSpec) -> Path:
     return models_home() / "gliner" / spec.directory_name
 
 
+def installed(spec: HubModelSpec) -> bool:
+    """Whether `spec` is installed: its directory carries a marker for the current pin."""
+    return is_installed(install_dir(spec), spec.pin)
+
+
 def pull(spec: HubModelSpec, client: httpx.Client) -> Path:
-    """Download and verify every file of `spec`, assemble the install; a present one is kept."""
+    """Download and verify every file of `spec`, assemble the install; a verified one is kept."""
     target = install_dir(spec)
-    if target.is_dir():
+    if installed(spec):
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
@@ -134,7 +154,7 @@ def pull(spec: HubModelSpec, client: httpx.Client) -> Path:
             label = f"{file.repo}/{file.path}"
             download_verified(hub_url(file), file.sha256, label, client, assembled / file.path)
         _write_offline_config(spec, assembled)
-        assembled.rename(target)
+        move_into_place(assembled, target, spec.pin)
     return target
 
 

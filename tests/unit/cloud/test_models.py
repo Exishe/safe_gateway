@@ -14,14 +14,17 @@ from pathlib import Path
 import httpx
 import pytest
 
+from gateway.cloud import models
 from gateway.cloud.models import (
     SPACY_MODELS,
     ModelDownloadError,
     ModelSpec,
     install_dir,
+    installed,
     models_home,
     pull,
 )
+from gateway.engine.model_marker import MARKER, Pin, write_marker
 
 NAME, VERSION = "xx_fake_model", "1.0.0"
 INNER = f"{NAME}/{NAME}-{VERSION}/"
@@ -128,11 +131,18 @@ def test_a_good_wheel_unpacks_only_the_model_directory(home: Path) -> None:
     assert sorted(p.relative_to(home) for p in leftovers(home)) == [
         Path("spacy"),
         Path("spacy", f"{NAME}-{VERSION}"),
+        Path("spacy", f"{NAME}-{VERSION}", MARKER),
         Path("spacy", f"{NAME}-{VERSION}", "config.cfg"),
         Path("spacy", f"{NAME}-{VERSION}", "meta.json"),
         Path("spacy", f"{NAME}-{VERSION}", "ner"),
         Path("spacy", f"{NAME}-{VERSION}", "ner", "model"),
     ]
+    assert installed(spec_for(payload))
+
+
+def test_the_pin_of_a_wheel_is_its_directory_and_digest() -> None:
+    spec = spec_for(b"wheel bytes")
+    assert spec.pin == Pin(f"{NAME}-{VERSION}", spec.sha256)
 
 
 def test_a_wrong_sha256_raises_and_leaves_nothing_behind(home: Path) -> None:
@@ -170,17 +180,112 @@ def test_an_archive_member_that_would_escape_is_rejected(
     assert [p for p in leftovers(home) if p.is_file()] == []
 
 
-def test_an_existing_install_is_not_downloaded_again(home: Path) -> None:
+def test_a_verified_install_is_not_downloaded_again(home: Path) -> None:
     payload = wheel(GOOD_MEMBERS)
     spec = spec_for(payload)
-    installed = home / "spacy" / f"{NAME}-{VERSION}"
-    installed.mkdir(parents=True)
+    with serving(payload) as client:
+        pull(spec, client)
     calls: list[str] = []
 
     with serving(payload, calls) as client:
-        assert pull(spec, client) == installed
+        assert pull(spec, client) == home / "spacy" / f"{NAME}-{VERSION}"
 
     assert calls == []
+
+
+@pytest.mark.parametrize(
+    "leftover",
+    [
+        {},  # an empty directory
+        {"config.cfg": b"[nlp]\n", "ner/model": b"\x00\x01wei"},  # unpacking was cut short
+    ],
+)
+def test_a_directory_without_a_marker_is_missing_and_replaced(
+    home: Path, leftover: dict[str, bytes]
+) -> None:
+    payload = wheel(GOOD_MEMBERS)
+    spec = spec_for(payload)
+    target = install_dir(spec)
+    target.mkdir(parents=True)
+    for name, data in leftover.items():
+        (target / name).parent.mkdir(parents=True, exist_ok=True)
+        (target / name).write_bytes(data)
+    assert not installed(spec)
+    calls: list[str] = []
+
+    with serving(payload, calls) as client:
+        assert pull(spec, client) == target
+
+    assert calls == [URL]
+    assert installed(spec)
+    assert (target / "ner" / "model").read_bytes() == b"\x00\x01weights"
+    assert (target / "meta.json").is_file()
+    assert [p.name for p in home.joinpath("spacy").iterdir()] == [target.name]  # nothing staged
+
+
+def test_an_install_pinned_to_another_digest_is_replaced(home: Path) -> None:
+    payload = wheel(GOOD_MEMBERS)
+    spec = spec_for(payload)
+    target = install_dir(spec)
+    target.mkdir(parents=True)
+    (target / "stale.bin").write_bytes(b"old model")
+    write_marker(target, Pin(spec.directory_name, "0" * 64))
+    assert not installed(spec)
+
+    with serving(payload) as client:
+        pull(spec, client)
+
+    assert installed(spec)
+    assert not (target / "stale.bin").exists()
+    assert home.joinpath("spacy").exists()
+
+
+def test_a_symlink_in_place_of_the_install_is_replaced_not_followed(
+    home: Path, tmp_path: Path
+) -> None:
+    payload = wheel(GOOD_MEMBERS)
+    spec = spec_for(payload)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "keep.txt").write_bytes(b"not ours")
+    install_dir(spec).parent.mkdir(parents=True)
+    install_dir(spec).symlink_to(elsewhere, target_is_directory=True)
+
+    with serving(payload) as client:
+        pull(spec, client)
+
+    assert not install_dir(spec).is_symlink()
+    assert installed(spec)
+    assert (elsewhere / "keep.txt").read_bytes() == b"not ours"
+    assert home.exists()
+
+
+def test_the_marker_is_written_last_and_a_pull_without_it_counts_as_missing(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = wheel(GOOD_MEMBERS)
+    spec = spec_for(payload)
+    target = install_dir(spec)
+    seen: list[list[str]] = []
+
+    def interrupted(directory: Path, pin: Pin) -> None:
+        # By now the verified model is complete and in place; only the marker is missing.
+        assert directory == target
+        assert pin == spec.pin
+        seen.append(sorted(p.name for p in directory.iterdir()))
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(models, "write_marker", interrupted)
+    with serving(payload) as client, pytest.raises(KeyboardInterrupt):
+        pull(spec, client)
+
+    assert seen == [["config.cfg", "meta.json", "ner"]]
+    assert not installed(spec)
+    assert [p.name for p in home.joinpath("spacy").iterdir()] == [target.name]
+    monkeypatch.undo()
+    with serving(payload) as client:
+        pull(spec, client)
+    assert installed(spec)
 
 
 def test_an_http_error_raises_and_leaves_nothing_behind(home: Path) -> None:
