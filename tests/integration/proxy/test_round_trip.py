@@ -1,5 +1,6 @@
 """End to end through the app with an in-process upstream: no sockets, no internet."""
 
+import asyncio
 import hashlib
 import json
 from collections.abc import AsyncIterator
@@ -8,6 +9,7 @@ from typing import Any
 import httpx
 import pytest
 from starlette.testclient import TestClient
+from starlette.types import Message
 
 from gateway.cloud.providers import Provider
 from gateway.proxy.app import create_app
@@ -365,3 +367,62 @@ def test_unparsable_sse_data_is_passed_on() -> None:
     route, body = _request(Provider.OPENAI, stream=True)
     response = _client(fake).post(route, json=body)
     assert [e.data for e in decode_sse(response.content)] == ["not json", "[DONE]"]
+
+
+class _Closed(httpx.AsyncByteStream):
+    def __init__(self, body: bytes) -> None:
+        self.closed = False
+        self._body = body
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield self._body
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def test_client_gone_before_the_stream_starts_still_closes_and_audits() -> None:
+    # Security review: the stream's clean-up must not depend on its body ever being read.
+    stream = _Closed(sse_body(openai_events("Hi [EMAIL_1]")))
+
+    def respond(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=stream)
+
+    sink = RecordingSink()
+    fake = FakeUpstream(Provider.OPENAI, respond)
+    app = create_app(fake.upstream(), engine_config=DATA.engine_config(), audit=sink)
+    _, body = _request(Provider.OPENAI, stream=True)
+    body["model"] = "m"
+    request_body = json.dumps(body).encode()
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": CHAT,
+        "raw_path": CHAT.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"host", b"127.0.0.1:8787"), (b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 50000),
+        "server": ("127.0.0.1", 8787),
+    }
+    messages: list[Message] = [{"type": "http.request", "body": request_body, "more_body": False}]
+
+    async def receive() -> Message:
+        return messages.pop(0) if messages else {"type": "http.disconnect"}
+
+    async def send(message: Message) -> None:
+        if message["type"] == "http.response.start":
+            msg = "client went away"
+            raise OSError(msg)
+
+    async def call() -> None:
+        await app(scope, receive, send)
+
+    with pytest.raises(OSError, match="went away"):
+        asyncio.run(call())
+    assert [(e.outcome, e.status_code) for e in sink.events] == [("cancelled", 200)]
+    assert sink.events[0].stream is True
+    assert stream.closed

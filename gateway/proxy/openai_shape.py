@@ -8,8 +8,18 @@ from gateway.cloud.providers import ApiShape
 from gateway.engine.mask import Mapping
 from gateway.engine.rehydrate import rehydrate
 from gateway.proxy.errors import invalid, unsupported
-from gateway.proxy.payload import PLACEHOLDER_INSTRUCTION, encode_json
-from gateway.proxy.shape import Body, Rehydrators, collect, replace
+from gateway.proxy.payload import (
+    PLACEHOLDER_INSTRUCTION,
+    Check,
+    boolean,
+    check_fields,
+    encode_json,
+    flags_object,
+    integer,
+    number,
+    token,
+)
+from gateway.proxy.shape import Body, Rehydrators, collect, replace, rewrite_values, stream_key
 from gateway.proxy.sse import SSEEvent
 
 # Parameters that carry no text of the user's, or whose text is masked (stop).
@@ -110,6 +120,58 @@ def _message(message: object) -> Body:
     return out
 
 
+def _logit_bias(name: str, value: object) -> None:
+    if not isinstance(value, dict) or not all(isinstance(k, str) and k.isdigit() for k in value):
+        msg = f"{name!r} must map token ids to numbers"
+        raise invalid(msg)
+    for bias in value.values():
+        number(name, bias)
+
+
+def _json_schema(name: str, value: object) -> None:
+    if not isinstance(value, dict) or not set(value) <= _JSON_SCHEMA_FIELDS:
+        msg = f"{name!r} may hold only {', '.join(sorted(_JSON_SCHEMA_FIELDS))}"
+        raise invalid(msg)
+    check_fields(value, {"name": token, "strict": boolean})
+    if not isinstance(value.get("schema", {}), dict):
+        msg = f"{name}.schema must be an object"
+        raise invalid(msg)
+
+
+def _response_format(name: str, value: object) -> None:
+    if (
+        not isinstance(value, dict)
+        or value.get("type") not in _RESPONSE_FORMATS
+        or not set(value) <= {"type", "json_schema"}
+    ):
+        msg = f"{name!r} must be {{'type': one of {', '.join(sorted(_RESPONSE_FORMATS))}}}"
+        raise invalid(msg)
+    if value["type"] == "json_schema":
+        _json_schema("json_schema", value.get("json_schema"))
+
+
+_RESPONSE_FORMATS = frozenset({"text", "json_object", "json_schema"})
+_JSON_SCHEMA_FIELDS = frozenset({"name", "description", "schema", "strict"})
+_CHECKS: dict[str, Check] = {
+    "temperature": number,
+    "top_p": number,
+    "presence_penalty": number,
+    "frequency_penalty": number,
+    "n": integer,
+    "max_tokens": integer,
+    "max_completion_tokens": integer,
+    "top_logprobs": integer,
+    "seed": integer,
+    "logprobs": boolean,
+    "reasoning_effort": token,
+    "service_tier": token,
+    "verbosity": token,
+    "stream_options": flags_object(frozenset({"include_usage", "include_obfuscation"})),
+    "logit_bias": _logit_bias,
+    "response_format": _response_format,
+}
+
+
 def _stop(stop: object) -> object:
     if stop is None or isinstance(stop, str):
         return stop
@@ -127,6 +189,16 @@ def _rewrite(body: Body, fn: Callable[[str], str]) -> Body:
         out["stop"] = fn(stop)
     elif isinstance(stop, list):
         out["stop"] = [fn(s) for s in stop]
+    response_format = body.get("response_format")
+    if isinstance(response_format, dict) and isinstance(response_format.get("json_schema"), dict):
+        # Descriptions, enums and examples in a schema can hold personal data; the
+        # schema's keys and its name are structure and are kept.
+        schema = response_format["json_schema"]
+        rewritten = {
+            key: value if key in {"name", "strict"} else rewrite_values(value, fn)
+            for key, value in schema.items()
+        }
+        out["response_format"] = {**response_format, "json_schema": rewritten}
     return out
 
 
@@ -173,9 +245,9 @@ class OpenAIStreamRewriter:
 
     def _choice(self, choice: object) -> tuple[int, str]:
         """Rehydrate one choice in place; the text that must go out before it, if any."""
-        if not isinstance(choice, dict):
-            return 0, ""
-        index = choice.get("index", 0)
+        index = stream_key(choice.get("index", 0)) if isinstance(choice, dict) else None
+        if not isinstance(choice, dict) or index is None:
+            return 0, ""  # not a choice we can track: passed on as it came
         delta = choice.get("delta")
         has_content = isinstance(delta, dict) and isinstance(delta.get("content"), str)
         text = self._rehydrators.feed(index, delta["content"]) if has_content else ""
@@ -222,6 +294,7 @@ class OpenAIShape:
             raise invalid(msg)
         if "stop" in out:
             out["stop"] = _stop(out["stop"])
+        check_fields(out, _CHECKS)
         return out
 
     def collect_texts(self, body: Body) -> list[str]:

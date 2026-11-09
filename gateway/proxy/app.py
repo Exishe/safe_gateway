@@ -19,6 +19,7 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.cors import CORSMiddleware
+from starlette.types import Receive, Scope, Send
 
 from gateway import __version__
 from gateway.cloud.providers import ApiShape
@@ -242,46 +243,8 @@ class _Gateway:
             await opened.aclose()
             error = UpstreamError(502, f"upstream {self.upstream.host} did not stream its answer")
             return await self._upstream_failed(forward, error)
-        return StreamingResponse(
-            self._relay(forward, opened), media_type="text/event-stream", headers=_NO_STORE
-        )
-
-    async def _relay(self, forward: _Forward, opened: UpstreamStream) -> AsyncIterator[bytes]:
-        digest = hashlib.sha256()
-        decoder = SSEDecoder()
-        rewriter = forward.shape.stream_rewriter(forward.mapping)
-        outcome = "forwarded"
-
-        def out(events: list[SSEEvent]) -> bytes:
-            return b"".join(encode(event) for event in events)
-
-        try:
-            try:
-                async for chunk in opened.chunks():
-                    digest.update(chunk)
-                    for event in decoder.feed(chunk):
-                        yield out(rewriter.on_event(event))
-                for event in decoder.close():
-                    yield out(rewriter.on_event(event))
-                yield out(rewriter.finish())
-            except UpstreamError as error:
-                outcome = "upstream_error"
-                yield out([*rewriter.finish(), forward.shape.stream_error(str(error))])
-        except BaseException:
-            outcome = "cancelled"  # the client went away
-            raise
-        finally:
-            with anyio.CancelScope(shield=True):
-                await opened.aclose()
-                event = forward.event(
-                    outcome,
-                    opened.status,
-                    self.upstream,
-                    response_sha256=digest.hexdigest(),
-                    unresolved=len(rewriter.unresolved),
-                )
-                forward.mapping.clear()
-                await self.record(event)
+        relay = _Relay(self, forward, opened)
+        return _RelayResponse(relay)
 
     # ---------------------------------------------------------------- mask and sessions
 
@@ -332,6 +295,75 @@ class _Gateway:
             return Response(status_code=status.HTTP_204_NO_CONTENT)
         await self.record(timer.event("session_not_found", 404))
         return _native_error(404, "not_found", "no such session")
+
+
+class _Relay:
+    """One streamed answer: rehydrated on the way through, closed exactly once.
+
+    `close()` runs whether or not the body was ever read: a client that leaves before
+    the first byte still gets the upstream closed, the mapping cleared and an audit
+    event (security review, phase 4).
+    """
+
+    def __init__(self, gateway: _Gateway, forward: _Forward, opened: UpstreamStream) -> None:
+        self._gateway = gateway
+        self._forward = forward
+        self._opened = opened
+        self._digest = hashlib.sha256()
+        self._rewriter = forward.shape.stream_rewriter(forward.mapping)
+        self._outcome = "cancelled"  # until the stream reaches its end
+        self._closed = False
+
+    @staticmethod
+    def _out(events: list[SSEEvent]) -> bytes:
+        return b"".join(encode(event) for event in events)
+
+    async def events(self) -> AsyncIterator[bytes]:
+        decoder = SSEDecoder()
+        try:
+            try:
+                async for chunk in self._opened.chunks():
+                    self._digest.update(chunk)
+                    for event in decoder.feed(chunk):
+                        yield self._out(self._rewriter.on_event(event))
+                for event in decoder.close():
+                    yield self._out(self._rewriter.on_event(event))
+                yield self._out(self._rewriter.finish())
+                self._outcome = "forwarded"
+            except UpstreamError as error:
+                self._outcome = "upstream_error"
+                error_event = self._forward.shape.stream_error(str(error))
+                yield self._out([*self._rewriter.finish(), error_event])
+        finally:
+            await self.close()
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        with anyio.CancelScope(shield=True):
+            await self._opened.aclose()
+            event = self._forward.event(
+                self._outcome,
+                self._opened.status,
+                self._gateway.upstream,
+                response_sha256=self._digest.hexdigest(),
+                unresolved=len(self._rewriter.unresolved),
+            )
+            self._forward.mapping.clear()
+            await self._gateway.record(event)
+
+
+class _RelayResponse(StreamingResponse):
+    def __init__(self, relay: _Relay) -> None:
+        super().__init__(relay.events(), media_type="text/event-stream", headers=_NO_STORE)
+        self._relay = relay
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._relay.close()
 
 
 def _mask_request_fields(data: Body) -> tuple[list[str], str | None]:

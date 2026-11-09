@@ -253,3 +253,37 @@ def test_error_shapes() -> None:
     event = ANTHROPIC.stream_error("upstream broke")
     assert event.event == "error"
     assert json.loads(event.data)["error"]["message"] == "upstream broke"
+
+
+@pytest.mark.parametrize(
+    ("extra", "word"),
+    [
+        ({"max_tokens": "ten"}, "max_tokens"),
+        ({"top_k": 1.5}, "top_k"),
+        ({"temperature": "Jane Roe"}, "temperature"),
+        ({"service_tier": "call Jane Roe"}, "service_tier"),
+        ({"thinking": {"type": "enabled", "budget_tokens": 1024, "note": "Jane"}}, "thinking"),
+        ({"thinking": {"type": "enabled", "budget_tokens": "lots"}}, "thinking"),
+        ({"thinking": "on"}, "thinking"),
+    ],
+)
+def test_forwarded_parameters_are_type_checked(extra: dict[str, object], word: str) -> None:
+    error = _rejected(_body(**extra))
+    assert error.status == 400
+    assert word in error.message
+
+
+def test_valid_parameters_pass() -> None:
+    raw = _body(
+        top_k=5, top_p=0.9, service_tier="auto", thinking={"type": "enabled", "budget_tokens": 1024}
+    )
+    assert ANTHROPIC.validate(raw) == raw
+
+
+def test_unhashable_block_index_from_upstream_passes_untouched() -> None:
+    rewriter = ANTHROPIC.stream_rewriter(_mapping())
+    event = _event("content_block_delta", index=[0], delta={"type": "text_delta", "text": "x"})
+    assert rewriter.on_event(event) == [event]
+    assert rewriter.on_event(_event("content_block_stop", index={"a": 1}))[-1].event == (
+        "content_block_stop"
+    )

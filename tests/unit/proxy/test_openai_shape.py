@@ -281,3 +281,80 @@ def test_error_shapes() -> None:
     }
     event = OPENAI.stream_error("upstream broke")
     assert json.loads(event.data)["error"]["message"] == "upstream broke"
+
+
+# Security review: forwarded parameters may not smuggle text past masking.
+
+
+@pytest.mark.parametrize(
+    ("extra", "word"),
+    [
+        ({"temperature": "Jane Roe"}, "temperature"),
+        ({"n": 1.5}, "n"),
+        ({"seed": True}, "seed"),
+        ({"logprobs": "yes"}, "logprobs"),
+        ({"service_tier": "call Jane Roe"}, "service_tier"),
+        ({"reasoning_effort": "x" * 65}, "reasoning_effort"),
+        ({"stream_options": {"include_usage": True, "note": "Jane Roe"}}, "stream_options"),
+        ({"stream_options": {"include_usage": "yes"}}, "stream_options"),
+        ({"logit_bias": {"Jane Roe": 1}}, "logit_bias"),
+        ({"logit_bias": {"50256": "high"}}, "logit_bias"),
+        ({"response_format": {"type": "json_schema", "note": "x"}}, "response_format"),
+        ({"response_format": {"type": "yaml"}}, "response_format"),
+        ({"response_format": {"type": "json_schema", "json_schema": {"name": "a b"}}}, "name"),
+        ({"response_format": {"type": "json_schema", "json_schema": {"x": 1}}}, "json_schema"),
+    ],
+)
+def test_forwarded_parameters_are_type_checked(extra: dict[str, object], word: str) -> None:
+    error = _rejected(_body(**extra))
+    assert error.status == 400
+    assert word in error.message
+
+
+def test_valid_parameters_pass() -> None:
+    raw = _body(
+        temperature=0,
+        top_p=0.5,
+        n=2,
+        seed=7,
+        logprobs=True,
+        top_logprobs=2,
+        service_tier="auto",
+        reasoning_effort="low",
+        stream_options={"include_usage": True},
+        logit_bias={"50256": -100},
+        response_format={"type": "json_object"},
+    )
+    assert OPENAI.validate(raw) == raw
+
+
+def test_json_schema_text_values_are_masked_but_keys_and_name_are_not() -> None:
+    schema = {
+        "name": "client_card",
+        "strict": True,
+        "description": "about Jane",
+        "schema": {
+            "type": "object",
+            "properties": {"who": {"type": "string", "enum": ["Jane", "Bob"]}},
+        },
+    }
+    body = OPENAI.validate(_body(response_format={"type": "json_schema", "json_schema": schema}))
+    texts = OPENAI.collect_texts(body)
+    assert texts[4:] == ["about Jane", "object", "string", "Jane", "Bob"]
+    out = OPENAI.with_texts(body, [*texts[:4], "D", "object", "string", "P1", "P2"])
+    assert out["response_format"]["json_schema"] == {
+        "name": "client_card",
+        "strict": True,
+        "description": "D",
+        "schema": {
+            "type": "object",
+            "properties": {"who": {"type": "string", "enum": ["P1", "P2"]}},
+        },
+    }
+
+
+def test_unhashable_choice_index_from_upstream_passes_untouched() -> None:
+    rewriter = OPENAI.stream_rewriter(_mapping())
+    event = SSEEvent(json.dumps({"choices": [{"index": [0], "delta": {"content": "x"}}]}))
+    (out,) = rewriter.on_event(event)
+    assert json.loads(out.data)["choices"][0]["delta"] == {"content": "x"}

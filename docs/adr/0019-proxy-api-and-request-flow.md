@@ -48,7 +48,13 @@ user's browser, can send it requests.
 2. Validate it against an allow-list per shape. Top-level fields, message keys
    and content part types not on the list are refused with 422 and the field
    named, so no text-bearing field the gateway does not know reaches the
-   upstream unmasked. A short list of end-user identifiers is dropped instead,
+   upstream unmasked. Forwarded parameters are type-checked so they cannot carry
+   text either: numbers are numbers, flags are booleans, enum-like fields
+   (`service_tier`, `reasoning_effort`) are short tokens, `stream_options`,
+   `logit_bias` and Anthropic `thinking` hold only their documented keys. In an
+   OpenAI `response_format` JSON schema, every string value (descriptions,
+   enums, examples) is masked like message text; its keys and name are kept.
+   A short list of end-user identifiers is dropped instead,
    because they do not change the answer: OpenAI `user`, `safety_identifier`,
    `metadata`, `store`, `prompt_cache_key`; Anthropic `metadata`; a message's
    `name`; message keys whose value is null or empty.

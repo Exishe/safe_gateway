@@ -72,6 +72,22 @@ def replace(rewrite: Rewrite, body: Body, texts: Sequence[str]) -> Body:
     return out
 
 
+def rewrite_values(value: object, fn: Callable[[str], str]) -> object:
+    """`value` with every string value rewritten; object keys are left as they are."""
+    if isinstance(value, str):
+        return fn(value)
+    if isinstance(value, dict):
+        return {key: rewrite_values(item, fn) for key, item in value.items()}
+    if isinstance(value, list):
+        return [rewrite_values(item, fn) for item in value]
+    return value
+
+
+def stream_key(value: object) -> int | None:
+    """A choice or block index from the upstream, if it is one: an int, never a bool."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 class Rehydrators:
     """One StreamingRehydrator per stream key (a choice, a content block)."""
 

@@ -28,6 +28,7 @@ def test_parses_an_object() -> None:
         (b'{"\\udfff": 1}', "surrogate"),
         (b"\xff\xfe{}", "UTF-8"),
         (b"[" * 100_000 + b"]" * 100_000, "nested"),
+        (b'{"a": ' + b"1" * 5000 + b"}", "JSON"),  # past Python's int digit limit
     ],
 )
 def test_bad_bodies_are_400(body: bytes, reason: str) -> None:

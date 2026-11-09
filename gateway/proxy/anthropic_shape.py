@@ -8,8 +8,16 @@ from gateway.cloud.providers import ApiShape
 from gateway.engine.mask import Mapping
 from gateway.engine.rehydrate import rehydrate
 from gateway.proxy.errors import invalid, unsupported
-from gateway.proxy.payload import PLACEHOLDER_INSTRUCTION, encode_json
-from gateway.proxy.shape import Body, Rehydrators, collect, replace
+from gateway.proxy.payload import (
+    PLACEHOLDER_INSTRUCTION,
+    Check,
+    check_fields,
+    encode_json,
+    integer,
+    number,
+    token,
+)
+from gateway.proxy.shape import Body, Rehydrators, collect, replace, stream_key
 from gateway.proxy.sse import SSEEvent
 
 _FORWARDED = frozenset(
@@ -34,6 +42,26 @@ _TOOL_BLOCKS = frozenset(
 )
 _MEDIA_BLOCKS = frozenset({"image", "document"})
 _ROLES = frozenset({"user", "assistant"})
+
+
+def _thinking(name: str, value: object) -> None:
+    if not isinstance(value, dict) or not set(value) <= {"type", "budget_tokens"}:
+        msg = f"{name!r} may hold only type and budget_tokens"
+        raise invalid(msg)
+    if value.get("type") is not None:
+        token(f"{name}.type", value["type"])
+    if value.get("budget_tokens") is not None:
+        integer(f"{name}.budget_tokens", value["budget_tokens"])
+
+
+_CHECKS: dict[str, Check] = {
+    "max_tokens": integer,
+    "temperature": number,
+    "top_p": number,
+    "top_k": integer,
+    "service_tier": token,
+    "thinking": _thinking,
+}
 
 TOOLS_REFUSED = (
     "tool use is not supported by the gateway yet: tool inputs and results cannot be "
@@ -148,12 +176,12 @@ class AnthropicStreamRewriter:
             payload = json.loads(event.data)
         except ValueError:
             return [event]
-        if not isinstance(payload, dict):
-            return [event]
-        kind = payload.get("type")
-        index = payload.get("index")
+        kind = payload.get("type") if isinstance(payload, dict) else None
         if kind == "message_stop":
             return [*self.finish(), event]
+        index = stream_key(payload.get("index")) if isinstance(payload, dict) else None
+        if index is None:
+            return [event]  # not a block we can track: passed on as it came
         if kind == "content_block_stop":
             tail = self._rehydrators.close(index)
             return [*([self._delta(index, tail)] if tail else []), event]
@@ -208,6 +236,7 @@ class AnthropicShape:
         if "stream" in out and not isinstance(out["stream"], bool):
             msg = "'stream' must be true or false"
             raise invalid(msg)
+        check_fields(out, _CHECKS)
         return out
 
     def collect_texts(self, body: Body) -> list[str]:
