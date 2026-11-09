@@ -80,7 +80,8 @@ def snils_valid(digits: str) -> bool:
     if int(digits[:9]) <= _SNILS_CHECKSUM_FROM:
         return False
     total = sum(int(d) * (9 - i) for i, d in enumerate(digits[:9]))
-    check = total % 101 if total > 101 else total  # noqa: PLR2004
+    # Below 100 the sum is the check; 100 and 101 give 00; above, the sum mod 101 (100 -> 00).
+    check = total % 101
     if check == 100:  # noqa: PLR2004
         check = 0
     return check == int(digits[9:])

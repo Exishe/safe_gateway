@@ -63,3 +63,8 @@ def test_snils() -> None:
     assert not snils_valid("11223344596")  # pragma: allowlist secret
     # Numbers up to 001-001-998 were issued without a checksum: not treated as SNILS.
     assert not snils_valid("00100199800")
+
+
+def test_snils_whose_weighted_sum_is_101_has_check_digits_00() -> None:
+    # 1*9 + 1*8 + 2*7 + 2*6 + 3*5 + 3*4 + 4*3 + 7*2 + 5*1 = 101
+    assert snils_valid("11223347500")  # pragma: allowlist secret
