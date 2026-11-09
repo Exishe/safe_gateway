@@ -1,0 +1,123 @@
+[project]
+name = "safeguard-gateway"
+version = "0.0.0"
+description = "Local-first privacy gateway: masks personal data before it reaches a cloud AI model."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "LicenseRef-Proprietary"
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = []
+
+[project.scripts]
+safeguard = "gateway.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# Flat layout as fixed by the brief (ADR 0008): the package is ./gateway
+module-name = "gateway"
+module-root = ""
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",       # docstrings: comments explain why, not a docstring on every function
+    "COM812",  # conflicts with the formatter
+    "ISC001",  # conflicts with the formatter
+    "TD002",   # TODO author
+    "TD003",   # TODO issue link
+    "CPY",     # license is declared once at project level (ADR 0008)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # assert is how pytest works
+    "S603",    # tests run our own hook scripts with fixed arguments
+    "PLR2004", # literal values in assertions are the point
+    "INP001",  # test dirs are not packages
+]
+"tools/**" = [
+    "T201",    # these are CLI tools; print is their output
+]
+"gateway/cli.py" = [
+    "T201",
+]
+
+# ---------------------------------------------------------------- ty
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.terminal]
+error-on-warning = true
+
+[tool.ty.src]
+include = ["gateway", "tools", "tests"]
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--import-mode=importlib",
+    # Hard rule: tests never touch the network (ADR 0006).
+    "--disable-socket",
+    "--allow-unix-socket",
+    "--cov=gateway",
+    "--cov=tools",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-fail-under=80",
+]
+markers = [
+    "integration: talks to local services on loopback; opts in to sockets",
+    "e2e: drives a real browser",
+    "benchmark: recall measurement, slow",
+]
+
+[tool.coverage.run]
+branch = true
+
+# ---------------------------------------------------------------- bandit
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+
+[dependency-groups]
+audit = [
+    "bandit>=1.9.4",
+    "detect-secrets>=1.5.0",
+    "pip-audit>=2.10.1",
+    "zizmor>=1.32.0",
+]
+lint = [
+    "ruff>=0.17.4",
+    "shellcheck-py>=0.11.0.1",
+    "ty>=0.0.99",
+]
+test = [
+    "hypothesis>=6.170.15",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "pytest-socket>=0.8.1",
+]
+tools = [
+    "packaging>=26.3",
+]
+# `uv sync` installs the dev group by default; it pulls in everything above.
+dev = [
+    { include-group = "lint" },
+    { include-group = "test" },
+    { include-group = "audit" },
+    { include-group = "tools" },
+]
