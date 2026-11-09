@@ -188,15 +188,17 @@ def _mask(args: argparse.Namespace) -> int:
 
 
 def _models_list() -> int:
-    print(f"{'LANG':<6}{'MODEL':<18}{'VERSION':<9}{'STATUS':<11}PATH")
+    gliner = GLINER_MODEL
+    # The column fits the longest name, so a name never runs into the version after it.
+    width = max(len(name) for name in [gliner.name, *(s.name for s in SPACY_MODELS.values())]) + 2
+    print(f"{'LANG':<6}{'MODEL':<{width}}{'VERSION':<9}{'STATUS':<11}PATH")
     # "installed" only with a marker for the current pin: a bare directory may be a cut-short pull.
     for lang, spec in SPACY_MODELS.items():
         status = "installed" if installed(spec) else "missing"
-        print(f"{lang:<6}{spec.name:<18}{spec.version:<9}{status:<11}{install_dir(spec)}")
-    gliner = GLINER_MODEL
+        print(f"{lang:<6}{spec.name:<{width}}{spec.version:<9}{status:<11}{install_dir(spec)}")
     status = "installed" if hub.installed(gliner) else "missing"
     path = hub.install_dir(gliner)
-    print(f"{'other':<6}{gliner.name:<18}{gliner.revision[:7]:<9}{status:<11}{path}")
+    print(f"{'other':<6}{gliner.name:<{width}}{gliner.revision[:7]:<9}{status:<11}{path}")
     return 0
 
 

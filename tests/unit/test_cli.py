@@ -194,6 +194,18 @@ def test_models_list_shows_each_model_as_missing_then_installed(
     assert str(tmp_path / "sg" / "models" / "spacy" / "xx_en-1.0.0") in out
 
 
+def test_models_list_keeps_long_model_names_apart_from_the_next_column(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from gateway.cloud.hub import GLINER_MODEL  # noqa: PLC0415
+    from gateway.cloud.models import SPACY_MODELS  # noqa: PLC0415
+
+    assert main(["models", "list"]) == 0
+    rows = capsys.readouterr().out.splitlines()[1:]
+    names = [spec.name for spec in SPACY_MODELS.values()] + [GLINER_MODEL.name]
+    assert [row.split()[1] for row in rows] == names
+
+
 @pytest.mark.usefixtures("fake_models")
 def test_models_pull_only_en_installs_english_only(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
