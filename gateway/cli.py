@@ -19,9 +19,10 @@ from gateway.cloud.models import (
     pull,
 )
 from gateway.engine.detect import EngineConfig, detect
-from gateway.engine.mask import mask
+from gateway.engine.mask import Mapping, mask
 from gateway.engine.recognizers.gazetteer import load_gazetteer
 from gateway.engine.types import Span
+from gateway.parsers import formats
 
 CONTEXT = 20  # characters shown on each side of a detection
 
@@ -48,7 +49,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     mask_parser = commands.add_parser(
-        "mask", help="replace the personal data in a UTF-8 text file with placeholders"
+        "mask",
+        help="replace the personal data in a file with placeholders (text, pdf, docx, xlsx, eml)",
     )
     mask_parser.add_argument("file", type=Path)
     mask_parser.add_argument(
@@ -187,28 +189,44 @@ def _mask_targets_conflict(args: argparse.Namespace) -> str | None:
     return None
 
 
+def _mask_document(args: argparse.Namespace, config: EngineConfig) -> tuple[str, Mapping]:
+    if args.output is None and not formats.is_text(args.file):
+        msg = f"{args.file.suffix} needs an output file: add -o OUT"
+        raise ValueError(msg)
+    result = formats.mask_file(args.file, args.output, config)
+    for note in result.notes:
+        print(f"safeguard: note: {note}", file=sys.stderr)
+    return result.text, result.mapping
+
+
 def _mask(args: argparse.Namespace) -> int:
     conflict = _mask_targets_conflict(args)
     if conflict is not None:
         print(f"safeguard: {conflict}", file=sys.stderr)
         return 2
     try:
-        # Strict UTF-8: replacing bytes would break the exact round trip back to the file.
-        text = args.file.read_bytes().decode("utf-8")
         gazetteer = load_gazetteer(args.gazetteer) if args.gazetteer else None
-    except (OSError, ValueError) as error:
+        config = EngineConfig(gazetteer=gazetteer, ner="off" if args.no_ner else "auto")
+        if formats.handles(args.file):  # .pdf .docx .xlsx .eml .txt (ADR 0017)
+            masked, mapping = _mask_document(args, config)
+        else:
+            # Strict UTF-8: replacing bytes would break the exact round trip back to the file.
+            text = args.file.read_bytes().decode("utf-8")
+            masked, mapping = mask(text, detect(text, config=config))
+            if args.output is not None:
+                args.output.write_text(masked, encoding="utf-8", newline="")
+    except (OSError, ValueError) as error:  # DocumentError is a ValueError
         print(f"safeguard: cannot read input: {error}", file=sys.stderr)
         return 2
-
-    config = EngineConfig(gazetteer=gazetteer, ner="off" if args.no_ner else "auto")
-    masked, mapping = mask(text, detect(text, config=config))
     if args.json_map is not None:
-        # The map first: if it cannot be written, no masked output is left without one.
         try:
             _write_private(
                 args.json_map, json.dumps(mapping.to_dict(), ensure_ascii=False, indent=2)
             )
         except OSError as error:
+            # A masked copy is never left behind without its map.
+            if args.output is not None:
+                args.output.unlink(missing_ok=True)
             print(f"safeguard: cannot write the map: {error.strerror}", file=sys.stderr)
             return 2
         print(
@@ -218,8 +236,6 @@ def _mask(args: argparse.Namespace) -> int:
         )
     if args.output is None:
         print(masked, end="")
-    else:
-        args.output.write_text(masked, encoding="utf-8", newline="")
     return 0
 
 

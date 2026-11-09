@@ -502,3 +502,102 @@ def test_python_dash_m_runs_the_cli(tmp_path: Path, module: str) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip()
+
+
+# ------------------------------------------------------------------ mask documents (Phase 3)
+
+import email  # noqa: E402
+import email.policy  # noqa: E402
+from email.message import EmailMessage  # noqa: E402
+
+import docx  # noqa: E402
+import openpyxl  # noqa: E402
+from pypdf import PdfReader  # noqa: E402
+
+from gateway.parsers import pdf as pdf_parser  # noqa: E402
+
+DOC_EMAIL = "anna.petrova@example.org"
+DOC_CARD = "4111 1111 1111 1111"  # pragma: allowlist secret
+
+
+def test_mask_docx_writes_a_redacted_docx(tmp_path: Path) -> None:
+    source = tmp_path / "contract.docx"
+    document = docx.Document()
+    document.add_paragraph(f"Client {DOC_EMAIL}, card {DOC_CARD}")
+    document.save(str(source))
+    out = tmp_path / "out.docx"
+    map_file = tmp_path / "map.json"
+
+    assert main(["mask", "--no-ner", str(source), "-o", str(out), "--json-map", str(map_file)]) == 0
+    text = "\n".join(p.text for p in docx.Document(str(out)).paragraphs)
+    assert text == "Client [EMAIL_1], card [CREDIT_CARD_1]"
+    mapping = Mapping.from_dict(json.loads(map_file.read_text(encoding="utf-8")))
+    assert rehydrate(text, mapping)[0] == f"Client {DOC_EMAIL}, card {DOC_CARD}"
+
+
+def test_mask_xlsx_pdf_and_eml(tmp_path: Path) -> None:
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet["A1"] = DOC_EMAIL
+    workbook.save(tmp_path / "a.xlsx")
+    pdf_parser.write_pdf(
+        [pdf_parser.Page(300, 300, [pdf_parser.Line(f"to {DOC_EMAIL}", 20, 200, 12)])],
+        tmp_path / "b.pdf",
+    )
+    message = EmailMessage()
+    message["From"] = DOC_EMAIL
+    message["Subject"] = "hello"
+    message.set_content(f"card {DOC_CARD}\n")
+    (tmp_path / "c.eml").write_bytes(message.as_bytes())
+
+    for name in ("a.xlsx", "b.pdf", "c.eml"):
+        out = tmp_path / f"out-{name}"
+        assert main(["mask", "--no-ner", str(tmp_path / name), "-o", str(out)]) == 0, name
+
+    cell = openpyxl.load_workbook(tmp_path / "out-a.xlsx").worksheets[0]["A1"].value
+    assert cell == "[EMAIL_1]"
+    assert "to [EMAIL_1]" in PdfReader(tmp_path / "out-b.pdf").pages[0].extract_text()
+    mail = email.message_from_bytes(
+        (tmp_path / "out-c.eml").read_bytes(), policy=email.policy.default
+    )
+    assert dict(mail.raw_items())["From"] == "[EMAIL_1]"
+    body = mail.get_body(("plain",))
+    assert body is not None
+    assert body.get_content() == "card [CREDIT_CARD_1]\n"
+
+
+def test_mask_of_a_document_without_output_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "contract.docx"
+    docx.Document().save(str(source))
+    assert main(["mask", str(source)]) == 2
+    assert "-o" in capsys.readouterr().err
+
+
+def test_mask_of_an_unreadable_document_exits_2_with_a_reason(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "broken.pdf"
+    source.write_bytes(b"not a pdf")
+    out = tmp_path / "out.pdf"
+    assert main(["mask", str(source), "-o", str(out)]) == 2
+    assert "broken.pdf" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_mask_prints_what_the_copy_lost(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    source = tmp_path / "b.pdf"
+    pdf_parser.write_pdf([pdf_parser.Page(300, 300, [pdf_parser.Line("x", 20, 200, 12)])], source)
+    assert main(["mask", "--no-ner", str(source), "-o", str(tmp_path / "o.pdf")]) == 0
+    assert "rebuilt 1 pages as text only" in capsys.readouterr().err
+
+
+def test_mask_of_other_suffixes_keeps_the_text_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "notes.md"
+    source.write_text(f"# {DOC_EMAIL}\n", encoding="utf-8")
+    assert main(["mask", "--no-ner", str(source)]) == 0
+    assert capsys.readouterr().out == "# [EMAIL_1]\n"
