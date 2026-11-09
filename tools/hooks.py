@@ -5,9 +5,11 @@ tool call proceed; exit 2 blocks a PreToolUse call, or, after PostToolUse, sends
 the reason on stderr back to Claude so it can fix what it just did.
 
 Failure policy (ADR 0010): a guard that crashes exits 2, so a broken guard stops
-the action instead of waving it through. The wrappers exit 2 when uv is missing,
-and settings.json marks every guard `onFailure: block` for timeouts. Only the
-format hook fails open.
+the action instead of waving it through. The wrappers run .claude/hooks/run-hook.sh,
+which prefers .venv's Python over `uv run` (uv parses uv.lock, and a conflicted lock
+must not block its own repair) and turns any failure into exit 2, including a crash
+before this module loads or a clone with neither .venv nor uv. settings.json marks
+every guard `onFailure: block` for timeouts. Only the format hook fails open.
 
 Run: `python -m tools.hooks <hook-name> < event.json`
 """

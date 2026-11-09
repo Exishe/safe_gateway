@@ -26,8 +26,12 @@ for example:
    `gateway.proxy`, LLM SDKs, web frameworks, process or dynamic-loading
    modules. The check fails when its target is missing or empty.
 2. **Guards fail closed.** A crashing hook exits 2. The wrappers exit 2 when
-   `uv` is missing. settings.json marks every guard `onFailure: block`, which
-   also covers timeouts. Only the format hook fails open.
+   there is neither a `.venv` nor `uv`. settings.json marks every guard
+   `onFailure: block`, which also covers timeouts. Only the format hook fails
+   open. The wrappers run `.venv`'s Python first and `uv run` only without a
+   `.venv`: `uv run` parses `uv.lock` even with `--frozen`, so a lock with
+   merge-conflict markers blocked every command, including its own repair
+   (observed during a cherry-pick, 2026-11-09).
 3. **The git hook cannot be skipped from Claude Code.** secret-scan refuses
    commits with `--no-verify`, `-n` or a `core.hooksPath` override, and
    refuses commits when the clone has not run `scripts/install-git-hooks.sh`.

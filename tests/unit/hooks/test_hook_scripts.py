@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ SCRIPTS = [
     "no-egress.sh",
     "format.sh",
     "test-after-edit.sh",
+    "run-hook.sh",  # the shared runner every wrapper execs
 ]
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="hooks are bash scripts")
@@ -136,18 +138,65 @@ def test_settings_deny_publishing_and_git_config_overrides() -> None:
 # ---- review fixes (Important #3, #6)
 
 
-def test_wrapper_blocks_when_uv_is_missing() -> None:
-    env = {"PATH": "/usr/bin:/bin", "CLAUDE_PROJECT_DIR": str(REPO), "HOME": os.environ["HOME"]}
-    result = subprocess.run(
-        [str(HOOK_DIR / "bash-guard.sh")],
-        input=json.dumps(bash_event("ls")),
+CONFLICTED_LOCK = "version = 1\n<<<<<<< HEAD\nrevision = 2\n=======\nrevision = 3\n>>>>>>> x\n"
+
+
+def project_copy(tmp_path: Path, *, with_venv: bool) -> Path:
+    """The guard code, the hooks and a uv.lock with merge-conflict markers."""
+    project = tmp_path / "project"
+    skip = shutil.ignore_patterns("__pycache__")
+    for name in ("tools", "gateway"):
+        shutil.copytree(REPO / name, project / name, ignore=skip)
+    shutil.copytree(HOOK_DIR, project / ".claude" / "hooks")
+    shutil.copy2(REPO / "pyproject.toml", project / "pyproject.toml")
+    (project / "uv.lock").write_text(CONFLICTED_LOCK)
+    if with_venv:
+        if sys.prefix == sys.base_prefix:
+            pytest.skip("needs the tests to run from the project's virtual environment")
+        (project / ".venv").symlink_to(sys.prefix, target_is_directory=True)
+    return project
+
+
+def run_project_hook(
+    project: Path, script: str, command: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(project / ".claude" / "hooks" / script)],
+        input=json.dumps(bash_event(command)),
         capture_output=True,
         text=True,
-        env=env,
+        env={**(env or os.environ), "CLAUDE_PROJECT_DIR": str(project)},
         check=False,
+        timeout=120,
     )
+
+
+def test_wrapper_blocks_when_there_is_neither_a_venv_nor_uv(tmp_path: Path) -> None:
+    project = project_copy(tmp_path, with_venv=False)
+    env = {"PATH": "/usr/bin:/bin", "HOME": os.environ["HOME"]}
+    result = run_project_hook(project, "bash-guard.sh", "ls", env)
     assert result.returncode == 2
     assert "uv" in result.stderr
+
+
+@pytest.mark.parametrize("script", ["bash-guard.sh", "license-guard.sh", "secret-scan.sh"])
+def test_guards_still_run_when_uv_lock_does_not_parse(tmp_path: Path, script: str) -> None:
+    # `uv run` parses uv.lock even with --frozen: the guards must not depend on it, or a
+    # conflicted lock blocks every command, including the one that repairs it.
+    project = project_copy(tmp_path, with_venv=True)
+
+    repair = run_project_hook(project, script, "git checkout -- uv.lock")
+    assert repair.returncode == 0, repair.stderr
+
+    if script == "bash-guard.sh":
+        assert run_project_hook(project, script, "rm -rf /").returncode == 2
+
+
+def test_a_crash_before_the_guard_starts_still_blocks(tmp_path: Path) -> None:
+    project = project_copy(tmp_path, with_venv=True)
+    (project / "tools" / "hooks.py").write_text("raise ImportError('broken checkout')\n")
+    result = run_project_hook(project, "bash-guard.sh", "ls")
+    assert result.returncode == 2
 
 
 def test_guards_fail_closed_on_timeouts_and_crashes() -> None:
