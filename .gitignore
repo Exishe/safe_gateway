@@ -34,3 +34,6 @@ Thumbs.db
 
 # Agent worktrees created by Claude Code (scratch, never committed)
 .claude/worktrees/
+
+# Benchmark datasets downloaded by tools/benchmark_openpii.py (never committed)
+.cache/
