@@ -184,7 +184,6 @@ def test_armenian_social_card_number_after_an_armenian_keyword() -> None:
 # ------------------------------------------------------------------ cards and phones (ADR 0023)
 
 
-@FINDING
 def test_card_shape_with_mixed_or_doubled_separators() -> None:
     """_CARD_SHAPE wants one separator used throughout; a Luhn-invalid card typed with a
     space and a hyphen, or with double spaces (justified PDF text), returns []."""
@@ -194,7 +193,6 @@ def test_card_shape_with_mixed_or_doubled_separators() -> None:
     assert leaks([(f"Card {mixed} on file", mixed), (f"Card {doubled} on file", doubled)]) == []
 
 
-@FINDING
 def test_plus_phone_glued_to_the_next_word() -> None:
     """_within_digit_limit drops a last group glued to a word ('01K@example.com'), so
     '+99 912 345 6789Fax:' (PDF columns run together) keeps eight digits and phone_shape
@@ -204,7 +202,6 @@ def test_plus_phone_glued_to_the_next_word() -> None:
     assert leaks([(f"Phone: {phone}Fax: none", phone)]) == []
 
 
-@FINDING
 def test_plus_phone_with_doubled_spaced_or_slashed_separators() -> None:
     """phone_shape takes single space, dot or hyphen separators; double spaces, a spaced
     hyphen (which digits.py accepts) or slashes stop the run after '+99'. libphonenumber

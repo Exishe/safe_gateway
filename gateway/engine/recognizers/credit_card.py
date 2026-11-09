@@ -36,12 +36,14 @@ SHAPE_SCORE = 0.55  # above the default threshold 0.5, below a Luhn-valid card's
 # Digit count -> first digits that make a card shape: 16 (Visa, Mastercard,
 # Discover, UnionPay), 15 (Amex), 19 (Visa, Discover, UnionPay, Maestro).
 _SHAPES = {16: "23456", 15: "3", 19: "3456"}
-# A whole number, never part of a longer run: contiguous, or grouped by four with
-# one separator used throughout and a last group of one to four digits.
+# A whole number, never part of a longer run: contiguous, or grouped by four with a last
+# group of one to four digits. Each gap is one space, dot or hyphen, or two spaces
+# (justified PDF text); the gaps need not match (a space here, a hyphen there).
+_GAP = r"(?:  ?|[.\-])"
 _CARD_SHAPE = re.compile(
-    r"(?<!\w)(?<!\d[ .\-])"
-    r"(?:\d{15,19}|\d{4}([ .\-])\d{4}(?:\1\d{4})*(?:\1\d{1,3})?)"
-    r"(?!\w)(?![ .\-]\d)"
+    r"(?<!\w)(?<!\d[ .\-])(?<!\d  )"
+    rf"(?:\d{{15,19}}|\d{{4}}{_GAP}\d{{4}}(?:{_GAP}\d{{4}})*(?:{_GAP}\d{{1,3}})?)"
+    r"(?!\w)(?![ .\-]\d)(?!  \d)"
 )
 
 

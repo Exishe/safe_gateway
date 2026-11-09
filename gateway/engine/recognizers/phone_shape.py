@@ -5,7 +5,8 @@ prefix, a wrong length for the region) but are still somebody's phone in a
 document. Two rules catch them without the library:
 
 - `phone_shape`: a leading "+" and 10 to 15 digits (E.164 allows at most 15).
-  The "+" is required, so IP addresses, dates and amounts are never read.
+  The "+" is required, so IP addresses, dates and amounts are never read; with
+  it, groups may also be split by two spaces, a spaced hyphen or a slash.
 - `phone_context`: no "+", so a phone keyword must stand in the 40 characters
   before, and the number needs three digit groups or an opening bracket.
 """
@@ -24,11 +25,17 @@ KEYWORD_DISTANCE = 40
 # "+99 (912) 345-6789", "(012)-3456789". Every repetition consumes one digit and
 # the separators are unambiguous, so the pattern does not backtrack.
 _DIGITS = r"\d(?:(?:[ .\-]|[ .\-]?\(|\)[ .\-]?)?\d)*"
-_PLUS = re.compile(rf"(?<![\w+])\+\(?{_DIGITS}")
+# After a "+" the number is a phone whatever its separators, so a gap may also be two
+# spaces (justified PDF text), a spaced hyphen or a slash: "+99  912 - 345/6789".
+_PLUS_GAP = r"(?: - |  ?|[./\-])"
+_PLUS_DIGITS = rf"\d(?:(?:{_PLUS_GAP}|{_PLUS_GAP}?\(|\){_PLUS_GAP}?)?\d)*"
+_PLUS = re.compile(rf"(?<![\w+])\+\(?{_PLUS_DIGITS}")
 # Not inside a word or a "+" number, and not continuing a number ("1.555...").
 _BARE = re.compile(rf"(?<![\w+(])(?<!\d[ .\-/])\(?{_DIGITS}")
 _GROUP = re.compile(r"\d+")
 _WORD = re.compile(r"\w")
+# The word after the digits is an e-mail address: an "@" before the next whitespace.
+_ADDRESS_AFTER = re.compile(r"[^\s@]{0,64}@")
 # "phone" may end a word (telephone, smartphone); the rest must start one, so
 # "cancellation" does not read as "cell" and "hotel" not as "tel".
 _KEYWORD = re.compile(
@@ -42,10 +49,13 @@ def _within_digit_limit(text: str, start: int, end: int) -> tuple[int, int]:
 
     A number followed by a postcode on the same line ("+99 20 7946 0958 10001")
     joins it into one run; the trailing groups are dropped, not the phone. A last
-    group glued to a word ("01K@example.com") belongs to that word and is dropped too.
+    group glued to a word keeps its digits ("+99 912 345 6789Fax:", PDF columns run
+    together), unless the word is an e-mail address ("01K@example.com"): then the
+    group belongs to the address and is dropped.
     """
     groups = [(start + m.start(), start + m.end()) for m in _GROUP.finditer(text[start:end])]
-    if len(groups) > 1 and end < len(text) and _WORD.match(text, end):
+    glued = end < len(text) and _WORD.match(text, end) is not None
+    if len(groups) > 1 and glued and _ADDRESS_AFTER.match(text, end):
         groups.pop()
     count, last = 0, 0
     for index, (group_start, group_end) in enumerate(groups):

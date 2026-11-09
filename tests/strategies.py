@@ -313,6 +313,12 @@ def _date_forms(day: int, month: int, year: int, *, pad: bool) -> list[str]:
         f"{name} {_ordinal(day)}, {year}",
         f"{day} {RU_MONTHS_GENITIVE[month - 1]} {year}",
         f"{day} {RU_MONTHS_SHORT[month - 1]} {year}",
+        # Leak hunt 1c (ADR 0016 amended): a quoted day, month names between separators.
+        f"{chr(0xAB)}{day}{chr(0xBB)} {RU_MONTHS_GENITIVE[month - 1]} {year}",
+        f"{d}-{name[:3]}-{year}",
+        f"{d}/{name[:3]}/{year}",
+        f"{year}-{name[:3]}-{d}",
+        f"{d}-{RU_MONTHS_SHORT[month - 1].rstrip('.')}-{year}",
     ]
 
 
@@ -324,3 +330,65 @@ def dates(draw: st.DrawFn) -> str:
     day = draw(st.integers(1, calendar.monthrange(year, month)[1]))
     value = draw(st.sampled_from(_date_forms(day, month, year, pad=draw(st.booleans()))))
     return value.upper() if draw(st.booleans()) else value
+
+
+# ------------------------------------------------------------------ shapes (ADR 0023)
+
+# Gaps a "+" phone may use (ADR 0023 amended in 1c): one space, dot, hyphen or slash,
+# two spaces, or a spaced hyphen.
+PLUS_PHONE_GAPS = (" ", "  ", ".", "-", "/", " - ")
+# Gaps a card shape may use, mixed freely: one space, dot or hyphen, or two spaces.
+CARD_GAPS = (" ", "  ", ".", "-")
+_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+@st.composite
+def plus_phones(draw: st.DrawFn) -> str:
+    """'+99' (not an assigned country code) and groups of 1-4 digits, 10-15 digits in all."""
+    total = draw(st.integers(10, 15))
+    groups, left = ["99"], total - 2
+    while left:
+        size = draw(st.integers(1, min(4, left)))
+        groups.append(draw(_digits(size)))
+        left -= size
+    if len(groups) > 2 and draw(st.booleans()):
+        groups[1] = f"({groups[1]})"
+    value = "+" + groups[0]
+    for group in groups[1:]:
+        value += draw(st.sampled_from(PLUS_PHONE_GAPS)) + group
+    return value
+
+
+@st.composite
+def passport_numbers(draw: st.DrawFn) -> str:
+    """Two letters and seven digits, upper or lower case."""
+    letters = draw(st.text(alphabet=_UPPER, min_size=2, max_size=2))
+    value = letters + draw(_digits(7))
+    return value.lower() if draw(st.booleans()) else value
+
+
+@st.composite
+def id_card_numbers(draw: st.DrawFn) -> str:
+    """Two letters, five digits, two letters."""
+    first = draw(st.text(alphabet=_UPPER, min_size=2, max_size=2))
+    last = draw(st.text(alphabet=_UPPER, min_size=2, max_size=2))
+    return first + draw(_digits(5)) + last
+
+
+_CARD_SHAPE_PREFIXES = {16: "23456", 15: "3", 19: "3456"}
+
+
+@st.composite
+def card_shapes(draw: st.DrawFn) -> str:
+    """A card-shaped number (Luhn not checked), contiguous or grouped by four, each gap
+    drawn on its own from CARD_GAPS, so separators are mixed."""
+    length = draw(st.sampled_from(sorted(_CARD_SHAPE_PREFIXES)))
+    first = draw(st.sampled_from(_CARD_SHAPE_PREFIXES[length]))
+    digits = first + draw(_digits(length - 1))
+    if draw(st.booleans()):
+        return digits
+    groups = [digits[i : i + 4] for i in range(0, length, 4)]
+    value = groups[0]
+    for group in groups[1:]:
+        value += draw(st.sampled_from(CARD_GAPS)) + group
+    return value

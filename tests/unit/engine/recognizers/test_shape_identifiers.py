@@ -42,6 +42,11 @@ def typed(recognizer: Recognizer, text: str) -> list[tuple[str, E, float, str]]:
         "+99 (912) 345-6789",  # pragma: allowlist secret
         "+(99) 912 345 678",  # pragma: allowlist secret
         "+999123456789012",  # pragma: allowlist secret  (15 digits)
+        # Leak hunt 1c: doubled spaces, a spaced hyphen, slashes (ADR 0023 amended).
+        "+99  912  345  678",  # pragma: allowlist secret
+        "+99 - 912 - 345 - 6789",  # pragma: allowlist secret
+        "+99/912/345/6789",  # pragma: allowlist secret
+        "+99 (912)  345 - 6789",  # pragma: allowlist secret
     ],
 )
 def test_plus_numbers_with_ten_to_fifteen_digits_are_phones(number: str) -> None:
@@ -58,7 +63,8 @@ def test_plus_numbers_with_ten_to_fifteen_digits_are_phones(number: str) -> None
         "Due 2024-01-15 or 15.01.2024",
         "units 12.345.678.901 sold",
         "a+99123456789 is a sum",  # pragma: allowlist secret  (glued to a word)
-        "two  +99  912  345  678 spaces",  # pragma: allowlist secret  (double separators)
+        "three   +99   912   345   678 spaces",  # pragma: allowlist secret  (three spaces)
+        "two +99 -- 912 -- 345 -- 678",  # pragma: allowlist secret  (doubled hyphens)
     ],
 )
 def test_plus_shape_needs_the_plus_ten_digits_and_single_separators(text: str) -> None:
@@ -73,7 +79,6 @@ def test_plus_phone_followed_by_a_postcode_drops_the_postcode() -> None:
 @pytest.mark.parametrize(
     ("recognizer", "text", "number"),
     [
-        (PHONE_SHAPE, "+99 912 345 678 9ab", "+99 912 345 678"),  # pragma: allowlist secret
         (
             PHONE_CONTEXT,
             "Tel: 012.345.6789 01K@example.com",  # pragma: allowlist secret
@@ -81,10 +86,22 @@ def test_plus_phone_followed_by_a_postcode_drops_the_postcode() -> None:
         ),
     ],
 )
-def test_a_last_group_glued_to_a_word_is_not_part_of_the_phone(
+def test_a_last_group_glued_to_an_address_is_not_part_of_the_phone(
     recognizer: Recognizer, text: str, number: str
 ) -> None:
     assert found(recognizer, text) == [number]
+
+
+@pytest.mark.parametrize(
+    ("text", "number"),
+    [
+        ("Phone: +99 912 345 6789Fax: none", "+99 912 345 6789"),  # pragma: allowlist secret
+        ("+99 912 345 678 9ab", "+99 912 345 678 9"),  # pragma: allowlist secret
+    ],
+)
+def test_a_last_group_glued_to_a_word_keeps_its_digits(text: str, number: str) -> None:
+    """Leak hunt 1c #10: PDF columns run together; the phone ends at the letter."""
+    assert found(PHONE_SHAPE, text) == [number]
 
 
 # ------------------------------------------------------------------ phone, keyword-gated
@@ -151,10 +168,15 @@ def test_keyword_gate_still_needs_the_phone_shape_and_proximity(text: str) -> No
         "341111111111112",  # pragma: allowlist secret  (15 digits, starts with 3)
         "6011111111111111112",  # pragma: allowlist secret  (19 digits)
         "6011 1111 1111 1111 112",  # pragma: allowlist secret
+        # Leak hunt 1c #9: mixed single separators, doubled spaces (ADR 0023 amended).
+        "4111 1111-1111 1112",  # pragma: allowlist secret
+        "4111.1111 1111-1112",  # pragma: allowlist secret
+        "4111  1111  1111  1112",  # pragma: allowlist secret
+        "4111  1111 1111-1112",  # pragma: allowlist secret
     ],
 )
 def test_luhn_invalid_numbers_of_an_exact_card_shape_are_cards(number: str) -> None:
-    assert not luhn_valid(number.replace(" ", "").replace("-", ""))
+    assert not luhn_valid("".join(c for c in number if c.isdigit()))
     assert typed(CREDIT_CARD_SHAPE, f"card {number} expired") == [
         (number, E.CREDIT_CARD, 0.55, "credit_card_shape")
     ]
@@ -170,7 +192,9 @@ def test_luhn_invalid_numbers_of_an_exact_card_shape_are_cards(number: str) -> N
         "41111111111111123",  # pragma: allowlist secret  (17 digits)
         "41111111111112",  # pragma: allowlist secret  (14 digits)
         "4111 11111111 1112",  # pragma: allowlist secret  (not grouped by four)
-        "4111 1111-1111 1112",  # pragma: allowlist secret  (mixed separators)
+        "4111   1111   1111   1112",  # pragma: allowlist secret  (three spaces)
+        "4111 -1111 1111 1112",  # pragma: allowlist secret  (two separators in one gap)
+        "12  4111 1111 1111 1112",  # pragma: allowlist secret  (part of a longer run)
         "12 4111 1111 1111 1112",  # pragma: allowlist secret  (part of a longer run)
         "AB4111111111111112",  # pragma: allowlist secret  (glued to letters)
     ],
