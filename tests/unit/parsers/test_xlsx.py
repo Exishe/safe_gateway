@@ -3,13 +3,18 @@ import zipfile
 from pathlib import Path
 
 import openpyxl
+from faker import Faker
 from openpyxl.comments import Comment
 from openpyxl.drawing.image import Image as SheetImage
+from openpyxl.styles import NamedStyle
+from openpyxl.worksheet.filters import SortCondition, SortState
+from openpyxl.worksheet.scenario import InputCells, Scenario
+from openpyxl.worksheet.table import Table, TableStyleInfo
 from PIL import Image
 
 from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.rehydrate import rehydrate
-from gateway.parsers import xlsx
+from gateway.parsers import formats, xlsx
 from gateway.parsers.document import CellPosition
 from gateway.parsers.redact import mask_units, masked_text
 
@@ -111,3 +116,77 @@ def test_a_masked_sheet_title_loses_its_brackets(tmp_path: Path) -> None:
     *_, out, _ = _redact(tmp_path, title_with_value=True)
     workbook = openpyxl.load_workbook(out)
     assert workbook.sheetnames == ["Clients", "EMAIL_2"]
+
+
+# ------------------------------------------------------------------ security review I1
+
+
+def _structures_workbook(tmp_path: Path, fake: Faker) -> tuple[Path, list[str]]:
+    """Values hidden in tables, filters, sort state, number formats and styles."""
+    header, row_value, criterion, literal, custom_list, style_name, scenario = (
+        fake.unique.email() for _ in range(7)
+    )
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.title = "Data"
+    sheet.append([header, "Amount"])
+    sheet.append([row_value, 5])
+    sheet.append([criterion, 6])
+    sheet["B2"].number_format = f'"{literal} "0'
+    sheet["C2"] = 45352.5  # a date and time serial; Excel stores no time zone
+    sheet["C2"].number_format = f'"{literal}" yyyy-mm-dd hh:mm'
+    table = Table(displayName="People", ref="A1:B3")
+    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium9", showRowStripes=True)
+    sheet.add_table(table)
+
+    filtered = workbook.create_sheet("Filtered")
+    filtered.append(["Name"])
+    filtered.append([criterion])
+    filtered.auto_filter.ref = "A1:A2"
+    filtered.auto_filter.add_filter_column(0, [criterion])
+    filtered.auto_filter.sortState = SortState(
+        ref="A2:A2", sortCondition=[SortCondition(ref="A2:A2", customList=custom_list)]
+    )
+    filtered.scenarios.scenario.append(
+        Scenario(
+            name="s1",
+            user=scenario,
+            comment=scenario,
+            inputCells=[InputCells(r="A2", val=scenario)],
+        )
+    )
+    named = NamedStyle(name=style_name)
+    named.number_format = f'"{literal}"@'
+    workbook.add_named_style(named)
+    filtered["A1"].style = style_name
+    path = tmp_path / "structures.xlsx"
+    workbook.save(path)
+    return path, [header, row_value, criterion, literal, custom_list, style_name, scenario]
+
+
+def _zip_bytes(path: Path) -> dict[str, bytes]:
+    with zipfile.ZipFile(path) as archive:
+        return {name: archive.read(name) for name in archive.namelist()}
+
+
+def test_no_value_survives_in_tables_filters_sorts_or_formats(tmp_path: Path) -> None:
+    fake = Faker()
+    Faker.seed(20261110)
+    source, values = _structures_workbook(tmp_path, fake)
+    raw = b"".join(_zip_bytes(source).values())
+    assert all(value.encode() in raw for value in values)  # the fixture holds them all
+
+    out = tmp_path / "out.xlsx"
+    formats.mask_file(source, out, STRUCTURED)
+
+    for name, data in _zip_bytes(out).items():
+        for value in values:
+            assert value.encode() not in data, (name, value)
+    workbook = openpyxl.load_workbook(out)
+    assert not workbook["Data"].tables
+    assert workbook["Data"]["B2"].number_format == "General"
+    assert workbook["Data"]["C2"].number_format == "m/d/yy h:mm"  # built-in, still a date
+    assert workbook["Filtered"].auto_filter.ref == "A1:A2"  # the drop-downs stay
+    assert not workbook["Filtered"].auto_filter.filterColumn
+    assert workbook["Filtered"].auto_filter.sortState is None
