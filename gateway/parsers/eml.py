@@ -104,6 +104,11 @@ def _strip_headers(part: MIMEPart) -> None:
     if part.is_multipart():
         part.preamble = None  # free text a mail client never shows
         part.epilogue = None
+        # Parameters (x-owner="...") and the boundary itself are free text: the type is
+        # rebuilt bare, and the generator writes a fresh random boundary.
+        subtype = part.get_content_subtype()
+        del part["Content-Type"]
+        part["Content-Type"] = f"multipart/{subtype}"
 
 
 def write_redacted(

@@ -4,10 +4,11 @@ from email.message import EmailMessage
 from pathlib import Path
 
 import pytest
+from faker import Faker
 
 from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.rehydrate import rehydrate
-from gateway.parsers import eml
+from gateway.parsers import eml, formats
 from gateway.parsers.document import EmailPosition
 from gateway.parsers.redact import mask_units, masked_text
 
@@ -136,3 +137,34 @@ def test_a_message_that_is_only_an_attachment_keeps_none_of_it(tmp_path: Path) -
     ]
     assert SENDER.encode() not in out.read_bytes()
     assert b"c2VjcmV0" not in out.read_bytes()  # base64 of "secret"
+
+
+def test_multipart_content_type_parameters_do_not_survive(tmp_path: Path) -> None:
+    fake = Faker()
+    Faker.seed(20261113)
+    root_param, inner_param, boundary_value, body_value = (fake.unique.email() for _ in range(4))
+    boundary = boundary_value.replace("@", "=_")  # a boundary is free text too
+    raw = (
+        "From: sender@example.invalid\r\nSubject: s\r\nMIME-Version: 1.0\r\n"
+        f'Content-Type: multipart/mixed; boundary="{boundary}"; x-owner="{root_param}"\r\n\r\n'
+        f"--{boundary}\r\n"
+        f'Content-Type: multipart/alternative; boundary="inner"; x-note="{inner_param}"\r\n\r\n'
+        "--inner\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+        f"hello {body_value}\r\n--inner--\r\n"
+        f"--{boundary}--\r\n"
+    )
+    source = tmp_path / "params.eml"
+    source.write_bytes(raw.encode())
+    out = tmp_path / "out.eml"
+
+    result = formats.mask_file(source, out, STRUCTURED)
+
+    data = out.read_bytes()
+    for value in (root_param, inner_param, boundary, body_value):
+        assert value.encode() not in data, value
+    message = email.message_from_bytes(data, policy=email.policy.default)
+    for part in message.walk():
+        if part.is_multipart():
+            assert set(part["Content-Type"].params) == {"boundary"}
+    assert "hello [EMAIL_" in result.text
+    assert eml.parse(out).text == result.text
