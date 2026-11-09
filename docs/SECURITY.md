@@ -62,10 +62,23 @@ with each phase; the threat model gets its full review before the first pilot.
 - The Russian NER model sometimes misses a name at the start of a sentence
   or splits it (observed in Phase 1b testing). Names mid-sentence are found
   more reliably; the gazetteer covers known clients either way.
-- Each paragraph goes to the model of its dominant alphabet, so a Russian
-  name inside an English paragraph is read by the English model.
+- Each line goes to the model of its dominant alphabet, and neighbouring lines
+  of one alphabet are read together, so a Russian name inside an English line
+  is read by the English model (ADR 0016).
+- Names written in capitals are handled by a heuristic. A line in which more
+  than 70% of the letters are capitals is title-cased before the models read
+  it, because both models take case as a cue. A name in capitals inside an
+  otherwise lower-case line is read as written and is found less often; in a
+  heading in capitals, ordinary words may be masked as names.
+- Dates are found by a format recognizer in every language: numeric forms
+  (`12.03.1985`, `03/12/1985`, `1985-03-12`, `12.03.85`) and English or
+  Russian month names (`12 March 1985`, `March 12, 1985`, `12 марта 1985`).
+  Other forms (a Russian date without a year, Roman-numeral months, "the
+  12th") are found only by the English model, and only in English text: the
+  Russian model has no date label.
 - Without the NER models installed (`safeguard models pull`), names,
-  organisations, places and dates are not detected; `safeguard scan` says so.
+  organisations and places are not detected, nor dates in forms the date
+  recognizer does not read; `safeguard scan` says so.
 - OCR mistakes are not corrected. If a scan turns a digit into a look-alike
   letter ("O" for "0"), the card or SSN no longer passes its checksum or format
   and is not found. Reading letters as digits would also turn ordinary words

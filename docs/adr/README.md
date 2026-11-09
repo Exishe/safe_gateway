@@ -21,3 +21,4 @@ never by editing history.
 | [0013](0013-fail-safe-detection.md) | Fail-safe detection: clean text, digit runs, nothing left uncovered | Accepted |
 | [0014](0014-placeholder-grammar.md) | One placeholder grammar for mask and rehydrate | Accepted |
 | [0015](0015-gliner-offline.md) | GLiNER for Armenian and other text, strictly offline | Accepted |
+| [0016](0016-ner-input-normalisation.md) | What the NER models read, and a recognizer for dates | Accepted |
