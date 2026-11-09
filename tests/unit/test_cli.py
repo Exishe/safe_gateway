@@ -340,6 +340,7 @@ def test_scan_no_ner_skips_the_models_without_a_warning(
 
 # ------------------------------------------------------------------ safeguard mask (Phase 2)
 
+import os  # noqa: E402
 import stat  # noqa: E402
 
 from gateway.engine.mask import Mapping  # noqa: E402
@@ -395,6 +396,69 @@ def test_mask_refuses_to_overwrite_its_input(
     assert main(["mask", "--no-ner", str(note), "--json-map", str(note)]) == 2
     assert note.read_text(encoding="utf-8") == NOTE
     assert "input file" in capsys.readouterr().err
+
+
+def test_mask_refuses_one_path_for_output_and_map(
+    note: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "out.txt"
+    assert main(["mask", "--no-ner", str(note), "-o", str(out), "--json-map", str(out)]) == 2
+    assert not out.exists()
+    out.write_text("", encoding="utf-8")
+    hard_link = tmp_path / "link.txt"
+    hard_link.hardlink_to(out)
+    assert main(["mask", "--no-ner", str(note), "-o", str(out), "--json-map", str(hard_link)]) == 2
+    err = capsys.readouterr().err
+    assert "same file" in err
+    assert "anna.petrova" not in err
+    assert out.read_text(encoding="utf-8") == ""
+
+
+@pytest.mark.parametrize("kind", ["file", "symlink", "dangling symlink"])
+def test_mask_never_writes_the_map_over_an_existing_path(
+    note: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    target = tmp_path / "elsewhere.txt"
+    if kind != "dangling symlink":
+        target.write_text("keep", encoding="utf-8")
+    map_path = tmp_path / "map.json"
+    if kind == "file":
+        map_path.write_text("keep", encoding="utf-8")
+    else:
+        map_path.symlink_to(target)
+    out = tmp_path / "out.txt"
+
+    assert main(["mask", "--no-ner", str(note), "-o", str(out), "--json-map", str(map_path)]) == 2
+
+    assert "already exists" in capsys.readouterr().err
+    assert not out.exists()
+    if kind != "dangling symlink":
+        assert target.read_text(encoding="utf-8") == "keep"
+    else:
+        assert not target.exists()
+
+
+def test_mask_map_is_0600_even_under_a_permissive_umask(note: Path, tmp_path: Path) -> None:
+    map_path = tmp_path / "map.json"
+    old = os.umask(0)
+    try:
+        assert main(["mask", "--no-ner", str(note), "--json-map", str(map_path)]) == 0
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(map_path.stat().st_mode) == 0o600
+
+
+def test_a_failed_map_write_leaves_no_partial_map_and_no_output(
+    note: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def disk_full(*_args: object, **_kwargs: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "fdopen", disk_full)
+    map_path, out = tmp_path / "map.json", tmp_path / "out.txt"
+    assert main(["mask", "--no-ner", str(note), "-o", str(out), "--json-map", str(map_path)]) == 2
+    assert not map_path.exists()
+    assert not out.exists()
 
 
 def test_mask_of_a_missing_or_non_utf8_file_exits_2(

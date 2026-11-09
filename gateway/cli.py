@@ -150,21 +150,48 @@ def _same_file(a: Path, b: Path) -> bool:
     return a.resolve() == b.resolve() or (a.exists() and b.exists() and a.samefile(b))
 
 
+# Windows has no O_NOFOLLOW; there O_EXCL alone refuses an existing path.
+_NEW_PRIVATE_FILE = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+
+
 def _write_private(path: Path, content: str) -> None:
-    """Write `content` readable by the owner only: the map holds the original values."""
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        handle.write(content)
-    path.chmod(0o600)  # O_CREAT's mode does not apply to a file that already existed
+    """Write `content` to a new file readable by the owner only: the map holds the values.
+
+    O_EXCL makes the create atomic and refuses any existing path, a symlink included
+    (so it is never followed), and the file is 0600 from the moment it exists: an old
+    file's wider mode never applies. A failed write leaves no partial map behind.
+    """
+    descriptor = os.open(path, _NEW_PRIVATE_FILE, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+
+
+def _mask_targets_conflict(args: argparse.Namespace) -> str | None:
+    """Why the input, output and map paths cannot be used, or None. Names no values."""
+    for target in (args.output, args.json_map):
+        if target is not None and _same_file(target, args.file):
+            return f"{target} is the input file; refusing to overwrite it"
+    both = args.output is not None and args.json_map is not None
+    if both and _same_file(args.output, args.json_map):
+        # The map would replace the masked text: every value sent upstream in clear.
+        return "--output and --json-map are the same file; refusing to write either"
+    if args.json_map is not None and os.path.lexists(args.json_map):
+        return (
+            f"{args.json_map} already exists; the map is never written over an existing "
+            "file. Delete it or choose another path."
+        )
+    return None
 
 
 def _mask(args: argparse.Namespace) -> int:
-    for target in (args.output, args.json_map):
-        if target is not None and _same_file(target, args.file):
-            print(
-                f"safeguard: {target} is the input file; refusing to overwrite it", file=sys.stderr
-            )
-            return 2
+    conflict = _mask_targets_conflict(args)
+    if conflict is not None:
+        print(f"safeguard: {conflict}", file=sys.stderr)
+        return 2
     try:
         # Strict UTF-8: replacing bytes would break the exact round trip back to the file.
         text = args.file.read_bytes().decode("utf-8")
@@ -175,17 +202,24 @@ def _mask(args: argparse.Namespace) -> int:
 
     config = EngineConfig(gazetteer=gazetteer, ner="off" if args.no_ner else "auto")
     masked, mapping = mask(text, detect(text, config=config))
-    if args.output is None:
-        print(masked, end="")
-    else:
-        args.output.write_text(masked, encoding="utf-8", newline="")
     if args.json_map is not None:
-        _write_private(args.json_map, json.dumps(mapping.to_dict(), ensure_ascii=False, indent=2))
+        # The map first: if it cannot be written, no masked output is left without one.
+        try:
+            _write_private(
+                args.json_map, json.dumps(mapping.to_dict(), ensure_ascii=False, indent=2)
+            )
+        except OSError as error:
+            print(f"safeguard: cannot write the map: {error.strerror}", file=sys.stderr)
+            return 2
         print(
             f"safeguard: warning: {args.json_map} holds the original values, so it is personal "
             "data. Keep it on this device and delete it when you no longer need it.",
             file=sys.stderr,
         )
+    if args.output is None:
+        print(masked, end="")
+    else:
+        args.output.write_text(masked, encoding="utf-8", newline="")
     return 0
 
 

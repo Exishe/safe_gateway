@@ -23,8 +23,7 @@ from gateway.engine.rehydrate import rehydrate
 from gateway.engine.session import SessionStore
 from gateway.engine.types import EntityType
 
-# Red-team findings (Phase 2), committed failing on purpose; each fix removes its marker.
-FINDING = pytest.mark.xfail(strict=True, reason="mask/rehydrate red-team finding")
+# Red-team findings (Phase 2), committed failing; all seven are fixed and now must pass.
 
 NO_NER = EngineConfig(ner="off")
 SSN = "123-45-6780"  # pragma: allowlist secret
@@ -62,7 +61,6 @@ def test_known_value_repeated_where_detection_misses_it() -> None:
     assert [text for text in masked if SSN in text] == []
 
 
-@FINDING
 def test_cli_output_and_json_map_on_the_same_path(note: Path, tmp_path: Path) -> None:
     """`safeguard mask note.txt -o out.txt --json-map out.txt` exited 0, and out.txt, the
     file meant to be sent upstream, held the map: every original value in clear. Only the
@@ -75,7 +73,6 @@ def test_cli_output_and_json_map_on_the_same_path(note: Path, tmp_path: Path) ->
     assert EMAIL not in written
 
 
-@FINDING
 def test_cli_json_map_written_into_an_existing_path(
     note: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
