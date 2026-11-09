@@ -31,3 +31,6 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# Agent worktrees created by Claude Code (scratch, never committed)
+.claude/worktrees/
