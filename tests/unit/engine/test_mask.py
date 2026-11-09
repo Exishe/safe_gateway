@@ -268,3 +268,38 @@ def test_a_unicode_word_character_beside_upper_case_text_is_not_a_literal(text: 
     masked, mapping = mask(text, [])
     assert (masked, len(mapping)) == (text, 0)
     assert rehydrate(masked, mapping) == (text, [])
+
+
+# ------------------------------------------------------------------ replacements (Phase 3)
+
+from gateway.engine.mask import Replacement, apply_replacements, replacements  # noqa: E402
+
+
+def test_replacements_say_where_each_placeholder_goes() -> None:
+    text = "mail a@example.org, card 4111 1111 1111 1111"  # pragma: allowlist secret
+    spans = [
+        Span(5, 18, EntityType.EMAIL, 1.0, "email"),
+        Span(25, 44, EntityType.CREDIT_CARD, 1.0, "credit_card"),
+    ]
+    mapping = Mapping()
+    found = replacements(text, spans, mapping)
+    assert found == [
+        Replacement(5, 18, "[EMAIL_1]"),
+        Replacement(25, 44, "[CREDIT_CARD_1]"),
+    ]
+    assert apply_replacements(text, found) == mask(text, spans)[0]
+
+
+def test_placeholder_shaped_input_is_a_literal_replacement() -> None:
+    found = replacements("see [PERSON_1] here", [], Mapping())
+    assert found == [Replacement(4, 14, "[LITERAL_1]")]
+
+
+def test_replacements_also_cover_values_the_mapping_already_holds() -> None:
+    # Parsers place tokens with replacements(), so they need the known-value sweep too.
+    mapping = Mapping()
+    first = "SSN 123-45-6780."  # pragma: allowlist secret
+    mask(first, [Span(4, 15, EntityType.SSN, 1.0, "us_ssn")], mapping)
+    text = "file ref123-45-6780.pdf"  # pragma: allowlist secret
+    found = replacements(text, [], mapping)
+    assert apply_replacements(text, found) == "file ref[SSN_1].pdf"

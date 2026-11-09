@@ -184,6 +184,15 @@ def _regions(text: str, spans: Iterable[Span]) -> list[_Region]:
     return regions
 
 
+@dataclass(frozen=True)
+class Replacement:
+    """text[start:end] becomes `placeholder`. Writers use it to place tokens (ADR 0017)."""
+
+    start: int
+    end: int
+    placeholder: str
+
+
 def _remember(text: str, spans: Iterable[Span], mapping: Mapping) -> list[Span]:
     """Give each span's value its placeholder now, so its repeats are found as known."""
     spans = list(spans)
@@ -192,16 +201,39 @@ def _remember(text: str, spans: Iterable[Span], mapping: Mapping) -> list[Span]:
     return spans
 
 
-def _mask_remembered(text: str, spans: list[Span], mapping: Mapping) -> str:
+def _replacements_remembered(text: str, spans: list[Span], mapping: Mapping) -> list[Replacement]:
     # Every exact occurrence of a value the mapping holds is masked too, wherever
     # detection missed it (ADR 0014 amendment 1). Overlaps unite, never drop.
     known = mapping.known().spans(text)
+    return [
+        Replacement(
+            region.start,
+            region.end,
+            mapping.placeholder_for(text[region.start : region.end], region.entity_type),
+        )
+        for region in _regions(text, [*spans, *known])
+    ]
+
+
+def _mask_remembered(text: str, spans: list[Span], mapping: Mapping) -> str:
+    return apply_replacements(text, _replacements_remembered(text, spans, mapping))
+
+
+def replacements(text: str, spans: Iterable[Span], mapping: Mapping) -> list[Replacement]:
+    """Where mask() puts each placeholder, in order; `mapping` is extended in place.
+
+    Includes every occurrence of a value the mapping already holds, as mask() does.
+    """
+    return _replacements_remembered(text, _remember(text, spans, mapping), mapping)
+
+
+def apply_replacements(text: str, found: Iterable[Replacement]) -> str:
     pieces: list[str] = []
     cursor = 0
-    for region in _regions(text, [*spans, *known]):
-        pieces.append(text[cursor : region.start])
-        pieces.append(mapping.placeholder_for(text[region.start : region.end], region.entity_type))
-        cursor = region.end
+    for replacement in found:
+        pieces.append(text[cursor : replacement.start])
+        pieces.append(replacement.placeholder)
+        cursor = replacement.end
     pieces.append(text[cursor:])
     return "".join(pieces)
 
@@ -213,8 +245,7 @@ def mask(text: str, spans: Iterable[Span], mapping: Mapping | None = None) -> tu
     A given mapping is extended in place and returned, so several texts can share one.
     """
     mapping = Mapping() if mapping is None else mapping
-    spans = _remember(text, spans, mapping)
-    return _mask_remembered(text, spans, mapping), mapping
+    return apply_replacements(text, replacements(text, spans, mapping)), mapping
 
 
 def mask_messages(
