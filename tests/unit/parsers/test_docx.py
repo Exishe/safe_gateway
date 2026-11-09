@@ -2,14 +2,17 @@ import zipfile
 from pathlib import Path
 
 import docx
+from docx.enum.style import WD_STYLE_TYPE
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import parse_xml
-from docx.oxml.ns import nsdecls
+from docx.oxml.ns import nsdecls, qn
+from faker import Faker
 from PIL import Image
 
 from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.rehydrate import rehydrate
 from gateway.parsers import docx as docx_parser
+from gateway.parsers import formats
 from gateway.parsers.document import ParagraphPosition
 from gateway.parsers.redact import mask_units, masked_text
 
@@ -121,7 +124,7 @@ def test_redacted_copy_has_placeholders_and_keeps_run_formatting(tmp_path: Path)
     assert not copy.inline_shapes
     assert copy.core_properties.author == ""
     assert copy.core_properties.title == ""
-    assert "removed 1 drawing or embedded object" in notes
+    assert "removed 1 drawing, embedded object or equation" in notes
 
 
 def test_no_value_survives_in_any_zip_member(tmp_path: Path) -> None:
@@ -169,3 +172,130 @@ def test_footnotes_held_as_raw_bytes_are_masked_too(tmp_path: Path) -> None:
     with zipfile.ZipFile(out) as archive:
         assert b"See [EMAIL_1]" in archive.read("word/footnotes.xml")
         assert FOOTNOTE.encode() not in b"".join(archive.read(n) for n in archive.namelist())
+
+
+# ------------------------------------------------------------------ security review I2
+
+_MATH_NS = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+
+
+def _hidden_places(tmp_path: Path, fake: Faker) -> tuple[Path, list[str]]:
+    """Values outside w:t: math, form fields, bookmarks, content controls, mail merge,
+    custom styles, numbering text, table captions, XML comments, people in styles."""
+    values = [fake.unique.email() for _ in range(15)]
+    (math, form_default, form_help, form_status, bookmark, alias, tag, merge_path,
+     merge_query, style_name, list_text, caption, xml_comment, style_author,
+     sdt_body) = values  # fmt: skip
+    document = docx.Document()
+    body = document.element.body
+    body.append(
+        parse_xml(
+            f"<w:p {nsdecls('w')} {_MATH_NS}><m:oMath><m:r><m:t>{math}</m:t></m:r></m:oMath></w:p>"
+        )
+    )
+    body.append(
+        parse_xml(
+            f"<w:p {nsdecls('w')}>"
+            f'<w:bookmarkStart w:id="0" w:name="{bookmark.replace("@", "_")}"/>'
+            '<w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="Text1"/>'
+            f'<w:helpText w:type="text" w:val="{form_help}"/>'
+            f'<w:statusText w:type="text" w:val="{form_status}"/>'
+            f'<w:textInput><w:default w:val="{form_default}"/></w:textInput>'
+            '</w:ffData></w:fldChar></w:r><w:bookmarkEnd w:id="0"/>'
+            f"<!-- {xml_comment} --></w:p>"
+        )
+    )
+    body.append(
+        parse_xml(
+            f'<w:sdt {nsdecls("w")}><w:sdtPr><w:alias w:val="{alias}"/><w:tag w:val="{tag}"/>'
+            f"</w:sdtPr><w:sdtContent><w:p><w:r><w:t>sdt {sdt_body}</w:t></w:r></w:p>"
+            "</w:sdtContent></w:sdt>"
+        )
+    )
+    table = document.add_table(rows=1, cols=1)
+    table._tbl.tblPr.append(  # noqa: SLF001
+        parse_xml(f'<w:tblCaption {nsdecls("w")} w:val="{caption}"/>')
+    )
+    custom = document.styles.add_style(style_name.replace("@", " "), WD_STYLE_TYPE.PARAGRAPH)
+    custom.element.append(
+        parse_xml(
+            f'<w:pPr {nsdecls("w")}><w:pPrChange w:id="9" w:author="{style_author}">'
+            "<w:pPr/></w:pPrChange></w:pPr>"
+        )
+    )
+    document.add_paragraph("styled", style=custom)
+    numbering = document.part.numbering_part.element
+    numbering.append(
+        parse_xml(
+            f'<w:abstractNum {nsdecls("w")} w:abstractNumId="7"><w:lvl w:ilvl="0">'
+            f'<w:numFmt w:val="decimal"/><w:lvlText w:val="{list_text} %1"/></w:lvl>'
+            "</w:abstractNum>"
+        )
+    )
+    settings = document.settings.element
+    settings.append(
+        parse_xml(
+            f'<w:mailMerge {nsdecls("w")}><w:mainDocumentType w:val="formLetters"/>'
+            f'<w:dataType w:val="native"/><w:connectString w:val="{merge_path}"/>'
+            f'<w:query w:val="FROM {merge_query}"/></w:mailMerge>'  # mail-merge query text
+        )
+    )
+    path = tmp_path / "hidden.docx"
+    document.save(str(path))
+    return path, [v.replace("@", "_") if v == bookmark else v for v in values]
+
+
+def test_no_value_survives_outside_the_text_elements(tmp_path: Path) -> None:
+    fake = Faker()
+    Faker.seed(20261111)
+    source, values = _hidden_places(tmp_path, fake)
+    style_value = values[9].replace("@", " ")
+    with zipfile.ZipFile(source) as archive:
+        raw = b"".join(archive.read(name) for name in archive.namelist())
+    assert all(v.encode() in raw for v in values if v != values[9])  # the fixture holds them
+    assert style_value.encode() in raw
+
+    out = tmp_path / "out.docx"
+    result = formats.mask_file(source, out, STRUCTURED)
+
+    with zipfile.ZipFile(out) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    for name, data in members.items():
+        for value in (*values, style_value):
+            assert value.encode() not in data, (name, value)
+    assert "sdt [EMAIL_" in result.text  # content-control text is read and masked
+    copy = docx.Document(str(out))
+    assert any(p.text == "styled" for p in copy.paragraphs)
+    assert any("equation" in note for note in result.notes)
+
+
+def test_unknown_elements_and_attributes_are_dropped_not_copied(tmp_path: Path) -> None:
+    fake = Faker()
+    Faker.seed(20261112)
+    in_element, in_attribute, in_foreign, kept = (fake.unique.email() for _ in range(4))
+    document = docx.Document()
+    paragraph = document.add_paragraph(f"Keep {kept}")
+    paragraph._p.append(  # noqa: SLF001
+        parse_xml(
+            f"<w:futureThing {nsdecls('w')}><w:r><w:t>{in_element}</w:t></w:r></w:futureThing>"
+        )
+    )
+    paragraph._p.append(  # noqa: SLF001
+        parse_xml(f'<x:note xmlns:x="urn:example:vendor">{in_foreign}</x:note>')
+    )
+    paragraph.runs[0]._r.set(qn("w:madeUp"), in_attribute)  # noqa: SLF001
+    source = tmp_path / "unknown.docx"
+    document.save(str(source))
+
+    parsed = docx_parser.parse(source)
+    assert in_element not in parsed.text  # text in an unknown element is not read...
+    out = tmp_path / "out.docx"
+    result = formats.mask_file(source, out, STRUCTURED)
+
+    with zipfile.ZipFile(out) as archive:
+        raw = b"".join(archive.read(name) for name in archive.namelist())
+    for value in (in_element, in_attribute, in_foreign, kept):
+        assert value.encode() not in raw, value  # ...and not copied
+    assert b"urn:example:vendor" not in raw
+    assert "Keep [EMAIL_1]" in result.text
+    assert "removed 2 unrecognised element with text" in result.notes
