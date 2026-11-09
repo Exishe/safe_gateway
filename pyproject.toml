@@ -11,11 +11,13 @@ classifiers = [
 ]
 dependencies = [
     "cryptography>=50.0.2",
+    "gliner>=0.2.30",
     "httpx>=0.28.1",
     "keyring>=25.7.0",
     "phonenumbers>=9.0.43",
     "presidio-analyzer>=2.2.366",
     "spacy>=3.8.0,<3.9.0",
+    "torch>=2.15.0",
 ]
 
 [project.scripts]
@@ -44,6 +46,17 @@ override-dependencies = [
 # Flat layout as fixed by the brief (ADR 0008): the package is ./gateway
 module-name = "gateway"
 module-root = ""
+
+# GLiNER runs on the CPU (ADR 0014). On Linux the PyPI torch wheel pulls in the CUDA
+# stack (gigabytes, NVIDIA-licensed), so torch comes from PyTorch's CPU-only index there.
+# `explicit`: nothing else is ever resolved from that index.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 # ---------------------------------------------------------------- ruff
 [tool.ruff]
