@@ -22,4 +22,6 @@ never by editing history.
 | [0014](0014-placeholder-grammar.md) | One placeholder grammar for mask and rehydrate | Accepted |
 | [0015](0015-gliner-offline.md) | GLiNER for Armenian and other text, strictly offline | Accepted |
 | [0016](0016-ner-input-normalisation.md) | What the NER models read, and a recognizer for dates | Accepted |
+| [0021](0021-audit-chain-and-retention.md) | Audit log: hash chain, device key and retention | Accepted |
+| [0022](0022-audit-export-format.md) | Audit export: signed JSON and a text PDF summary | Accepted |
 | [0023](0023-shape-and-keyword-recognizers.md) | Shape and keyword recognizers for values that fail validation | Accepted |
