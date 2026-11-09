@@ -109,17 +109,21 @@ def test_load_gliner_goes_offline_and_loads_only_the_local_directory(
         def from_pretrained(model_id: str, **kwargs: object) -> str:
             seen["model_id"] = model_id
             seen["kwargs"] = kwargs
-            seen["env"] = (os.environ.get("HF_HUB_OFFLINE"), os.environ.get("TRANSFORMERS_OFFLINE"))
+            seen["env"] = tuple(
+                os.environ.get(name)
+                for name in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE")
+            )
             return "loaded"
 
     monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
     monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+    monkeypatch.delenv("HF_DATASETS_OFFLINE", raising=False)
     monkeypatch.setitem(sys.modules, "gliner", types.SimpleNamespace(GLiNER=FakeGliner))
     load_gliner.cache_clear()
 
     assert load_gliner(path) == "loaded"
     assert seen["model_id"] == str(path)
-    assert seen["env"] == ("1", "1")
+    assert seen["env"] == ("1", "1", "1")
     kwargs = seen["kwargs"]
     assert isinstance(kwargs, dict)
     assert kwargs["local_files_only"] is True

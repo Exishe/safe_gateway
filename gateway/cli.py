@@ -22,6 +22,7 @@ from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.mask import Mapping, mask
 from gateway.engine.recognizers.gazetteer import load_gazetteer
 from gateway.engine.types import Span
+from gateway.offline import force_offline
 from gateway.parsers import formats
 from gateway.proxy import server
 
@@ -324,6 +325,9 @@ def _serve(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # First: importing this module loads no Hugging Face library, Presidio does later,
+    # and they read these variables when imported (review M7).
+    force_offline()
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "scan":

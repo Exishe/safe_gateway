@@ -85,3 +85,16 @@ holds no `encoder_config`.
 - The derived `gliner_config.json` is not byte-identical to a pinned file. It is
   a deterministic function of two pinned files, and the pinned original sits
   beside it.
+
+## Amendment 1, 2026-11-09: offline from process start (security review M7)
+
+`huggingface_hub` and `transformers` read `HF_HUB_OFFLINE` and
+`TRANSFORMERS_OFFLINE` when they are imported, and Presidio imports both before
+`load_gliner` runs, so setting them there could come too late. The entry points
+now set them, with `HF_DATASETS_OFFLINE`, first: `gateway/__main__.py` before it
+imports the command line (and so the engine), and `cli.main` as its first
+statement (importing `gateway.cli` loads no Hugging Face library or Presidio,
+which a subprocess test pins). `gateway/offline.py` holds the list.
+`load_gliner` still sets all three, as a fallback for code that imports the
+engine directly. `safeguard models pull` is unaffected: it downloads with its own
+pinned httpx client, not through `huggingface_hub`.

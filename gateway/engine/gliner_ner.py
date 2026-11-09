@@ -103,8 +103,11 @@ def load_gliner(path: Path) -> GlinerModel:
     if not is_gliner_model(path):
         raise _missing(path)
     # Read by huggingface_hub and transformers when they are imported, hence before.
+    # The entry points set them at process start (gateway/offline.py, review M7),
+    # because Presidio may import both earlier; this covers direct engine callers.
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["HF_DATASETS_OFFLINE"] = "1"
     from gliner import GLiNER  # noqa: PLC0415  (seconds to import; only once a model exists)
 
     return GLiNER.from_pretrained(str(path), local_files_only=True, map_location="cpu")
