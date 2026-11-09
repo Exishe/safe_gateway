@@ -14,10 +14,13 @@ against.
 
 ## Status
 
-Phase 0 of 8 (scaffold). The repository has its guards, CI and test harness in
-place. No detection, masking, proxy or UI code exists yet. The build order and
-exit criteria for each phase are in [docs/plans/](docs/plans/), and design
-decisions are in [docs/adr/](docs/adr/).
+Phase 1a of 8. `safeguard scan FILE` finds structured identifiers in a text
+file: card numbers, IBANs, US SSNs, Russian INN and SNILS, emails, phones, IP
+addresses, URLs with tokens, and names or codenames from a customer list. Names
+in general, addresses and dates need the NER step (Phase 1b). Masking, the
+proxy and the UI come later. The build order and exit criteria for each phase
+are in [docs/plans/](docs/plans/), and design decisions are in
+[docs/adr/](docs/adr/).
 
 ## Development
 
@@ -28,7 +31,8 @@ Tesseract and Ollama for later phases, is in [docs/INSTALL.md](docs/INSTALL.md).
 uv sync                          # Python 3.12 and all dev tools
 scripts/install-git-hooks.sh     # once per clone
 uv run pytest                    # the suite runs with network sockets disabled
-uv run safeguard --version
+uv run safeguard scan notes.txt                         # table of detections
+uv run safeguard scan --json --gazetteer clients.csv notes.txt
 ```
 
 `CLAUDE.md` holds the project rules: permissive licenses only, no network
