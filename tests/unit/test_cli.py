@@ -186,3 +186,40 @@ def test_models_pull_reports_a_bad_download_and_exits_1(
 def test_models_without_a_subcommand_prints_help(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["models"]) == 0
     assert "pull" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ safeguard scan --no-ner
+
+import logging  # noqa: E402
+
+import gateway.engine.detect as detect_module  # noqa: E402
+
+
+def test_scan_without_models_warns_and_still_lists_identifiers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(detect_module, "_WARNED", set())
+    note = tmp_path / "note.txt"
+    note.write_text("Zorvath Quillin, anna.petrova@example.org", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        assert main(["scan", str(note)]) == 0
+
+    assert "EMAIL" in capsys.readouterr().out
+    assert any("safeguard models pull --only en" in r.getMessage() for r in caplog.records)
+
+
+def test_scan_no_ner_skips_the_models_without_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(detect_module, "_WARNED", set())
+    note = tmp_path / "note.txt"
+    note.write_text("Zorvath Quillin, anna.petrova@example.org", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        assert main(["scan", "--no-ner", str(note)]) == 0
+
+    assert caplog.records == []

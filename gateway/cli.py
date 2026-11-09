@@ -32,6 +32,11 @@ def _build_parser() -> argparse.ArgumentParser:
     scan.add_argument("file", type=Path)
     scan.add_argument("--json", action="store_true", help="print JSON instead of a table")
     scan.add_argument("--gazetteer", type=Path, help="CSV of names and codenames to always find")
+    scan.add_argument(
+        "--no-ner",
+        action="store_true",
+        help="skip names, organisations, places and dates (no model is loaded)",
+    )
 
     models = commands.add_parser("models", help="download and list the local NER models")
     model_commands = models.add_subparsers(dest="models_command", metavar="ACTION")
@@ -95,7 +100,8 @@ def _scan(args: argparse.Namespace) -> int:
         print(f"safeguard: cannot read input: {error}", file=sys.stderr)
         return 2
 
-    spans = detect(text, config=EngineConfig(gazetteer=gazetteer))
+    config = EngineConfig(gazetteer=gazetteer, ner="off" if args.no_ner else "auto")
+    spans = detect(text, config=config)
     if args.json:
         _print_json(text, spans)
     else:
