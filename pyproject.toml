@@ -48,7 +48,7 @@ override-dependencies = [
 module-name = "gateway"
 module-root = ""
 
-# GLiNER runs on the CPU (ADR 0014). On Linux the PyPI torch wheel pulls in the CUDA
+# GLiNER runs on the CPU (ADR 0015). On Linux the PyPI torch wheel pulls in the CUDA
 # stack (gigabytes, NVIDIA-licensed), so torch comes from PyTorch's CPU-only index there.
 # `explicit`: nothing else is ever resolved from that index.
 [tool.uv.sources]

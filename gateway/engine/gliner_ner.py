@@ -1,4 +1,4 @@
-"""Names, organisations, places, addresses and birth dates through GLiNER, offline (ADR 0014).
+"""Names, organisations, places, addresses and birth dates through GLiNER, offline (ADR 0015).
 
 For Armenian and any text with no spaCy model. GLiNER's `from_pretrained` downloads
 from the Hugging Face Hub whenever a name does not resolve locally, and the model's
@@ -37,9 +37,10 @@ DEFAULT_THRESHOLD = 0.5
 
 # GLiNER's own word splitter: its window (`max_len`, 384 in this model) counts these.
 WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
-# Well inside max_len: the label prompt shares the window, and Armenian words often
-# become three or more sub-word tokens of the backbone.
-MAX_WORDS = 192
+# The binding limit is the backbone's 512 positions, not max_len: Armenian averages
+# about 2.4 sub-word tokens a word, and 192 words of dense Faker hy_AM text reached 502
+# with the label prompt. 128 words reach 344, leaving room for denser text (a test checks).
+MAX_WORDS = 128
 OVERLAP_WORDS = 32  # a name cut at one window's edge is whole in the next (ADR 0004)
 
 _REQUIRED_FILES = (

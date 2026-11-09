@@ -1,4 +1,4 @@
-"""GLiNER for Armenian and other text without a spaCy model, strictly offline (ADR 0014).
+"""GLiNER for Armenian and other text without a spaCy model, strictly offline (ADR 0015).
 
 Most tests drive `GlinerRecognizer` with a fake model. Tests marked `models` load
 the real model from `safeguard models pull` under the socket-disabled run, with
@@ -242,6 +242,31 @@ def real_model_dir() -> Path:
 
 def _tripwire(*_args: object, **_kwargs: object) -> None:
     pytest.fail("a Hugging Face download function was called")
+
+
+BACKBONE_POSITIONS = 512  # mdeberta-v3-base max_position_embeddings
+HEADROOM = BACKBONE_POSITIONS // 8  # for text denser than Faker's
+
+
+@pytest.mark.models
+def test_a_dense_armenian_window_fits_the_backbone(real_model_dir: Path) -> None:
+    from faker import Faker  # noqa: PLC0415
+    from transformers import AutoTokenizer  # noqa: PLC0415
+
+    tokenizer = AutoTokenizer.from_pretrained(str(real_model_dir), local_files_only=True)
+    assert tokenizer is not None
+    fake = Faker("hy_AM")
+    fake.seed_instance(7)
+    text = " ".join(f"{fake.paragraph(8)} {fake.address()} {fake.name()}" for _ in range(80))
+    # GLiNER puts "<<ENT>> label" for every label and one "<<SEP>>" before the words.
+    prompt = sum(len(tokenizer.tokenize(f"<<ENT>> {label}")) for label in GLINER_LABELS) + 1
+
+    worst = 0
+    for start, end in word_windows(text, gliner_ner.MAX_WORDS, gliner_ner.OVERLAP_WORDS):
+        words = gliner_ner.WORD.findall(text[start:end])
+        worst = max(worst, sum(max(len(tokenizer.tokenize(word)), 1) for word in words))
+
+    assert prompt + worst + 2 <= BACKBONE_POSITIONS - HEADROOM  # +2: [CLS] and [SEP]
 
 
 @pytest.mark.models

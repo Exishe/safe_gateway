@@ -1,4 +1,4 @@
-"""Pinned Hugging Face downloads for `safeguard models pull` (ADR 0006 point 4, ADR 0014).
+"""Pinned Hugging Face downloads for `safeguard models pull` (ADR 0006 point 4, ADR 0015).
 
 Each file is fetched from `huggingface.co/<repo>/resolve/<commit>/<file>`, pinned by
 commit and SHA-256, into a staging directory that becomes the install only when every

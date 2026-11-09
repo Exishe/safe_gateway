@@ -42,7 +42,7 @@ PRIORITY = (
     "gliner",
 )
 # "auto" routes each paragraph by script (gateway/engine/script.py); the rest force one.
-# Armenian ("hy") and undetermined ("und") text go to GLiNER (ADR 0014).
+# Armenian ("hy") and undetermined ("und") text go to GLiNER (ADR 0015).
 LANGUAGES = ("auto", *SPACY_MODEL_DIRS, "hy", "und")
 
 
