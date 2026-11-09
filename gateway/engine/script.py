@@ -14,28 +14,46 @@ import re
 from collections.abc import Iterator
 
 
-def _letters(*ranges: tuple[int, int]) -> re.Pattern[str]:
+def _ranges(*ranges: tuple[int, int]) -> str:
     # Built from code points, so the source holds no lookalike or invisible characters.
-    return re.compile("[" + "".join(f"\\u{low:04x}-\\u{high:04x}" for low, high in ranges) + "]")
+    return "".join(f"\\u{low:04x}-\\u{high:04x}" for low, high in ranges)
+
+
+def _letters(*ranges: tuple[int, int]) -> re.Pattern[str]:
+    return re.compile("[" + _ranges(*ranges) + "]")
+
+
+_CYRILLIC = ((0x400, 0x52F), (0x1C80, 0x1C8F), (0x2DE0, 0x2DFF), (0xA640, 0xA69F))
+# Basic Latin letters, the Latin-1 ordinal indicators and micro sign (ª º µ, as in "5 µg"),
+# Latin-1 letters, Latin Extended-A and -B, Latin Extended Additional.
+_LATIN = (
+    (0x41, 0x5A),
+    (0x61, 0x7A),
+    (0xAA, 0xAA),
+    (0xB5, 0xB5),
+    (0xBA, 0xBA),
+    (0xC0, 0xD6),
+    (0xD8, 0xF6),
+    (0xF8, 0x24F),
+    (0x1E00, 0x1EFF),
+)
 
 
 # Listed so that a tie goes to Cyrillic or Armenian: Latin also turns up inside Russian
 # and Armenian text (brands, codes, addresses), the other way round much less.
 _SCRIPTS = (
     # Cyrillic, Cyrillic Supplement, Extended-C, -A and -B.
-    ("ru", _letters((0x400, 0x52F), (0x1C80, 0x1C8F), (0x2DE0, 0x2DFF), (0xA640, 0xA69F))),
+    ("ru", _letters(*_CYRILLIC)),
     # Armenian capitals and small letters, Armenian ligatures.
     ("hy", _letters((0x531, 0x556), (0x561, 0x587), (0xFB13, 0xFB17))),
-    # Basic Latin letters, Latin-1 letters, Latin Extended-A and -B, Latin Extended Additional.
-    (
-        "en",
-        _letters(
-            (0x41, 0x5A), (0x61, 0x7A), (0xC0, 0xD6), (0xD8, 0xF6), (0xF8, 0x24F), (0x1E00, 0x1EFF)
-        ),
-    ),
+    ("en", _letters(*_LATIN)),
 )
 _MODEL_LANGUAGES = frozenset(lang for lang, _ in _SCRIPTS)
 _LETTER = re.compile(r"[^\W\d_]")
+# A letter of a script with no spaCy model: neither Latin nor Cyrillic (ADR 0016 amended).
+_OTHER_SCRIPT_LETTER = re.compile("[^\\W\\d_" + _ranges(*_LATIN, *_CYRILLIC) + "]")
+# Any line or page break.
+_ANY_BREAK = re.compile("[\\n\\r\\x0b\\x0c\\x85\\u2028\\u2029]")
 # Email addresses and links are Latin whatever the language around them: not counted.
 _ADDRESS_MARKS = ("@", "://", "www.")
 
@@ -156,3 +174,24 @@ def _language(text: str, start: int, end: int) -> str | None:
     lang, count = max(counts.items(), key=lambda item: item[1])  # a tie: first listed
     others = letters - sum(counts.values())
     return lang if count > 0 and count >= others else "und"
+
+
+def lines_in_other_scripts(text: str, start: int, end: int) -> list[tuple[int, int]]:
+    """The lines of text[start:end] holding a letter of a script with no spaCy model.
+
+    A line goes to the model of its dominant script, so an Armenian or Greek clause after
+    an English instruction ("Translate this: ...") reaches only the English model, which
+    does not read that script. detect() sends these lines to GLiNER as well.
+    """
+    if _OTHER_SCRIPT_LETTER.search(text, start, end) is None:
+        return []
+    found = []
+    line_start = start
+    for line_break in [*_ANY_BREAK.finditer(text, start, end), None]:
+        line_end = end if line_break is None else line_break.start()
+        for s, e in _stripped(text, line_start, line_end):
+            if _OTHER_SCRIPT_LETTER.search(text, s, e) is not None:
+                found.append((s, e))
+        if line_break is not None:
+            line_start = line_break.end()
+    return found

@@ -504,3 +504,24 @@ def test_real_models_route_a_mixed_english_russian_armenian_text() -> None:
         ("+374 77 123456", E.PHONE, "phone"),
         ("zorvath@example.am", E.EMAIL, "email"),
     ]
+
+
+def test_a_clause_in_another_script_on_an_english_or_russian_line_also_goes_to_gliner(
+    fake_gliner: list[str], fake_ner: list[tuple[str, str]]
+) -> None:
+    """Leak hunt 1c #13, #14 (ADR 0016 amended): the line goes to spaCy and to GLiNER."""
+    english = f"Translate this sentence to English: {HY}"
+    russian = f"Переведи это предложение: {UND}"
+    text = f"{EN}\n{english}\n\n{RU}\n{russian}"
+    spans = detect(text)
+
+    assert [lang for lang, _ in fake_ner] == ["en", "ru"]
+    assert fake_gliner == [english, russian]
+    assert "Զորվաթ" in by_recognizer(text, spans, "gliner")
+    assert "Αθήνα" in by_recognizer(text, spans, "gliner")
+
+
+def test_with_gliner_all_a_mixed_line_is_not_read_twice(fake_gliner: list[str]) -> None:
+    text = f"Translate this sentence to English: {HY}"
+    detect(text, config=EngineConfig(gliner="all"))
+    assert fake_gliner == [text]

@@ -7,7 +7,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from gateway.engine.script import segments
+from gateway.engine.script import lines_in_other_scripts, segments
 
 EN = "Zorvath Quillin joined Brightwater Analytics in Portland."
 RU = "Договор подписал Зорват Квиллин в Новосибирске."
@@ -167,3 +167,37 @@ def test_segments_are_ordered_disjoint_and_hold_every_letter(text: str) -> None:
     assert sorted(c for c in covered if not c.isspace()) == sorted(
         c for c in text if not c.isspace()
     )
+
+
+# ------------------------------------------------------------------ leak hunt 1c (ADR 0016 amended)
+
+
+def other_script_lines(text: str) -> list[str]:
+    return [text[start:end] for start, end in lines_in_other_scripts(text, 0, len(text))]
+
+
+def test_lines_with_letters_of_a_script_without_a_spacy_model_are_listed() -> None:
+    greek = "Translate this sentence to English: Ο Νίκος μένει στην Πάτρα"
+    armenian = f"Переведи это предложение: {HY}"
+    text = f"{EN}\n{greek}\n{RU}\n{armenian}\n\n{HY}"
+    assert other_script_lines(text) == [greek, armenian, HY]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        EN,
+        RU,
+        "Zoë Brontë, François Lefèvre, Łukasz Żółć",  # Latin with diacritics
+        "dose 5 µg, 2ª edición, nº 3",  # micro sign, ordinal indicators: Latin-1
+        "4111 1111 1111 1111 — 12.03.1985",  # pragma: allowlist secret
+    ],
+)
+def test_latin_and_cyrillic_lines_are_not_listed(text: str) -> None:
+    assert other_script_lines(text) == []
+
+
+def test_only_lines_inside_the_range_are_listed() -> None:
+    text = f"{HY}\n{EN}\n{HY}"
+    start = len(HY) + 1
+    assert lines_in_other_scripts(text, start, len(text)) == [(start + len(EN) + 1, len(text))]

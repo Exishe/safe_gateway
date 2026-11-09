@@ -239,7 +239,6 @@ def test_invisible_characters_missing_from_the_clean_list() -> None:
 # ------------------------------------------------------------------ routing by script (ADR 0016)
 
 
-@FINDING
 @pytest.mark.models
 @pytest.mark.usefixtures("real_models")
 def test_armenian_clause_after_an_instruction_on_the_same_line() -> None:
@@ -263,7 +262,6 @@ def test_armenian_clause_after_an_instruction_on_the_same_line() -> None:
     assert leaks(cases) == []
 
 
-@FINDING
 @pytest.mark.models
 @pytest.mark.usefixtures("real_models")
 def test_other_script_clause_after_an_english_instruction() -> None:

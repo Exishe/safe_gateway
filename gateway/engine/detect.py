@@ -25,7 +25,7 @@ from gateway.engine.recognizers.ru_inn import RU_INN
 from gateway.engine.recognizers.ru_snils import RU_SNILS
 from gateway.engine.recognizers.url_token import URL_WITH_TOKEN
 from gateway.engine.recognizers.us_ssn import US_SSN
-from gateway.engine.script import segments
+from gateway.engine.script import lines_in_other_scripts, segments
 from gateway.engine.textview import TextView, clean_view, ner_view
 from gateway.engine.types import EntityType, Recognizer, Span
 
@@ -151,6 +151,20 @@ def _wants_gliner(lang: str, config: EngineConfig) -> bool:
     return config.gliner == "auto" and lang not in SPACY_MODEL_DIRS
 
 
+def _model_spans(recognizers: Sequence[Recognizer], text: str, start: int, end: int) -> list[Span]:
+    """What the models find in text[start:end], mapped back to `text`."""
+    # Accents composed and capitals title-cased for the models; spans map back (ADR 0016).
+    piece = ner_view(text[start:end])
+    spans = []
+    for recognizer in recognizers:
+        for s in recognizer.find(piece.text):
+            piece_start, piece_end = piece.original_span(s.start, s.end)
+            spans.append(
+                Span(piece_start + start, piece_end + start, s.entity_type, s.score, s.recognizer)
+            )
+    return spans
+
+
 def _ner_spans(text: str, lang: str, config: EngineConfig) -> list[Span]:
     pieces = segments(text) if lang == "auto" else [(0, len(text), lang)]
     spans = []
@@ -159,26 +173,25 @@ def _ner_spans(text: str, lang: str, config: EngineConfig) -> list[Span]:
         spacy = _ner_for(piece_lang, forced=lang != "auto")
         if spacy is not None:
             recognizers.append(spacy)
-        gliner = _gliner(config) if _wants_gliner(piece_lang, config) else None
+        wants_gliner = _wants_gliner(piece_lang, config)
+        gliner = _gliner(config) if wants_gliner else None
         if gliner is not None:
             recognizers.append(gliner)
-        if not recognizers:
-            continue
-        # Accents composed and capitals title-cased for the models; spans map back (ADR 0016).
-        piece = ner_view(text[start:end])
-        for recognizer in recognizers:
-            for s in recognizer.find(piece.text):
-                piece_start, piece_end = piece.original_span(s.start, s.end)
-                spans.append(
-                    Span(
-                        piece_start + start,
-                        piece_end + start,
-                        s.entity_type,
-                        s.score,
-                        s.recognizer,
-                    )
-                )
+        if recognizers:
+            spans.extend(_model_spans(recognizers, text, start, end))
+        if lang == "auto" and not wants_gliner and config.gliner == "auto":
+            spans.extend(_other_script_spans(text, start, end, config))
     return spans
+
+
+def _other_script_spans(text: str, start: int, end: int, config: EngineConfig) -> list[Span]:
+    """GLiNER on each line of a spaCy segment that holds letters of another script: an
+    Armenian clause after an English instruction (ADR 0016 amended)."""
+    lines = lines_in_other_scripts(text, start, end)
+    gliner = _gliner(config) if lines else None
+    if gliner is None:
+        return []
+    return [span for s, e in lines for span in _model_spans([gliner], text, s, e)]
 
 
 def detect(text: str, lang: str = "auto", config: EngineConfig | None = None) -> list[Span]:
