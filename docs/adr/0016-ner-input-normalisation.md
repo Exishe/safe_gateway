@@ -64,3 +64,67 @@ address pattern made routing quadratic on long runs without whitespace.
 - `dd.mm.yy` also matches a version number with two digits in each of three
   parts written after a space (`version 10.12.15`): over-masking, accepted.
 - The date recognizer adds about 0.25 s per MB to `detect()`.
+
+## Amended 2026-11-09: leak hunt 1c
+
+The third leak-hunter round (`tests/unit/engine/test_leak_hunt_1c.py`) found
+15 inputs that leaked; the ones below are decided here, the shape and keyword
+ones in ADR 0023. Each test failed before its fix and passes after it.
+
+1. **The clean view drops every format character and folds digits** (amends
+   point 2 and ADR 0013 point 1). Removed: the whole Unicode category Cf (soft
+   hyphen, zero-width characters, bidi marks and isolates, the Arabic letter
+   mark U+061C, prepended number signs, BOM, tag characters), the combining
+   grapheme joiner U+034F, and the whole tags block U+E0000-E007F. Every
+   decimal digit outside ASCII (`str.isdecimal`, Arabic-Indic, full width,
+   Devanagari and the rest) becomes its ASCII digit (`unicodedata.decimal`),
+   one for one, so offsets do not move and every recognizer, not only the
+   date one, reads one kind of digit. The lists are built at import by
+   scanning planes 0, 1 and 14 (where Unicode keeps them); a test scans every
+   code point so a later Unicode version cannot slip one past. Character
+   classes are written as ranges, and pure ASCII text skips the search: the
+   long class of single characters had made the clean view take a second per
+   megabyte.
+2. **Dates (point 5).**
+   - A hyphen, comma, slash or en dash between a digit and a date is allowed
+     when the other side is a date too, so a range or list written without
+     spaces (two dates joined by `-`, or `1985-03-12/1985-03-15`) is masked whole.
+     A date beside any other number (`12-03-1985-1234`) is still refused. Dots
+     and colons still refuse a neighbouring digit, which keeps IP addresses out.
+   - The Russian day may sit in guillemets or quotes: `«12» марта 1985`.
+   - English and Russian month names, in full or abbreviated, between two
+     hyphens, slashes or dots, day first or year first, in any language:
+     `12-MAR-1985`, `12/Mar/1985`, `12-мар-1985`, `1985-Mar-12`.
+3. **Mixed lines also go to GLiNER (point 3, ADR 0015 point 8).** A line goes
+   to the model of its dominant script, so an Armenian or Greek clause after an
+   English or Russian instruction reached only spaCy. Two fixes were offered:
+   split each line into runs of one script, or send a mixed line to both models.
+   The second is chosen: it is simpler (no run boundaries inside a line, where
+   punctuation, digits and Latin brand names would each need a rule), and
+   GLiNER reads the whole line as context. With `gliner="auto"`, each line of an
+   `en` or `ru` segment that holds a letter of neither Latin nor Cyrillic is
+   also read by GLiNER, beside spaCy; the merge resolves the overlap. Only the
+   line goes, not the segment, so one Greek letter in a long English document
+   costs one line of GLiNER, not the document. The Latin-1 ordinal indicators
+   and micro sign (`ª º µ`) count as Latin, so `5 µg` sends nothing.
+4. **Runs of capitals inside a mixed line are title-cased (point 1).** Besides
+   lines mostly in capitals, two or more neighbouring words in capitals, each
+   of three letters or more, joined by inline spaces or a hyphen, are
+   title-cased for the NER view only, one character for one, so spans map back
+   unchanged: `подписал ЗОРВАТ КВИЛЛИН в офисе` reaches the model as
+   `Зорват Квиллин`. One word in capitals (`IBM`) and words of one or two
+   letters (`NHS GP`) are left as they are.
+
+Consequences.
+
+- More over-masking: an acronym pair such as `ACME LLC` becomes `Acme Llc` for
+  the model and may be tagged as an organisation; a hyphenated or comma-joined
+  list of dates is masked whole; a format character that a document used on
+  purpose (an Arabic number sign) is dropped from what recognizers read. The
+  original text is never changed; only spans are.
+- A Latin or Cyrillic line with one letter of another script now pays for a
+  GLiNER pass on that line (about two orders of magnitude slower than spaCy
+  per character; see `docs/BENCHMARKS.md`). Text forced to one language
+  (`lang="en"`) is unchanged: it goes to that model alone.
+- The import of `gateway.engine.textview` scans about 200,000 code points
+  three times (format characters, digits, capitals): about 40 ms measured.

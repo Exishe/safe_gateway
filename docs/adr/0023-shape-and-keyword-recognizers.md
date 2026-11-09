@@ -62,3 +62,61 @@ recognizer, so a validated value keeps its recognizer and score:
 - `tools.scan_pii`, a commit gate, keeps to checksum-validated cards and national IDs
   (engine threshold 1.0 for CREDIT_CARD and NATIONAL_ID), so these rules do not block
   commits of order numbers or code comments.
+
+## Amended 2026-11-09: leak hunt 1c
+
+The third leak-hunter round (`tests/unit/engine/test_leak_hunt_1c.py`) found
+eight shape and keyword inputs that leaked. Decisions:
+
+1. **Russian series and number** (`id_document_context`). `серия 4599 № 012345`,
+   `серии 45 99 номер 012345` and `сер. 4599 N012345` are one value: the series
+   (two and two digits, the space optional), then optional `№`, `N`, `No`,
+   `номер` or `ном.`, then six digits, masked together. The word for "series"
+   is the gate. The type is PASSPORT when a passport keyword stands in the 40
+   characters before, else NATIONAL_ID (other Russian certificates are written
+   the same way).
+2. **One letter and seven or more digits** is a code after a document keyword
+   (`N1234567`: Indian and Australian passports, Californian licences;
+   `A1234567890` after "ID"). Without a keyword it is not reported.
+3. **Case.** After a keyword, codes are read in any case (`ab1234567`). A
+   lower-case word without a digit is never part of a code, so "passport
+   number ab1234567" masks the code, not the word "number". Without a keyword,
+   `passport_shape` now accepts two lower-case letters and seven digits as well
+   as two capitals; mixed case (`Ab1234567`) stays a word. This was weighed
+   against over-masking: the lower-case shape also matches some user names,
+   ticket and serial numbers in logs and code, which are then masked as
+   PASSPORT. A passport number typed in lower case in a chat is a plausible
+   leak, and a masked serial number costs the customer a placeholder, not a
+   disclosure, so the shape is accepted in both cases. `id_card_shape`
+   (`AA99999AA`) stays upper-case only: in lower case it reads like a hash
+   fragment, and no leak was found for it.
+4. **Armenian document keywords**: `անձնագ-` (passport: PASSPORT), `վարորդական`
+   (driver's: DRIVER_LICENSE), `սոցիալական քարտ` (social card), `ՀԾՀ` (public
+   service number, printed on the social card) and `նույնականացման`
+   (identification), the last three NATIONAL_ID; case-insensitive.
+5. **Card shapes with mixed or doubled separators** (`credit_card_shape`).
+   Each gap between groups of four may be one space, dot or hyphen, chosen
+   independently, or two spaces (justified PDF text). Doubled hyphens or dots,
+   three spaces, or two different separators in one gap still end the number:
+   they read as layout between two numbers, not inside one.
+6. **`+` phones.** Between groups a `+` number may also use two spaces, a
+   spaced hyphen (` - `) or a slash. The `+` still gates them, so dates and
+   amounts are not read. The keyword-gated `phone_context` is unchanged.
+7. **A last group glued to a word keeps its digits** (amends point 3).
+   `+99 912 345 6789Fax:` (PDF columns run together) ends at the letter, so no
+   digit is dropped. Only a group glued to an e-mail address (an `@` before the
+   next whitespace, as in `01K@example.com`) still belongs to the address and
+   is dropped; the e-mail recognizer masks it.
+8. **Property tests.** Hypothesis now generates `+` phones (`+99`, groups of
+   one to four digits, every accepted gap, an optional bracketed group),
+   `AA9999999` in both cases, `AA99999AA` and card shapes with mixed gaps, and
+   checks each at its exact offsets in the recognizer and fully masked through
+   `detect()` (`tests/property/test_shape_detection.py`).
+
+Consequences.
+
+- More over-masking: lower-case `xx1234567` tokens anywhere, more codes after
+  a document keyword, and numbers with doubled spaces. The OpenPII deltas,
+  precision included, are in `docs/BENCHMARKS.md`.
+- A digit glued to a word after a `+` number (`+99 912 345 678 9ab`) is now
+  masked with the phone: one extra digit masked rather than one left.
