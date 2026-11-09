@@ -46,6 +46,19 @@ with each phase; the threat model gets its full review before the first pilot.
   The gateway shows such placeholders to the user instead of guessing (ADR 0003).
 - Russian and Armenian coverage is weaker than English, and it is measured
   separately.
+- OCR mistakes are not corrected. If a scan turns a digit into a look-alike
+  letter ("O" for "0"), the card or SSN no longer passes its checksum or format
+  and is not found. Reading letters as digits would also turn ordinary words
+  into candidates, so this waits for real OCR samples to measure against
+  (ADR 0013).
+- Long unbroken runs of numbers are slow. Every possible group of digits is
+  checked for every identifier type, so 100 KB of single-spaced digits takes
+  several seconds instead of under one. Ordinary documents are not affected;
+  splitting such runs is deferred (ADR 0013).
+- Long phone lists are slow. Phone numbers are matched once per configured
+  region, nine by default, so a 100 KB directory of about 3,300 contacts takes
+  around 3 seconds. Configuring only the regions a customer needs reduces this;
+  a single-pass matcher is deferred (ADR 0013).
 - The audit log is tamper-evident, not tamper-proof. The hash chain shows that
   rows were changed; it cannot stop someone with admin rights from deleting
   the whole file. Customers should store periodic exports elsewhere.

@@ -1,6 +1,6 @@
 import pytest
 
-from gateway.engine.digits import digit_runs, windows
+from gateway.engine.digits import accepted_windows, digit_runs, windows
 from gateway.engine.recognizers.credit_card import CREDIT_CARD
 from gateway.engine.recognizers.iban import IBAN
 from gateway.engine.recognizers.ru_inn import RU_INN
@@ -28,9 +28,30 @@ def test_digit_runs_split_on_single_separators_only() -> None:
     ]
 
 
+def test_digit_runs_join_groups_across_a_spaced_hyphen_or_a_line_break() -> None:
+    text = "a 123 - 45\n6780 b 12\r\n34 c 5  - 6"
+    assert [[text[s:e] for s, e in run] for run in digit_runs(text)] == [
+        ["123", "45", "6780"],
+        ["12", "34"],
+        ["5"],
+        ["6"],
+    ]
+
+
+def test_digit_runs_end_where_the_digits_end_not_at_letters() -> None:
+    text = "ab12cd scan_345.pdf"
+    assert [[text[s:e] for s, e in run] for run in digit_runs(text)] == [["12"], ["345"]]
+
+
 def test_windows_are_group_aligned_and_longest_first() -> None:
     run = [(0, 2), (3, 5), (6, 8)]  # three groups of two digits
     assert windows(run, 4, 6) == [(0, 8), (0, 5), (3, 8)]
+
+
+def test_overlapping_valid_windows_are_all_accepted_but_contained_ones_are_not() -> None:
+    run = [(0, 2), (3, 5), (6, 8)]
+    assert accepted_windows(run, 4, 4, lambda _s, _e: True) == [(0, 5), (3, 8)]
+    assert accepted_windows(run, 2, 6, lambda _s, _e: True) == [(0, 8)]
 
 
 # ------------------------------------------------------------------ cards
@@ -43,6 +64,18 @@ def test_card_found_and_one_changed_digit_rejected() -> None:
 
 def test_card_right_after_another_number_is_found() -> None:
     assert found(CREDIT_CARD, f"qty 2 {CARD}") == [CARD]
+
+
+def test_card_is_found_even_when_a_longer_window_before_it_is_also_luhn_valid() -> None:
+    # The postcode plus the card's first three groups is Luhn-valid by coincidence;
+    # the card must still be reported.
+    assert CARD in found(CREDIT_CARD, f"Moscow 659223 {CARD} paid")
+
+
+def test_card_glued_to_letters_or_an_underscore_is_found() -> None:
+    compact = CARD.replace(" ", "")
+    assert found(CREDIT_CARD, f"scan_{compact}.pdf") == [compact]
+    assert found(CREDIT_CARD, f"card{compact}x") == [compact]
 
 
 @pytest.mark.parametrize(
@@ -86,6 +119,25 @@ def test_impossible_ssns_are_rejected(value: str) -> None:
     assert found(US_SSN, f"ssn {value}") == []
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ref123-45-6780",  # pragma: allowlist secret
+        "123-45-6780x",  # pragma: allowlist secret
+        "СНИЛС123456780",  # pragma: allowlist secret
+    ],
+)
+def test_ssn_glued_to_a_letter_is_rejected(text: str) -> None:
+    # SSN has no checksum: nine digits inside a word are far more likely a code.
+    assert found(US_SSN, text) == []
+
+
+def test_ssn_in_a_comb_field_is_found_as_check_this() -> None:
+    comb = "1 2 3 4 5 6 7 8 0"  # pragma: allowlist secret
+    (span,) = US_SSN.find(f"SSN: {comb}")
+    assert (span.start, span.end, span.score) == (5, 5 + len(comb), 0.6)
+
+
 # ------------------------------------------------------------------ INN and SNILS
 
 
@@ -109,6 +161,21 @@ def test_iban_found_with_and_without_spaces() -> None:
 
 def test_iban_followed_by_an_upper_case_word_stops_at_its_length() -> None:
     assert found(IBAN, f"{IBAN_DE} BANK") == [IBAN_DE]
+
+
+@pytest.mark.parametrize("separator", ["-", "\n", "\r\n"])
+def test_iban_groups_may_be_joined_by_a_hyphen_or_a_line_break(separator: str) -> None:
+    written = IBAN_DE.replace(" ", separator)
+    assert found(IBAN, f"pay to {written} today") == [written]
+
+
+def test_iban_glued_after_letters_is_found() -> None:
+    compact = IBAN_DE.replace(" ", "")
+    assert found(IBAN, f"IBAN{compact} ok") == [compact]
+
+
+def test_iban_with_two_separators_in_a_row_is_not_joined() -> None:
+    assert found(IBAN, IBAN_DE.replace(" ", " - ", 1)) == []
 
 
 def test_iban_with_a_bad_checksum_or_glued_text_is_rejected() -> None:

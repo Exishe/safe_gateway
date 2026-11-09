@@ -18,3 +18,4 @@ never by editing history.
 | [0010](0010-guard-hardening.md) | Guards fail closed, and every layer is checked by the next | Accepted |
 | [0011](0011-detection-engine-shape.md) | Shape of the detection engine | Accepted |
 | [0012](0012-ner-through-presidio-offline.md) | NER through Presidio and spaCy, strictly offline | Accepted |
+| [0013](0013-fail-safe-detection.md) | Fail-safe detection: clean text, digit runs, nothing left uncovered | Accepted |

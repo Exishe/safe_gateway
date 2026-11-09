@@ -1,16 +1,20 @@
-"""Find runs of digit groups and the candidate windows inside them (ADR 0011, point 4).
+"""Find runs of digit groups and the candidate windows inside them (ADR 0011 point 4, ADR 0013).
 
 `\\d` matches every Unicode decimal digit, so Arabic-Indic or full-width
 numbers are found without rewriting the text, and offsets stay exact.
 """
 
 import re
+from bisect import bisect_right, insort
 from collections.abc import Callable
 
 Group = tuple[int, int]
 
-# Digit groups joined by exactly one space, hyphen or dot, not touching a letter.
-_RUN = re.compile(r"(?<!\w)\d+(?:[ .-]\d+)*(?!\w)")
+# Digit groups joined by one space, dot or hyphen, a spaced hyphen, or a line
+# break. A run ends where the digits end, not at a letter, so a number glued
+# to a label or a file name ("scan_4111...") is still read.
+_SEPARATOR = r"(?: - |[ .-]|\r?\n)"
+_RUN = re.compile(rf"(?<!\d)\d+(?:{_SEPARATOR}\d+)*(?!\d)")
 _GROUP = re.compile(r"\d+")
 
 
@@ -46,9 +50,20 @@ def group_sizes(text: str, start: int, end: int) -> tuple[int, ...]:
 def accepted_windows(
     run: list[Group], min_digits: int, max_digits: int, accept: Callable[[int, int], bool]
 ) -> list[Group]:
-    """Disjoint windows that pass `accept`, preferring the longest."""
-    taken: list[Group] = []
+    """Every window that passes `accept` and is not inside one accepted before it.
+
+    Overlaps are allowed: a coincidentally valid window must not hide a real
+    value that shares some of its groups (the merge resolves the overlap).
+    Accepted windows never nest, so sorted by start they are sorted by end too,
+    and the one starting last at or before a window is the only one that can hold it.
+    """
+    starts: list[int] = []
+    ends: list[int] = []
     for start, end in windows(run, min_digits, max_digits):
-        if all(end <= s or start >= e for s, e in taken) and accept(start, end):
-            taken.append((start, end))
-    return taken
+        index = bisect_right(starts, start) - 1
+        if index >= 0 and ends[index] >= end:
+            continue
+        if accept(start, end):
+            insort(starts, start)
+            insort(ends, end)
+    return list(zip(starts, ends, strict=True))

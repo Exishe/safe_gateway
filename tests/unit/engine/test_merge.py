@@ -1,4 +1,8 @@
+from itertools import pairwise
+
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from gateway.engine.merge import merge
 from gateway.engine.types import EntityType, Span
@@ -28,12 +32,13 @@ def test_nested_span_loses_to_the_outer_one() -> None:
     assert merge([span(2, 4), span(0, 10)]) == [span(0, 10)]
 
 
-def test_partial_overlap_keeps_the_longer_span() -> None:
-    assert merge([span(0, 6), span(4, 14)]) == [span(4, 14)]
+def test_partial_overlap_keeps_the_longer_span_and_the_rest_of_the_shorter() -> None:
+    assert merge([span(0, 6), span(4, 14)]) == [span(0, 4), span(4, 14)]
 
 
-def test_equal_length_keeps_the_higher_score() -> None:
-    assert merge([span(0, 5, 0.7, by="a"), span(2, 7, 0.9, by="b")]) == [span(2, 7, 0.9, by="b")]
+def test_equal_length_the_higher_score_wins_the_overlap() -> None:
+    spans = [span(0, 5, 0.7, by="a"), span(2, 7, 0.9, by="b")]
+    assert merge(spans) == [span(0, 2, 0.7, by="a"), span(2, 7, 0.9, by="b")]
 
 
 def test_equal_length_and_score_keeps_the_earlier_recognizer() -> None:
@@ -46,8 +51,90 @@ def test_touching_spans_do_not_overlap() -> None:
 
 
 def test_a_loser_does_not_knock_out_a_third_span() -> None:
-    # 0-10 beats 8-12; 11-15 overlaps only the loser, so it stays.
-    assert merge([span(0, 10), span(8, 12), span(11, 15)]) == [span(0, 10), span(11, 15)]
+    # 0-10 beats 8-12, which keeps 10-12; 11-15 keeps what is still uncovered, 12-15.
+    assert merge([span(0, 10), span(8, 12), span(11, 15)]) == [
+        span(0, 10),
+        span(10, 12),
+        span(12, 15),
+    ]
+
+
+def test_a_span_already_covered_by_kept_spans_is_dropped() -> None:
+    assert merge([span(0, 5), span(5, 10), span(3, 7)]) == [span(0, 5), span(5, 10)]
+
+
+def test_a_gap_between_two_kept_spans_is_filled_by_the_span_across_it() -> None:
+    spans = [span(0, 10), span(12, 20), span(8, 14, kind=E.SSN)]
+    assert merge(spans) == [span(0, 10), span(10, 12, kind=E.SSN), span(12, 20)]
+
+
+# ------------------------------------------------------------------ remainders and text
+
+TEXT = "x 55794 123-45-6780 y"  # pragma: allowlist secret
+
+
+def test_a_remainder_keeps_its_own_type_and_score_and_loses_edge_punctuation() -> None:
+    coincidence = span(2, 14, kind=E.NATIONAL_ID)  # "55794 123-45"
+    ssn = span(8, 19, 0.85, kind=E.SSN, by="us_ssn")  # the SSN in TEXT
+    assert merge([coincidence, ssn], text=TEXT) == [
+        coincidence,
+        span(15, 19, 0.85, kind=E.SSN, by="us_ssn"),
+    ]
+    assert TEXT[15:19] == "6780"
+
+
+def test_without_text_a_remainder_is_not_trimmed() -> None:
+    spans = [span(2, 14, kind=E.NATIONAL_ID), span(8, 19, kind=E.SSN)]
+    assert merge(spans)[1] == span(14, 19, kind=E.SSN)
+
+
+def test_a_remainder_of_punctuation_only_is_dropped() -> None:
+    assert merge([span(0, 5), span(2, 6)], text="12-34 56") == [span(0, 5)]
+
+
+def test_a_span_without_overlap_is_never_trimmed() -> None:
+    assert merge([span(0, 5, kind=E.PHONE)], text="(201) 555") == [span(0, 5, kind=E.PHONE)]
+
+
+# ------------------------------------------------------------------ fail-safe property
+
+SCORES = st.sampled_from([0.5, 0.6, 0.85, 0.9, 0.95, 1.0])
+KINDS = st.sampled_from([E.EMAIL, E.SSN, E.PHONE, E.NATIONAL_ID])
+
+
+@st.composite
+def spans_in(draw: st.DrawFn, size: int) -> list[Span]:
+    result = []
+    for _ in range(draw(st.integers(0, 12))):
+        start = draw(st.integers(0, size - 1))
+        end = draw(st.integers(start + 1, size))
+        result.append(Span(start, end, draw(KINDS), draw(SCORES), draw(st.sampled_from("abc"))))
+    return result
+
+
+def covered(spans: list[Span]) -> set[int]:
+    return {index for s in spans for index in range(s.start, s.end)}
+
+
+def assert_disjoint(spans: list[Span]) -> None:
+    for left, right in pairwise(spans):
+        assert left.end <= right.start, f"{left} overlaps {right}"
+
+
+@given(spans_in(40))
+def test_no_detected_character_is_left_uncovered(spans: list[Span]) -> None:
+    kept = merge(spans, priority=["a", "b", "c"])
+    assert_disjoint(kept)
+    assert covered(kept) == covered(spans)
+
+
+@given(st.text(alphabet="a1-( ", min_size=40, max_size=40), spans_in(40))
+def test_with_text_only_punctuation_may_be_left_uncovered(text: str, spans: list[Span]) -> None:
+    kept = merge(spans, priority=["a", "b", "c"], text=text)
+    assert_disjoint(kept)
+    assert covered(kept) <= covered(spans)
+    missing = covered(spans) - covered(kept)
+    assert all(not text[index].isalnum() for index in missing)
 
 
 @pytest.mark.parametrize(("start", "end", "score"), [(5, 5, 1.0), (6, 5, 1.0), (0, 5, 1.5)])

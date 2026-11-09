@@ -5,27 +5,36 @@ import re
 from gateway.engine.checksums import IBAN_LENGTHS, iban_valid
 from gateway.engine.types import EntityType, Span
 
-_START = re.compile(r"(?<!\w)[A-Za-z]{2}\d{2}")
+# No lookbehind: "IBANDE89..." is an IBAN glued to its label (ADR 0013). The
+# country's exact length and the mod-97 check keep this from matching noise.
+_START = re.compile(r"[A-Za-z]{2}\d{2}")
+_SEPARATORS = ("\r\n", " ", "-", "\n")
 
 
 def _is_iban_char(char: str) -> bool:
     return char.isascii() and char.isalnum()
 
 
+def _separator_at(text: str, index: int) -> int:
+    """Length of the one separator allowed between IBAN characters at `index`, or 0."""
+    return next((len(s) for s in _SEPARATORS if text.startswith(s, index)), 0)
+
+
 def _collect(text: str, start: int, length: int) -> list[int] | None:
-    """Positions of the IBAN's characters, allowing single spaces between them."""
+    """Positions of the IBAN's characters, allowing one space, hyphen or line break between them."""
     positions: list[int] = []
-    index, after_space = start, False
+    index, after_separator = start, False
     while index < len(text) and len(positions) < length:
-        char = text[index]
-        if _is_iban_char(char):
+        if _is_iban_char(text[index]):
             positions.append(index)
-            after_space = False
-        elif char == " " and positions and not after_space:
-            after_space = True
-        else:
+            after_separator = False
+            index += 1
+            continue
+        separator = _separator_at(text, index)
+        if not separator or not positions or after_separator:
             break
-        index += 1
+        after_separator = True
+        index += separator
     if len(positions) != length:
         return None
     end = positions[-1] + 1

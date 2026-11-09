@@ -14,6 +14,7 @@ from gateway.engine.recognizers.ru_inn import RU_INN
 from gateway.engine.recognizers.ru_snils import RU_SNILS
 from gateway.engine.recognizers.url_token import URL_WITH_TOKEN
 from gateway.engine.recognizers.us_ssn import US_SSN
+from gateway.engine.textview import TextView, clean_view
 from gateway.engine.types import EntityType, Recognizer, Span
 
 # On a tie (same length, same score) the recognizer listed first wins. The
@@ -56,11 +57,25 @@ def _recognizers(config: EngineConfig) -> list[Recognizer]:
     return recognizers
 
 
+def _as_written(span: Span, view: TextView) -> Span:
+    start, end = view.original_span(span.start, span.end)
+    return Span(start, end, span.entity_type, span.score, span.recognizer)
+
+
 def detect(text: str, lang: str = "auto", config: EngineConfig | None = None) -> list[Span]:
-    """Every detected span in `text`, overlaps resolved. `lang` is used from Phase 1b."""
+    """Every detected span in `text`, overlaps resolved. `lang` is used from Phase 1b.
+
+    Recognizers read a cleaned copy (unicode spaces and dashes unified, invisible
+    characters removed); each span is mapped back to the original (ADR 0013).
+    """
     del lang  # accepted now so callers do not change when NER arrives
     config = config or EngineConfig()
     if not text.strip():
         return []
-    spans = [span for recognizer in _recognizers(config) for span in recognizer.find(text)]
-    return merge(spans, config.thresholds, PRIORITY)
+    view = clean_view(text)
+    spans = [
+        _as_written(span, view)
+        for recognizer in _recognizers(config)
+        for span in recognizer.find(view.text)
+    ]
+    return merge(spans, config.thresholds, PRIORITY, text=text)

@@ -35,6 +35,32 @@ def test_gazetteer_entries_are_detected_when_configured() -> None:
     assert found("Project Bluebird is late", config) == [("Bluebird", E.CODENAME)]
 
 
+EN_DASH = chr(0x2013)
+NBSP = chr(0x00A0)
+ZWSP = chr(0x200B)
+
+
+@pytest.mark.parametrize(
+    ("entry", "written"),
+    [
+        (f"Smith{EN_DASH}Jones LLP", f"Smith{EN_DASH}Jones{NBSP}LLP"),
+        ("Smith-Jones", "Smith-Jones"),
+        (f"Smith{EN_DASH}Jones", "Smith-Jones"),
+        ("Smith-Jones", f"Smi{ZWSP}th{EN_DASH}Jones"),
+    ],
+)
+def test_gazetteer_entries_match_whatever_dash_or_space_is_written(
+    entry: str, written: str
+) -> None:
+    config = EngineConfig(gazetteer=Gazetteer({entry: E.ORG}))
+    assert found(f"Retained {written} today", config) == [(written, E.ORG)]
+
+
+def test_values_are_reported_as_written_in_the_original_text() -> None:
+    card = f"4111{NBSP}1111{ZWSP}1111{EN_DASH}1111"  # pragma: allowlist secret
+    assert found(f"card {card}, thanks") == [(card, E.CREDIT_CARD)]
+
+
 def test_thresholds_can_drop_low_confidence_types() -> None:
     bare_ssn = "ssn 123456780"  # pragma: allowlist secret
     assert found(bare_ssn) == [("123456780", E.SSN)]
