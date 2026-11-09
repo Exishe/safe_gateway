@@ -1,0 +1,1511 @@
+{
+  "meta": {
+    "dataset": "ai4privacy/open-pii-masking-500k-ai4privacy",
+    "revision": "506996d625ed970a0063432daf6007cf4a3a48e3",
+    "shard": "data/validation/test.jsonl",
+    "shard_sha256": "4e908e60d8d88f90015301e1ab4a8b7899ec713f1fc903860e1d9e0b91677ebf",
+    "license": "CC-BY-4.0",
+    "sample_per_language": 10000,
+    "seed": 20261109,
+    "records_used": {
+      "de": 10000,
+      "en": 10000,
+      "es": 10000,
+      "fr": 10000,
+      "hi": 6938,
+      "it": 10000,
+      "nl": 5347,
+      "te": 5434
+    },
+    "records_skipped_bad_offsets": {},
+    "ner_languages": [
+      "en"
+    ],
+    "ner_models": {
+      "en": "en_core_web_lg-3.8.0",
+      "ru": "ru_core_news_lg-3.8.0"
+    },
+    "coverage_threshold": 0.9,
+    "commit": "79d82b15215a812d69ad4e70b2e46b5a971e8b12",
+    "tree_dirty": false,
+    "date": "2026-11-09",
+    "python": "3.12.3",
+    "seconds": {
+      "de": 5.0,
+      "en": 37.6,
+      "es": 4.4,
+      "fr": 5.5,
+      "hi": 3.9,
+      "it": 4.7,
+      "nl": 2.3,
+      "te": 3.0
+    }
+  },
+  "languages": [
+    "de",
+    "en",
+    "es",
+    "fr",
+    "hi",
+    "it",
+    "nl",
+    "te"
+  ],
+  "gold": [
+    {
+      "language": "de",
+      "label": "AGE",
+      "total": 458,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "BUILDINGNUM",
+      "total": 838,
+      "masked": 3,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "CITY",
+      "total": 1379,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "CREDITCARDNUMBER",
+      "total": 253,
+      "masked": 31,
+      "typed": 30
+    },
+    {
+      "language": "de",
+      "label": "DATE",
+      "total": 989,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "DRIVERLICENSENUM",
+      "total": 235,
+      "masked": 89,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "EMAIL",
+      "total": 1306,
+      "masked": 1274,
+      "typed": 1274
+    },
+    {
+      "language": "de",
+      "label": "GENDER",
+      "total": 230,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "GIVENNAME",
+      "total": 7414,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "IDCARDNUM",
+      "total": 833,
+      "masked": 1,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "PASSPORTNUM",
+      "total": 432,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "SEX",
+      "total": 178,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "SOCIALNUM",
+      "total": 275,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "STREET",
+      "total": 939,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "SURNAME",
+      "total": 2818,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "TAXNUM",
+      "total": 335,
+      "masked": 39,
+      "typed": 2
+    },
+    {
+      "language": "de",
+      "label": "TELEPHONENUM",
+      "total": 1641,
+      "masked": 756,
+      "typed": 710
+    },
+    {
+      "language": "de",
+      "label": "TIME",
+      "total": 634,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "TITLE",
+      "total": 689,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "de",
+      "label": "ZIPCODE",
+      "total": 400,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "en",
+      "label": "AGE",
+      "total": 535,
+      "masked": 238,
+      "typed": 0
+    },
+    {
+      "language": "en",
+      "label": "BUILDINGNUM",
+      "total": 1030,
+      "masked": 388,
+      "typed": 192
+    },
+    {
+      "language": "en",
+      "label": "CITY",
+      "total": 1648,
+      "masked": 1428,
+      "typed": 760
+    },
+    {
+      "language": "en",
+      "label": "CREDITCARDNUMBER",
+      "total": 179,
+      "masked": 49,
+      "typed": 16
+    },
+    {
+      "language": "en",
+      "label": "DATE",
+      "total": 1491,
+      "masked": 959,
+      "typed": 893
+    },
+    {
+      "language": "en",
+      "label": "DRIVERLICENSENUM",
+      "total": 196,
+      "masked": 40,
+      "typed": 0
+    },
+    {
+      "language": "en",
+      "label": "EMAIL",
+      "total": 1155,
+      "masked": 1145,
+      "typed": 1138
+    },
+    {
+      "language": "en",
+      "label": "GENDER",
+      "total": 199,
+      "masked": 12,
+      "typed": 0
+    },
+    {
+      "language": "en",
+      "label": "GIVENNAME",
+      "total": 7977,
+      "masked": 6672,
+      "typed": 5288
+    },
+    {
+      "language": "en",
+      "label": "IDCARDNUM",
+      "total": 803,
+      "masked": 170,
+      "typed": 3
+    },
+    {
+      "language": "en",
+      "label": "PASSPORTNUM",
+      "total": 367,
+      "masked": 195,
+      "typed": 0
+    },
+    {
+      "language": "en",
+      "label": "SEX",
+      "total": 248,
+      "masked": 29,
+      "typed": 0
+    },
+    {
+      "language": "en",
+      "label": "SOCIALNUM",
+      "total": 229,
+      "masked": 186,
+      "typed": 50
+    },
+    {
+      "language": "en",
+      "label": "STREET",
+      "total": 1183,
+      "masked": 926,
+      "typed": 683
+    },
+    {
+      "language": "en",
+      "label": "SURNAME",
+      "total": 3061,
+      "masked": 2616,
+      "typed": 2170
+    },
+    {
+      "language": "en",
+      "label": "TAXNUM",
+      "total": 259,
+      "masked": 216,
+      "typed": 28
+    },
+    {
+      "language": "en",
+      "label": "TELEPHONENUM",
+      "total": 1591,
+      "masked": 691,
+      "typed": 489
+    },
+    {
+      "language": "en",
+      "label": "TIME",
+      "total": 1630,
+      "masked": 100,
+      "typed": 0
+    },
+    {
+      "language": "en",
+      "label": "TITLE",
+      "total": 1098,
+      "masked": 355,
+      "typed": 0
+    },
+    {
+      "language": "en",
+      "label": "ZIPCODE",
+      "total": 377,
+      "masked": 114,
+      "typed": 9
+    },
+    {
+      "language": "es",
+      "label": "AGE",
+      "total": 548,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "BUILDINGNUM",
+      "total": 899,
+      "masked": 3,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "CITY",
+      "total": 1977,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "CREDITCARDNUMBER",
+      "total": 218,
+      "masked": 21,
+      "typed": 20
+    },
+    {
+      "language": "es",
+      "label": "DATE",
+      "total": 993,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "DRIVERLICENSENUM",
+      "total": 191,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "EMAIL",
+      "total": 1116,
+      "masked": 1108,
+      "typed": 1108
+    },
+    {
+      "language": "es",
+      "label": "GENDER",
+      "total": 201,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "GIVENNAME",
+      "total": 6847,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "IDCARDNUM",
+      "total": 848,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "PASSPORTNUM",
+      "total": 393,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "SEX",
+      "total": 221,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "SOCIALNUM",
+      "total": 199,
+      "masked": 95,
+      "typed": 13
+    },
+    {
+      "language": "es",
+      "label": "STREET",
+      "total": 1014,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "SURNAME",
+      "total": 2488,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "TAXNUM",
+      "total": 277,
+      "masked": 95,
+      "typed": 12
+    },
+    {
+      "language": "es",
+      "label": "TELEPHONENUM",
+      "total": 1468,
+      "masked": 551,
+      "typed": 514
+    },
+    {
+      "language": "es",
+      "label": "TIME",
+      "total": 1048,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "TITLE",
+      "total": 562,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "es",
+      "label": "ZIPCODE",
+      "total": 322,
+      "masked": 1,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "AGE",
+      "total": 488,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "BUILDINGNUM",
+      "total": 917,
+      "masked": 9,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "CITY",
+      "total": 1517,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "CREDITCARDNUMBER",
+      "total": 216,
+      "masked": 22,
+      "typed": 21
+    },
+    {
+      "language": "fr",
+      "label": "DATE",
+      "total": 1112,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "DRIVERLICENSENUM",
+      "total": 195,
+      "masked": 40,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "EMAIL",
+      "total": 1311,
+      "masked": 1296,
+      "typed": 1296
+    },
+    {
+      "language": "fr",
+      "label": "GENDER",
+      "total": 161,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "GIVENNAME",
+      "total": 7289,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "IDCARDNUM",
+      "total": 793,
+      "masked": 57,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "PASSPORTNUM",
+      "total": 363,
+      "masked": 1,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "SEX",
+      "total": 213,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "SOCIALNUM",
+      "total": 218,
+      "masked": 60,
+      "typed": 7
+    },
+    {
+      "language": "fr",
+      "label": "STREET",
+      "total": 1009,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "SURNAME",
+      "total": 2672,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "TAXNUM",
+      "total": 238,
+      "masked": 72,
+      "typed": 9
+    },
+    {
+      "language": "fr",
+      "label": "TELEPHONENUM",
+      "total": 1695,
+      "masked": 660,
+      "typed": 613
+    },
+    {
+      "language": "fr",
+      "label": "TIME",
+      "total": 1472,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "TITLE",
+      "total": 734,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "fr",
+      "label": "ZIPCODE",
+      "total": 418,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "AGE",
+      "total": 504,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "BUILDINGNUM",
+      "total": 601,
+      "masked": 3,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "CITY",
+      "total": 958,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "CREDITCARDNUMBER",
+      "total": 136,
+      "masked": 16,
+      "typed": 16
+    },
+    {
+      "language": "hi",
+      "label": "DATE",
+      "total": 716,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "DRIVERLICENSENUM",
+      "total": 163,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "EMAIL",
+      "total": 715,
+      "masked": 708,
+      "typed": 708
+    },
+    {
+      "language": "hi",
+      "label": "GENDER",
+      "total": 162,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "GIVENNAME",
+      "total": 5401,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "IDCARDNUM",
+      "total": 537,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "PASSPORTNUM",
+      "total": 238,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "SEX",
+      "total": 227,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "SOCIALNUM",
+      "total": 150,
+      "masked": 97,
+      "typed": 12
+    },
+    {
+      "language": "hi",
+      "label": "STREET",
+      "total": 687,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "SURNAME",
+      "total": 1656,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "TAXNUM",
+      "total": 216,
+      "masked": 146,
+      "typed": 18
+    },
+    {
+      "language": "hi",
+      "label": "TELEPHONENUM",
+      "total": 1162,
+      "masked": 405,
+      "typed": 354
+    },
+    {
+      "language": "hi",
+      "label": "TIME",
+      "total": 2342,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "TITLE",
+      "total": 430,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "hi",
+      "label": "ZIPCODE",
+      "total": 289,
+      "masked": 17,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "AGE",
+      "total": 476,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "BUILDINGNUM",
+      "total": 886,
+      "masked": 3,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "CITY",
+      "total": 1791,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "CREDITCARDNUMBER",
+      "total": 260,
+      "masked": 33,
+      "typed": 31
+    },
+    {
+      "language": "it",
+      "label": "DATE",
+      "total": 1249,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "DRIVERLICENSENUM",
+      "total": 158,
+      "masked": 115,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "EMAIL",
+      "total": 1152,
+      "masked": 1144,
+      "typed": 1144
+    },
+    {
+      "language": "it",
+      "label": "GENDER",
+      "total": 112,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "GIVENNAME",
+      "total": 6847,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "IDCARDNUM",
+      "total": 902,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "PASSPORTNUM",
+      "total": 333,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "SEX",
+      "total": 237,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "SOCIALNUM",
+      "total": 107,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "STREET",
+      "total": 1034,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "SURNAME",
+      "total": 2910,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "TAXNUM",
+      "total": 250,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "TELEPHONENUM",
+      "total": 1595,
+      "masked": 604,
+      "typed": 554
+    },
+    {
+      "language": "it",
+      "label": "TIME",
+      "total": 980,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "TITLE",
+      "total": 659,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "it",
+      "label": "ZIPCODE",
+      "total": 376,
+      "masked": 1,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "AGE",
+      "total": 329,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "BUILDINGNUM",
+      "total": 469,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "CITY",
+      "total": 935,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "CREDITCARDNUMBER",
+      "total": 136,
+      "masked": 10,
+      "typed": 10
+    },
+    {
+      "language": "nl",
+      "label": "DATE",
+      "total": 509,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "DRIVERLICENSENUM",
+      "total": 87,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "EMAIL",
+      "total": 602,
+      "masked": 593,
+      "typed": 593
+    },
+    {
+      "language": "nl",
+      "label": "GENDER",
+      "total": 159,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "GIVENNAME",
+      "total": 4371,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "IDCARDNUM",
+      "total": 421,
+      "masked": 406,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "PASSPORTNUM",
+      "total": 192,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "SEX",
+      "total": 134,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "SOCIALNUM",
+      "total": 85,
+      "masked": 83,
+      "typed": 41
+    },
+    {
+      "language": "nl",
+      "label": "STREET",
+      "total": 543,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "SURNAME",
+      "total": 1385,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "TAXNUM",
+      "total": 148,
+      "masked": 142,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "TELEPHONENUM",
+      "total": 787,
+      "masked": 349,
+      "typed": 325
+    },
+    {
+      "language": "nl",
+      "label": "TIME",
+      "total": 346,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "TITLE",
+      "total": 447,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "nl",
+      "label": "ZIPCODE",
+      "total": 214,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "AGE",
+      "total": 523,
+      "masked": 1,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "BUILDINGNUM",
+      "total": 598,
+      "masked": 5,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "CITY",
+      "total": 882,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "CREDITCARDNUMBER",
+      "total": 165,
+      "masked": 18,
+      "typed": 16
+    },
+    {
+      "language": "te",
+      "label": "DATE",
+      "total": 762,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "DRIVERLICENSENUM",
+      "total": 171,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "EMAIL",
+      "total": 566,
+      "masked": 560,
+      "typed": 560
+    },
+    {
+      "language": "te",
+      "label": "GENDER",
+      "total": 149,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "GIVENNAME",
+      "total": 4609,
+      "masked": 3,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "IDCARDNUM",
+      "total": 556,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "PASSPORTNUM",
+      "total": 259,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "SEX",
+      "total": 220,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "SOCIALNUM",
+      "total": 203,
+      "masked": 134,
+      "typed": 16
+    },
+    {
+      "language": "te",
+      "label": "STREET",
+      "total": 657,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "SURNAME",
+      "total": 2361,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "TAXNUM",
+      "total": 224,
+      "masked": 150,
+      "typed": 21
+    },
+    {
+      "language": "te",
+      "label": "TELEPHONENUM",
+      "total": 903,
+      "masked": 353,
+      "typed": 329
+    },
+    {
+      "language": "te",
+      "label": "TIME",
+      "total": 1113,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "TITLE",
+      "total": 572,
+      "masked": 0,
+      "typed": 0
+    },
+    {
+      "language": "te",
+      "label": "ZIPCODE",
+      "total": 329,
+      "masked": 29,
+      "typed": 0
+    }
+  ],
+  "detected": [
+    {
+      "language": "de",
+      "type": "CREDIT_CARD",
+      "total": 43,
+      "hit": 43
+    },
+    {
+      "language": "de",
+      "type": "EMAIL",
+      "total": 1282,
+      "hit": 1281
+    },
+    {
+      "language": "de",
+      "type": "IP_ADDRESS",
+      "total": 4,
+      "hit": 4
+    },
+    {
+      "language": "de",
+      "type": "NATIONAL_ID",
+      "total": 94,
+      "hit": 94
+    },
+    {
+      "language": "de",
+      "type": "PHONE",
+      "total": 1218,
+      "hit": 1218
+    },
+    {
+      "language": "de",
+      "type": "SSN",
+      "total": 77,
+      "hit": 77
+    },
+    {
+      "language": "en",
+      "type": "CREDIT_CARD",
+      "total": 21,
+      "hit": 21
+    },
+    {
+      "language": "en",
+      "type": "DATE",
+      "total": 2108,
+      "hit": 1774
+    },
+    {
+      "language": "en",
+      "type": "EMAIL",
+      "total": 1149,
+      "hit": 1149
+    },
+    {
+      "language": "en",
+      "type": "LOCATION",
+      "total": 2103,
+      "hit": 2017
+    },
+    {
+      "language": "en",
+      "type": "NATIONAL_ID",
+      "total": 127,
+      "hit": 127
+    },
+    {
+      "language": "en",
+      "type": "ORG",
+      "total": 2593,
+      "hit": 1907
+    },
+    {
+      "language": "en",
+      "type": "PERSON",
+      "total": 6731,
+      "hit": 6610
+    },
+    {
+      "language": "en",
+      "type": "PHONE",
+      "total": 1227,
+      "hit": 1227
+    },
+    {
+      "language": "en",
+      "type": "SSN",
+      "total": 144,
+      "hit": 144
+    },
+    {
+      "language": "es",
+      "type": "CREDIT_CARD",
+      "total": 26,
+      "hit": 26
+    },
+    {
+      "language": "es",
+      "type": "EMAIL",
+      "total": 1114,
+      "hit": 1114
+    },
+    {
+      "language": "es",
+      "type": "NATIONAL_ID",
+      "total": 82,
+      "hit": 82
+    },
+    {
+      "language": "es",
+      "type": "PHONE",
+      "total": 968,
+      "hit": 968
+    },
+    {
+      "language": "es",
+      "type": "SSN",
+      "total": 47,
+      "hit": 47
+    },
+    {
+      "language": "fr",
+      "type": "CREDIT_CARD",
+      "total": 49,
+      "hit": 49
+    },
+    {
+      "language": "fr",
+      "type": "EMAIL",
+      "total": 1309,
+      "hit": 1309
+    },
+    {
+      "language": "fr",
+      "type": "IBAN",
+      "total": 1,
+      "hit": 1
+    },
+    {
+      "language": "fr",
+      "type": "NATIONAL_ID",
+      "total": 126,
+      "hit": 126
+    },
+    {
+      "language": "fr",
+      "type": "PHONE",
+      "total": 1197,
+      "hit": 1197
+    },
+    {
+      "language": "fr",
+      "type": "SSN",
+      "total": 60,
+      "hit": 60
+    },
+    {
+      "language": "hi",
+      "type": "CREDIT_CARD",
+      "total": 24,
+      "hit": 24
+    },
+    {
+      "language": "hi",
+      "type": "EMAIL",
+      "total": 715,
+      "hit": 715
+    },
+    {
+      "language": "hi",
+      "type": "NATIONAL_ID",
+      "total": 95,
+      "hit": 95
+    },
+    {
+      "language": "hi",
+      "type": "PHONE",
+      "total": 822,
+      "hit": 822
+    },
+    {
+      "language": "hi",
+      "type": "SSN",
+      "total": 38,
+      "hit": 38
+    },
+    {
+      "language": "it",
+      "type": "CREDIT_CARD",
+      "total": 42,
+      "hit": 42
+    },
+    {
+      "language": "it",
+      "type": "EMAIL",
+      "total": 1152,
+      "hit": 1152
+    },
+    {
+      "language": "it",
+      "type": "NATIONAL_ID",
+      "total": 89,
+      "hit": 89
+    },
+    {
+      "language": "it",
+      "type": "PHONE",
+      "total": 1059,
+      "hit": 1059
+    },
+    {
+      "language": "it",
+      "type": "SSN",
+      "total": 65,
+      "hit": 65
+    },
+    {
+      "language": "nl",
+      "type": "CREDIT_CARD",
+      "total": 13,
+      "hit": 13
+    },
+    {
+      "language": "nl",
+      "type": "EMAIL",
+      "total": 600,
+      "hit": 600
+    },
+    {
+      "language": "nl",
+      "type": "NATIONAL_ID",
+      "total": 31,
+      "hit": 31
+    },
+    {
+      "language": "nl",
+      "type": "PHONE",
+      "total": 782,
+      "hit": 782
+    },
+    {
+      "language": "nl",
+      "type": "SSN",
+      "total": 332,
+      "hit": 332
+    },
+    {
+      "language": "te",
+      "type": "CREDIT_CARD",
+      "total": 23,
+      "hit": 23
+    },
+    {
+      "language": "te",
+      "type": "EMAIL",
+      "total": 570,
+      "hit": 568
+    },
+    {
+      "language": "te",
+      "type": "NATIONAL_ID",
+      "total": 82,
+      "hit": 82
+    },
+    {
+      "language": "te",
+      "type": "PHONE",
+      "total": 794,
+      "hit": 794
+    },
+    {
+      "language": "te",
+      "type": "SSN",
+      "total": 33,
+      "hit": 33
+    }
+  ],
+  "label_map": {
+    "GIVENNAME": [
+      "PERSON"
+    ],
+    "SURNAME": [
+      "PERSON"
+    ],
+    "CITY": [
+      "LOCATION"
+    ],
+    "STREET": [
+      "ADDRESS",
+      "LOCATION"
+    ],
+    "BUILDINGNUM": [
+      "ADDRESS",
+      "LOCATION"
+    ],
+    "ZIPCODE": [
+      "ADDRESS",
+      "LOCATION"
+    ],
+    "TELEPHONENUM": [
+      "PHONE"
+    ],
+    "EMAIL": [
+      "EMAIL"
+    ],
+    "DATE": [
+      "DATE",
+      "DATE_OF_BIRTH"
+    ],
+    "IDCARDNUM": [
+      "NATIONAL_ID"
+    ],
+    "PASSPORTNUM": [
+      "PASSPORT"
+    ],
+    "TAXNUM": [
+      "NATIONAL_ID"
+    ],
+    "SOCIALNUM": [
+      "NATIONAL_ID",
+      "SSN"
+    ],
+    "CREDITCARDNUMBER": [
+      "CREDIT_CARD"
+    ],
+    "DRIVERLICENSENUM": [
+      "DRIVER_LICENSE"
+    ],
+    "TIME": [],
+    "TITLE": [],
+    "AGE": [],
+    "SEX": [],
+    "GENDER": []
+  }
+}
