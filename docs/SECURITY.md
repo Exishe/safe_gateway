@@ -133,7 +133,12 @@ with each phase; the threat model gets its full review before the first pilot.
 - The audit log is tamper-evident, not tamper-proof. See the next section.
 - The local proxy (`safeguard serve`, ADR 0019) listens on 127.0.0.1 only and
   refuses other Host headers, browser origins that are not allowed, non-JSON
-  POSTs and bodies over 4 MiB. Any program running as the same user can still
+  POSTs and bodies over 4 MiB. It also caps what one client or upstream can
+  make it hold: 50,000 values per `/mask` session (then a 413), 16 MiB per
+  non-streamed upstream answer (then a 502) and 1 MiB per streamed line or
+  event (then an error event), and it detects outside the session lock, so a
+  slow request does not stall the others (ADR 0019 amendment 1). Any program
+  running as the same user can still
   call it, as it can read that user's files and keychain. It is a convenience
   boundary against the network and web pages, not against local malware.
 - The proxy forwards text only. Requests with images, files, audio or tool

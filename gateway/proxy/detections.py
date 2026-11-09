@@ -44,15 +44,23 @@ def _describe(found: Replacement, spans: Sequence[Span]) -> Detection:
     )
 
 
+def mask_detected_with_detections(
+    texts: Sequence[str], spans: Sequence[Sequence[Span]], mapping: Mapping
+) -> tuple[list[str], list[list[Detection]]]:
+    """Mask each text's already-detected spans with `mapping` (extended in place), as
+    mask() would, and say where. Detection runs apart, outside the session lock."""
+    masked: list[str] = []
+    detections: list[list[Detection]] = []
+    for text, found_spans in zip(texts, spans, strict=True):
+        found = replacements(text, found_spans, mapping)
+        masked.append(apply_replacements(text, found))
+        detections.append([_describe(item, found_spans) for item in found])
+    return masked, detections
+
+
 def mask_with_detections(
     texts: Sequence[str], config: EngineConfig, mapping: Mapping
 ) -> tuple[list[str], list[list[Detection]]]:
     """Mask each text with `mapping` (extended in place), as mask() would, and say where."""
-    masked: list[str] = []
-    detections: list[list[Detection]] = []
-    for text in texts:
-        spans = detect(text, config=config)
-        found = replacements(text, spans, mapping)
-        masked.append(apply_replacements(text, found))
-        detections.append([_describe(item, spans) for item in found])
-    return masked, detections
+    spans = [detect(text, config=config) for text in texts]
+    return mask_detected_with_detections(texts, spans, mapping)

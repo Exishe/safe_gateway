@@ -27,6 +27,7 @@ _TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=60.0, pool=10.0)
 _BAD_GATEWAY = 502
 _GATEWAY_TIMEOUT = 504
 _ERROR_STATUS = 400
+MAX_REPLY_BYTES = 16 * 1024 * 1024  # a whole (non-streamed) answer, decoded (review M12)
 
 
 class UpstreamError(Exception):
@@ -85,6 +86,34 @@ def _translate(error: httpx.HTTPError, host: str) -> UpstreamError:
     return UpstreamError(_BAD_GATEWAY, f"cannot reach upstream {host} ({type(error).__name__})")
 
 
+def _too_large(host: str) -> UpstreamError:
+    return UpstreamError(_BAD_GATEWAY, f"upstream {host} answered with more than 16 MiB")
+
+
+async def _read_capped(response: httpx.Response, host: str) -> bytes:
+    """The whole body, decoded, or a 502 past MAX_REPLY_BYTES; the response is closed.
+
+    The cap counts decoded bytes as they arrive, so neither a false Content-Length
+    nor a compressed body can make the gateway hold more (security review M12).
+    """
+    try:
+        declared = response.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > MAX_REPLY_BYTES:
+            raise _too_large(host)
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in response.aiter_bytes():
+            size += len(chunk)
+            if size > MAX_REPLY_BYTES:
+                raise _too_large(host)
+            chunks.append(chunk)
+        return b"".join(chunks)
+    except httpx.HTTPError as error:
+        raise _translate(error, host) from None
+    finally:
+        await response.aclose()
+
+
 def _redirect_error(host: str) -> UpstreamError:
     return UpstreamError(
         _BAD_GATEWAY, f"upstream {host} answered with a redirect; the gateway does not follow it"
@@ -135,14 +164,16 @@ class Upstream:
         return self._client.build_request("POST", self.url, content=body, headers=self._headers)
 
     async def send(self, body: bytes) -> UpstreamReply:
-        """POST `body` and read the whole answer."""
+        """POST `body` and read the whole answer, at most MAX_REPLY_BYTES of it."""
         try:
-            response = await self._client.send(self._request(body))
+            response = await self._client.send(self._request(body), stream=True)
         except httpx.HTTPError as error:
             raise _translate(error, self.host) from None
         if response.is_redirect:
+            await response.aclose()
             raise _redirect_error(self.host)
-        return UpstreamReply(response.status_code, response.content, _content_type(response))
+        content = await _read_capped(response, self.host)
+        return UpstreamReply(response.status_code, content, _content_type(response))
 
     async def open_stream(self, body: bytes) -> UpstreamReply | UpstreamStream:
         """POST `body` for a streamed answer; an error status comes back read, as a reply."""
@@ -154,12 +185,7 @@ class Upstream:
             await response.aclose()
             raise _redirect_error(self.host)
         if response.status_code >= _ERROR_STATUS:
-            try:
-                content = await response.aread()
-            except httpx.HTTPError as error:
-                raise _translate(error, self.host) from None
-            finally:
-                await response.aclose()
+            content = await _read_capped(response, self.host)
             return UpstreamReply(response.status_code, content, _content_type(response))
         return UpstreamStream(response, self.host)
 

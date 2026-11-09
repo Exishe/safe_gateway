@@ -7,6 +7,7 @@ import pytest
 
 from gateway.cloud.providers import ApiShape, Provider
 from gateway.cloud.upstream import (
+    MAX_REPLY_BYTES,
     Upstream,
     UpstreamError,
     UpstreamReply,
@@ -275,3 +276,43 @@ def test_repr_hides_the_key() -> None:
     )
     assert FAKE_KEY not in repr(upstream)
     assert "api.openai.test" in repr(upstream)
+
+
+# ------------------------------------------------------------------ reply size cap (review M12)
+
+MIB = 1024 * 1024
+
+
+def test_the_whole_reply_cap_is_16_mib() -> None:
+    assert MAX_REPLY_BYTES == 16 * MIB
+
+
+async def _pieces(total: int, size: int = 64 * 1024) -> AsyncIterator[bytes]:
+    for start in range(0, total, size):
+        yield b"x" * min(size, total - start)
+
+
+@pytest.mark.parametrize("declared", [True, False])
+def test_a_whole_reply_over_16_mib_is_a_502(*, declared: bool) -> None:
+    total = MAX_REPLY_BYTES + 1
+    content: bytes | AsyncIterator[bytes] = b"x" * total if declared else _pieces(total)
+    answer = httpx.Response(200, content=content)
+    upstream = _upstream(Provider.OLLAMA, "http://127.0.0.1:1/v1", _recording([], answer))
+    with pytest.raises(UpstreamError) as raised:
+        asyncio.run(upstream.send(BODY))
+    assert raised.value.status == 502
+    assert "16 MiB" in str(raised.value)
+
+
+def test_a_whole_reply_of_exactly_16_mib_is_read() -> None:
+    answer = httpx.Response(200, content=_pieces(MAX_REPLY_BYTES))
+    upstream = _upstream(Provider.OLLAMA, "http://127.0.0.1:1/v1", _recording([], answer))
+    assert len(asyncio.run(upstream.send(BODY)).body) == MAX_REPLY_BYTES
+
+
+def test_an_error_reply_while_streaming_is_capped_too() -> None:
+    answer = httpx.Response(500, content=_pieces(MAX_REPLY_BYTES + 1))
+    upstream = _upstream(Provider.OLLAMA, "http://127.0.0.1:1/v1", _recording([], answer))
+    with pytest.raises(UpstreamError) as raised:
+        asyncio.run(upstream.open_stream(BODY))
+    assert raised.value.status == 502

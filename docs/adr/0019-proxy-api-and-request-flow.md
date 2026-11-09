@@ -204,3 +204,27 @@ checker; it allows nothing new.
    request's one mapping, so the schema stays consistent. The model answers
    with placeholder keys, which rehydration restores in the answer text. The
    schema's `name` stays a short token.
+4. **Detection outside the session lock (M12).** `/mask` held `session_lock`
+   across detection, so one slow request on any session stalled every other
+   `/mask` call. Detection reads no mapping; it now runs first, in a worker
+   thread, and the lock is taken only to check the cap below and to mask with
+   the spans found (allocating placeholders and the known-value sweep).
+5. **Entries per session (M12).** A session's mapping holds at most 50,000
+   values (`MAX_SESSION_ENTRIES`). Before masking, under the lock, the gateway
+   bounds what the request can add: one entry per detected span plus one per
+   placeholder-shaped token in the texts (a literal). If the mapping plus that
+   bound would pass the cap, the request is a 413 `session_full` that says to
+   start a new session, and nothing is added. The bound is an upper bound
+   (a property test checks it against what mask really adds), so a session
+   near the cap can be refused a request that would have fitted.
+6. **Whole upstream answers (M12, refines ADR 0020).** A non-streamed answer,
+   and the body of an error status, is read up to 16 MiB of decoded bytes
+   (`MAX_REPLY_BYTES`); past that, or when `Content-Length` declares more, the
+   upstream is closed and the client gets a 502. Streamed answers have no total
+   cap; their lines do.
+7. **Stream lines (M12).** The SSE decoder kept an unfinished line as one
+   string and rescanned it from its start on every chunk: quadratic in the
+   line's length. It now scans each chunk once and keeps the unfinished line as
+   pieces. A line, or an event's joined data, over 1 MiB of decoded text
+   (`MAX_LINE_CHARS`) ends the stream with an error event, as an upstream
+   failure does (decision point 8), and is audited as `upstream_error`.

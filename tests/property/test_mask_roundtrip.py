@@ -10,6 +10,7 @@ from gateway.engine.mask import Mapping, mask, mask_messages
 from gateway.engine.placeholders import TOKEN
 from gateway.engine.rehydrate import UnresolvedReason, rehydrate, rehydrate_explained
 from gateway.engine.types import EntityType, Span
+from gateway.proxy.app import new_entries_at_most
 from tests.strategies import any_spans, placeholder_texts, texts_with_identifiers, us_ssns
 
 NO_NER = EngineConfig(ner="off")
@@ -116,3 +117,15 @@ def test_a_detected_value_never_survives_glued_into_another_message(
     masked, mapping = mask_messages(texts, config=NO_NER)
     assert all(ssn not in m for m in masked)
     assert [rehydrate(m, mapping) for m in masked] == [(t, []) for t in texts]
+
+
+@given(st.lists(texts_and_spans(disjoint=False), min_size=1, max_size=3))
+def test_the_proxy_bound_on_new_entries_holds(samples: list[tuple[str, list[Span]]]) -> None:
+    # Review M12: /mask refuses a request before masking when this bound would pass the
+    # session's cap, so it must never be below what mask really adds.
+    texts = [text for text, _ in samples]
+    spans = [found for _, found in samples]
+    mapping = Mapping()
+    for text, found in samples:
+        mask(text, found, mapping)
+    assert len(mapping) <= new_entries_at_most(texts, spans)

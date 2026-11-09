@@ -9,7 +9,7 @@ import hashlib
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -27,9 +27,11 @@ from gateway import __version__
 from gateway.cloud.providers import ApiShape
 from gateway.cloud.upstream import Upstream, UpstreamError, UpstreamReply, UpstreamStream
 from gateway.config import ProxyConfig
-from gateway.engine.detect import EngineConfig
+from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.mask import Mapping, mask_messages
+from gateway.engine.placeholders import TOKEN
 from gateway.engine.session import SessionNotFound, SessionStore
+from gateway.engine.types import Span
 from gateway.proxy.anthropic_shape import ANTHROPIC
 from gateway.proxy.audit import (
     AuditEvent,
@@ -38,13 +40,13 @@ from gateway.proxy.audit import (
     NullAuditSink,
     entity_counts,
 )
-from gateway.proxy.detections import Detection, mask_with_detections
+from gateway.proxy.detections import Detection, mask_detected_with_detections
 from gateway.proxy.errors import RequestRejected, invalid
 from gateway.proxy.guards import LocalOnlyGuard
 from gateway.proxy.openai_shape import OPENAI
 from gateway.proxy.payload import choose_model, encode_json, parse_json_object
 from gateway.proxy.shape import Body, Shape
-from gateway.proxy.sse import SSEDecoder, SSEEvent, encode
+from gateway.proxy.sse import SSEDecoder, SSEEvent, SSELineTooLongError, encode
 from gateway.proxy.ui import UiFiles, has_ui
 
 _log = logging.getLogger(__name__)
@@ -52,6 +54,7 @@ _log = logging.getLogger(__name__)
 CHAT_ROUTE = "/v1/chat/completions"
 MESSAGES_ROUTE = "/v1/messages"
 MAX_SESSIONS = 10_000  # a local client cannot grow the store without bound
+MAX_SESSION_ENTRIES = 50_000
 _ROUTE_FOR_SHAPE = {ApiShape.OPENAI: CHAT_ROUTE, ApiShape.ANTHROPIC: MESSAGES_ROUTE}
 _NO_STORE = {"cache-control": "no-store"}  # answers hold personal data again
 _MASK_FIELDS = frozenset({"text", "texts", "session_id"})
@@ -133,6 +136,22 @@ def _require_json(request: Request) -> None:
     if content_type != "application/json":
         msg = "Content-Type must be application/json"
         raise RequestRejected(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "invalid_request_error", msg)
+
+
+def _detect_texts(texts: Sequence[str], config: EngineConfig) -> list[list[Span]]:
+    return [detect(text, config=config) for text in texts]
+
+
+def new_entries_at_most(texts: Sequence[str], spans: Sequence[list[Span]]) -> int:
+    """How many entries masking can add at most: one per span, one per literal token.
+
+    Mask adds a value for each united span and a `[LITERAL_n]` for each placeholder-
+    shaped token outside them (ADR 0014 point 4); the known-value sweep adds nothing.
+    The bracket mask reads at a seam only disqualifies tokens, so the stretches
+    between spans hold no more tokens than the whole text does.
+    """
+    tokens = sum(1 for text in texts for _ in TOKEN.finditer(text))
+    return sum(len(found) for found in spans) + tokens
 
 
 def _mask_request(texts: list[str], config: EngineConfig) -> tuple[list[str], Mapping]:
@@ -292,8 +311,13 @@ class _Gateway:
         try:
             _require_json(request)
             texts, session_id = _mask_request_fields(parse_json_object(await request.body()))
+            # Detection takes the time and touches no mapping, so it runs before the
+            # lock; the lock covers only allocating placeholders (review M12).
+            spans = await run_in_threadpool(_detect_texts, texts, self.engine_config)
             async with self.session_lock:
-                session_id, mapping, masked, found = await self._mask_in_session(texts, session_id)
+                session_id, mapping, masked, found = await self._mask_in_session(
+                    texts, spans, session_id
+                )
                 result = {
                     "session_id": session_id,
                     "masked": masked,
@@ -308,7 +332,7 @@ class _Gateway:
         return JSONResponse(result, headers=_NO_STORE)
 
     async def _mask_in_session(
-        self, texts: list[str], session_id: str | None
+        self, texts: list[str], spans: list[list[Span]], session_id: str | None
     ) -> tuple[str, Mapping, list[str], list[list[Detection]]]:
         self.sessions.purge_expired()
         if session_id is None:
@@ -323,8 +347,15 @@ class _Gateway:
                 # Never created under a client's id: it could be someone else's namespace.
                 msg = "no such session; omit session_id to start a new one"
                 raise RequestRejected(404, "not_found", msg) from None
+        if len(mapping) + new_entries_at_most(texts, spans) > MAX_SESSION_ENTRIES:
+            # Refused before anything is added: the session stays as it was (review M12).
+            msg = (
+                f"this session would hold more than {MAX_SESSION_ENTRIES} values; "
+                "start a new session by omitting session_id"
+            )
+            raise RequestRejected(status.HTTP_413_CONTENT_TOO_LARGE, "session_full", msg)
         masked, found = await run_in_threadpool(
-            mask_with_detections, texts, self.engine_config, mapping
+            mask_detected_with_detections, texts, spans, mapping
         )
         if session_id is None:
             session_id = self.sessions.create(mapping)
@@ -376,7 +407,7 @@ class _Relay:
                     yield self._out(self._rewriter.on_event(event))
                 yield self._out(self._rewriter.finish())
                 self._outcome = "forwarded"
-            except UpstreamError as error:
+            except (UpstreamError, SSELineTooLongError) as error:
                 self._outcome = "upstream_error"
                 error_event = self._forward.shape.stream_error(str(error))
                 yield self._out([*self._rewriter.finish(), error_event])
@@ -555,6 +586,7 @@ def create_app(  # noqa: PLR0913  (keyword-only options, each with a safe defaul
         openapi_url=None,
         lifespan=lifespan,
     )
+    app.state.gateway = gateway  # for tests that check how requests share it
     _add_routes(app, gateway, model)
     serve_ui = ui_dir is not None and has_ui(ui_dir)
     if serve_ui and ui_dir is not None:

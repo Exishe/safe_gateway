@@ -1,6 +1,8 @@
+import time
+
 import pytest
 
-from gateway.proxy.sse import SSEDecoder, SSEEvent, encode
+from gateway.proxy.sse import MAX_LINE_CHARS, SSEDecoder, SSEEvent, SSELineTooLongError, encode
 
 
 def _decode(*chunks: bytes) -> list[SSEEvent]:
@@ -75,3 +77,43 @@ def test_encode_round_trips(event: SSEEvent) -> None:
 
 def test_encode_format() -> None:
     assert encode(SSEEvent('{"x":1}', event="ping")) == b'event: ping\ndata: {"x":1}\n\n'
+
+
+# ------------------------------------------------------------------ limits (review M12)
+
+MIB = 1024 * 1024
+
+
+def test_the_line_cap_is_1_mib() -> None:
+    assert MAX_LINE_CHARS == MIB
+
+
+@pytest.mark.parametrize("chunk_size", [MIB + 64, 4096])
+def test_a_line_over_1_mib_is_refused(chunk_size: int) -> None:
+    raw = b"data: " + b"x" * MAX_LINE_CHARS + b"\n\n"
+    chunks = [raw[start : start + chunk_size] for start in range(0, len(raw), chunk_size)]
+    with pytest.raises(SSELineTooLongError):
+        _decode(*chunks)
+
+
+def test_a_line_of_1_mib_passes() -> None:
+    raw = b"data: " + b"x" * (MAX_LINE_CHARS - len("data: ")) + b"\n\n"
+    (event,) = _decode(*(raw[i : i + 4096] for i in range(0, len(raw), 4096)))
+    assert len(event.data) == MAX_LINE_CHARS - len("data: ")
+
+
+def test_an_unterminated_line_over_1_mib_is_refused_without_its_newline() -> None:
+    decoder = SSEDecoder()
+    decoder.feed(b"data: " + b"x" * (MAX_LINE_CHARS - 10))
+    with pytest.raises(SSELineTooLongError):
+        decoder.feed(b"y" * 20)
+
+
+def test_a_long_line_in_small_chunks_is_read_in_linear_time() -> None:
+    # The buffer used to be rescanned from its start on every chunk: quadratic.
+    raw = b"data: " + b"x" * (MAX_LINE_CHARS - 100 - len("data: ")) + b"\n\n"
+    started = time.perf_counter()
+    (event,) = _decode(*(raw[i : i + 1024] for i in range(0, len(raw), 1024)))
+    elapsed = time.perf_counter() - started
+    assert len(event.data) == MAX_LINE_CHARS - 100 - len("data: ")
+    assert elapsed < 1.0, f"{elapsed:.2f}s"
