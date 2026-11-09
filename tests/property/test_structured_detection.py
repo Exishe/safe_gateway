@@ -48,3 +48,34 @@ def test_recognizers_never_crash_on_digit_soup(text: str) -> None:
     for recognizer in (CREDIT_CARD, US_SSN, RU_INN, RU_SNILS, IBAN):
         for span in recognizer.find(text):
             assert 0 <= span.start < span.end <= len(text)
+
+
+# ------------------------------------------------------------------ Task 4
+
+from gateway.engine.recognizers.email import EMAIL  # noqa: E402
+from gateway.engine.recognizers.ip_address import IP_ADDRESS  # noqa: E402
+from gateway.engine.recognizers.phone import PhoneRecognizer  # noqa: E402
+from gateway.engine.recognizers.url_token import URL_WITH_TOKEN  # noqa: E402
+from tests.strategies import emails, ip_addresses, phones, token_urls  # noqa: E402
+
+PHONE = PhoneRecognizer()
+
+
+@given(embedded(emails()))
+def test_every_generated_email_is_found(sample: tuple[str, str]) -> None:
+    assert_found(EMAIL, sample, EntityType.EMAIL)
+
+
+@given(embedded(ip_addresses()))
+def test_every_generated_ip_address_is_found(sample: tuple[str, str]) -> None:
+    assert_found(IP_ADDRESS, sample, EntityType.IP_ADDRESS)
+
+
+@given(embedded(token_urls()))
+def test_every_generated_token_url_is_found(sample: tuple[str, str]) -> None:
+    assert_found(URL_WITH_TOKEN, sample, EntityType.URL_WITH_TOKEN)
+
+
+@given(embedded(phones()))
+def test_every_generated_phone_is_found(sample: tuple[str, str]) -> None:
+    assert_found(PHONE, sample, EntityType.PHONE)

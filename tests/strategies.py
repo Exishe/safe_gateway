@@ -5,6 +5,7 @@ belongs to a real person. Property tests assert that each one is detected.
 """
 
 from faker import Faker
+from hypothesis import assume
 from hypothesis import strategies as st
 
 from gateway.engine.checksums import IBAN_LENGTHS, inn_valid, luhn_valid, snils_valid
@@ -119,3 +120,62 @@ def ibans(draw: st.DrawFn) -> str:
     if draw(st.booleans()):
         return " ".join(compact[i : i + 4] for i in range(0, len(compact), 4))
     return compact
+
+
+# ------------------------------------------------------------------ email, IP, token URLs, phones
+
+import ipaddress  # noqa: E402
+
+import phonenumbers  # noqa: E402
+from phonenumbers import PhoneNumberFormat, PhoneNumberType  # noqa: E402
+
+from gateway.engine.recognizers.phone import DEFAULT_REGIONS  # noqa: E402
+
+EMAILS = [_fake.email() for _ in range(300)] + [_fake.company_email() for _ in range(100)]
+TOKEN_PARAMS = ("token", "access_token", "api_key", "apikey", "key", "sig", "signature")
+TOKEN_PARAMS += ("auth", "password", "secret", "session", "refresh_token", "X-Amz-Signature")
+
+
+def emails() -> st.SearchStrategy[str]:
+    return st.sampled_from(EMAILS)
+
+
+def ip_addresses() -> st.SearchStrategy[str]:
+    # The unspecified address (0.0.0.0, ::) identifies no one.
+    return (
+        st.ip_addresses()
+        .filter(lambda ip: not ip.is_unspecified)
+        .map(lambda ip: str(ipaddress.ip_address(ip)))
+    )
+
+
+@st.composite
+def token_urls(draw: st.DrawFn) -> str:
+    host = draw(st.sampled_from([_fake.domain_name() for _ in range(50)]))
+    path = draw(st.sampled_from(["", "/", "/reset", "/api/v2/files/42", "/s/abc-def"]))
+    secret = draw(st.from_regex(r"[A-Za-z0-9_-]{8,40}", fullmatch=True))
+    param = draw(st.sampled_from(TOKEN_PARAMS))
+    others = draw(st.lists(st.sampled_from(["id=7", "lang=en", "page=2"]), max_size=2))
+    query = "&".join([*others[:1], f"{param}={secret}", *others[1:]])
+    return f"{draw(st.sampled_from(['https', 'http']))}://{host}{path}?{query}"
+
+
+_PHONE_FORMATS = (PhoneNumberFormat.E164, PhoneNumberFormat.INTERNATIONAL)
+_PHONE_FORMATS += (PhoneNumberFormat.NATIONAL,)
+
+
+@st.composite
+def phones(draw: st.DrawFn) -> str:
+    region = draw(st.sampled_from(DEFAULT_REGIONS))
+    kind = draw(st.sampled_from([PhoneNumberType.MOBILE, PhoneNumberType.FIXED_LINE]))
+    example = phonenumbers.example_number_for_type(region, kind)
+    assume(example is not None)
+    assert example is not None  # for the type checker
+    national = str(example.national_number)
+    tail = draw(_digits(4))
+    number = phonenumbers.parse(f"+{example.country_code}{national[:-4]}{tail}", None)
+    if not phonenumbers.is_valid_number(number):
+        number = example
+    text = phonenumbers.format_number(number, draw(st.sampled_from(_PHONE_FORMATS)))
+    # phonenumbers reads Arabic-Indic and full-width digits; Devanagari is not promised.
+    return with_unicode_digits(text, draw(st.sampled_from(DIGIT_ZEROS[:3])))
