@@ -1,4 +1,4 @@
-"""The `safeguard` command line: `scan` now; `mask`, `serve`, `audit` come with their phases."""
+"""The `safeguard` command line: `scan` and `models`; `mask`, `serve`, `audit` come later."""
 
 import argparse
 import json
@@ -6,6 +6,13 @@ import sys
 from pathlib import Path
 
 from gateway import __version__
+from gateway.cloud.models import (
+    SPACY_MODELS,
+    ModelDownloadError,
+    install_dir,
+    open_client,
+    pull,
+)
 from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.recognizers.gazetteer import load_gazetteer
 from gateway.engine.types import Span
@@ -25,6 +32,15 @@ def _build_parser() -> argparse.ArgumentParser:
     scan.add_argument("file", type=Path)
     scan.add_argument("--json", action="store_true", help="print JSON instead of a table")
     scan.add_argument("--gazetteer", type=Path, help="CSV of names and codenames to always find")
+
+    models = commands.add_parser("models", help="download and list the local NER models")
+    model_commands = models.add_subparsers(dest="models_command", metavar="ACTION")
+    pull_parser = model_commands.add_parser("pull", help="download the pinned models (network)")
+    pull_parser.add_argument(
+        "--only", choices=sorted(SPACY_MODELS), help="pull one language's model only"
+    )
+    model_commands.add_parser("list", help="show which models are installed")
+    models.set_defaults(models_parser=models)
     return parser
 
 
@@ -87,10 +103,48 @@ def _scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _models_list() -> int:
+    print(f"{'LANG':<6}{'MODEL':<18}{'VERSION':<9}{'STATUS':<11}PATH")
+    for lang, spec in SPACY_MODELS.items():
+        path = install_dir(spec)
+        status = "installed" if path.is_dir() else "missing"
+        print(f"{lang:<6}{spec.name:<18}{spec.version:<9}{status:<11}{path}")
+    return 0
+
+
+def _models_pull(only: str | None) -> int:
+    # The one command that reaches the network (ADR 0006): pinned URLs, checked digests.
+    wanted = [SPACY_MODELS[only]] if only else list(SPACY_MODELS.values())
+    with open_client() as client:
+        for spec in wanted:
+            if install_dir(spec).is_dir():
+                print(f"{spec.name} {spec.version}: already installed at {install_dir(spec)}")
+                continue
+            print(f"{spec.name} {spec.version}: downloading {spec.url}", flush=True)
+            try:
+                path = pull(spec, client)
+            except (ModelDownloadError, OSError) as error:
+                print(f"safeguard: {error}", file=sys.stderr)
+                return 1
+            print(f"{spec.name} {spec.version}: verified and installed at {path}")
+    return 0
+
+
+def _models(args: argparse.Namespace) -> int:
+    if args.models_command == "pull":
+        return _models_pull(args.only)
+    if args.models_command == "list":
+        return _models_list()
+    args.models_parser.print_help()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "scan":
         return _scan(args)
+    if args.command == "models":
+        return _models(args)
     parser.print_help()
     return 0
