@@ -46,9 +46,19 @@ with each phase; the threat model gets its full review before the first pilot.
   The gateway shows such placeholders to the user instead of guessing (ADR 0003).
 - Russian and Armenian coverage is weaker than English, and it is measured
   separately.
-- Armenian names, organisations and places are found only through the
-  customer's gazetteer: there is no Armenian NER model until GLiNER
-  (Phase 1c). Structured identifiers in Armenian text are found as usual.
+- Armenian text, and text in any alphabet other than Latin and Cyrillic, goes
+  to a multilingual GLiNER model (ADR 0015) for people, organisations, places,
+  addresses and dates of birth. Its recall on Armenian is not measured: no
+  labelled Armenian dataset exists, and the model was fine-tuned on English,
+  French, German, Spanish, Portuguese and Italian PII only. A spot check on
+  invented text found a full name, a village, a town and a company, but at
+  scores as low as 0.50 (the default threshold), so names can be missed, and
+  a span may take in the next word (the words for "village" or "in the city"
+  after a place name). The
+  customer's gazetteer remains the dependable way to mask known Armenian
+  clients. Plain dates (other than dates of birth) are not labelled by GLiNER,
+  and without `safeguard models pull` Armenian text gets structured
+  identifiers and the gazetteer only, with a warning.
 - The Russian NER model sometimes misses a name at the start of a sentence
   or splits it (observed in Phase 1b testing). Names mid-sentence are found
   more reliably; the gazetteer covers known clients either way.

@@ -49,6 +49,27 @@ With NER off, 1 MB of structured-only scanning takes about 0.5 s.
 Measured by the Phase 1b build agent at commit 84783e2 with an ad-hoc timing
 script (not in the repo); re-measure with a committed script before quoting.
 
+### GLiNER (Phase 1c, measured, not asserted)
+
+Measured 2026-11-09 in the same 4-CPU Linux container, CPU only (torch 2.15.0+cpu,
+gliner 0.2.30, transformers 5.22.2), `urchade/gliner_multi_pii-v1` at commit 1fcf13e,
+engine at commit e6e28e4, windows of 128 words. Whole `detect()`, models loaded and
+warmed first, one timed pass; peak RSS of the process (`ru_maxrss`). Text: seeded Faker
+paragraphs with names and addresses (seed 20261109), about 100 KB of UTF-8 (an Armenian
+letter is 2 bytes, so the Armenian text has about half as many characters). Commands, each
+in a fresh process:
+
+    uv run python -m tools.benchmark_gliner --lang hy
+    uv run python -m tools.benchmark_gliner --lang en
+
+| Text | Config | Models | Load + warm | Per 100 KB | Peak RSS |
+|------|--------|--------|-------------|------------|----------|
+| Armenian (hy_AM) | default (`gliner="auto"`) | GLiNER | 29.9 s | 75.7 s | 2802 MiB |
+| English (en_US) | `gliner="all"` | spaCy en + GLiNER | 19.1 s | 136.4 s | 3475 MiB |
+
+GLiNER is about two orders of magnitude slower than spaCy on the CPU: a 1 MB Armenian
+document would take over 12 minutes. `gliner="all"` is therefore not a default.
+
 
 ## Recall per entity type
 
@@ -186,6 +207,11 @@ does not break down. Read typed recall as the figure for the type itself.
   `ru_core_news_lg` model is installed and used by `detect()`, but it has no recall
   figure here. No number is given for Russian until a labelled Russian dataset with a
   permitted license is found and approved (hard rules 1 and 5).
-- Armenian. Not in any Open PII release either. There is no NER model for it and no
-  figure.
-- GLiNER is not part of the engine yet, so none of the figures above include it.
+- Armenian. Not in any Open PII release either. Since Phase 1c, Armenian text goes to
+  GLiNER (ADR 0015), but no labelled Armenian dataset exists, so there is no recall
+  figure; only throughput is measured (below).
+- The recall figures above were measured before GLiNER joined the engine and do not
+  include it. With the default `gliner="auto"`, GLiNER reads no Latin-script text, so
+  the English figures stand. Hindi and Telugu text (Devanagari, Telugu script) is now
+  routed to GLiNER when NER is on; their rows above were run with NER off and have not
+  been re-measured with GLiNER.
