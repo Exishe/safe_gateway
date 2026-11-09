@@ -9,7 +9,6 @@ Two modes:
 
 import argparse
 import re
-import shlex
 import sys
 import tomllib
 from collections.abc import Iterable
@@ -20,6 +19,8 @@ from typing import Literal
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
+
+from tools.shell import simple_commands
 
 Status = Literal["allowed", "forbidden", "review"]
 _RANK: dict[Status, int] = {"allowed": 0, "review": 1, "forbidden": 2}
@@ -39,7 +40,6 @@ _TEXT_MARKERS: tuple[tuple[tuple[str, ...], Status], ...] = (
     (("redistribution and use in source and binary forms",), "allowed"),
     (("mozilla public license", "2.0"), "allowed"),
 )
-_SHELL_OPERATORS = frozenset({"&&", "||", ";", "|", "&", ";;", "(", ")"})
 _INSTALL_VERBS: tuple[tuple[str, ...], ...] = (
     ("uv", "add"),
     ("uv", "pip", "install"),
@@ -211,34 +211,6 @@ def check(dists: Iterable[DistInfo], policy: Policy) -> list[str]:
     return problems
 
 
-def _tokens(command: str) -> list[str]:
-    try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-        lexer.whitespace_split = True
-        return list(lexer)
-    except ValueError:
-        return command.split()
-
-
-def _normalise_program(token: str) -> str:
-    base = token.rsplit("/", 1)[-1]
-    if re.fullmatch(r"python[\d.]*", base):
-        return "python"
-    if re.fullmatch(r"pip[\d.]*", base):
-        return "pip"
-    return token
-
-
-def _simple_commands(tokens: list[str]) -> list[list[str]]:
-    commands: list[list[str]] = [[]]
-    for token in tokens:
-        if token in _SHELL_OPERATORS:
-            commands.append([])
-        else:
-            commands[-1].append(_normalise_program(token))
-    return [c for c in commands if c]
-
-
 def _install_arguments(command: list[str]) -> list[str]:
     for verb in _INSTALL_VERBS:
         for start in range(len(command) - len(verb) + 1):
@@ -249,7 +221,7 @@ def _install_arguments(command: list[str]) -> list[str]:
 
 def denied_names_in_command(command: str, policy: Policy) -> list[str]:
     denied: set[str] = set()
-    for simple in _simple_commands(_tokens(command)):
+    for simple in simple_commands(command):
         for argument in _install_arguments(simple):
             if argument.startswith("-"):
                 continue

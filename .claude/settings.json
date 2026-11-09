@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(uv run *)",
+      "Bash(uv sync)",
+      "Bash(uv sync *)",
+      "Bash(uv add *)",
+      "Bash(uv lock *)",
+      "Bash(pytest *)",
+      "Bash(git *)",
+      "Bash(gh *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
+      "Bash(wget *)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/bash-guard.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/license-guard.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/secret-scan.sh",
+            "timeout": 60,
+            "statusMessage": "Scanning staged files"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/no-egress.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/test-after-edit.sh",
+            "timeout": 120,
+            "statusMessage": "Running tests for the edited module"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/license-guard.sh",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

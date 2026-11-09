@@ -27,6 +27,8 @@ module-root = ""
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Third-party skill files copied from the user's account; not project code.
+extend-exclude = [".claude/skills"]
 
 [tool.ruff.lint]
 select = ["ALL"]
