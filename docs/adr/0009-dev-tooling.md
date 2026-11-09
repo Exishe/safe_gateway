@@ -36,3 +36,13 @@ secrets and formatting.
 - Contributors set `GITHUB_PAT` in their shell to use the GitHub MCP server.
 - An unknown or LGPL runtime license fails the check until a reviewed
   exception is added to `tools/license_policy.toml` with a reason.
+
+## Amended 2026-11-09
+
+Semgrep is locked in the `audit` group and run with `uv run`. Its newest
+release (1.184.0) pins `mcp` and the OpenTelemetry packages to versions with
+published CVEs, so pip-audit failed. `[tool.uv] override-dependencies` raises
+them to the fixed releases (`mcp` stays below 2). The scan was re-run with the
+overrides and gave the same result. We fix the version rather than ignore the
+CVE in pip-audit, because an ignore list tends to outlive its reason. Remove
+the overrides once Semgrep updates its pins.
