@@ -96,9 +96,7 @@ with each phase; the threat model gets its full review before the first pilot.
   region, nine by default, so a 100 KB directory of about 3,300 contacts takes
   around 3 seconds. Configuring only the regions a customer needs reduces this;
   a single-pass matcher is deferred (ADR 0013).
-- The audit log is tamper-evident, not tamper-proof. The hash chain shows that
-  rows were changed; it cannot stop someone with admin rights from deleting
-  the whole file. Customers should store periodic exports elsewhere.
+- The audit log is tamper-evident, not tamper-proof. See the next section.
 - Pilot installers are unsigned (see [INSTALL.md](INSTALL.md)).
 - The repository guards match names, not behaviour. Code that builds module
   names at run time can get past the no-egress check. CI and code review are
@@ -116,6 +114,52 @@ with each phase; the threat model gets its full review before the first pilot.
 - The commit gate errs towards refusing: a command that runs git and mentions
   `hooksPath` or `--no-verify` outside a commit message is refused, and so are
   all commits while a git alias with `-n` exists.
+
+## What the audit log proves, and what it does not
+
+The audit log (`~/.safeguard/audit.db`, ADR 0021 and 0022) has one row per
+request sent upstream: time, upstream host, model, how many values of each
+type were masked, a sha256 of the masked payload, bytes sent, the upstream
+status, and a sha256 of the session id. It never stores raw or masked text; a
+property test searches every cell and every byte of the file for it. Each row
+is chained to the previous one by a hash and signed with an HMAC under a
+device key kept in the OS keychain.
+
+What `safeguard audit verify` can show, when run with this device's key:
+
+- a row was edited, deleted, moved, or inserted, or comes from another
+  device's log, by someone who did not have the device key. It names the first
+  row affected and why;
+- the newest rows were deleted (an HMACed head record names the newest row);
+- rows removed by retention went through `safeguard audit purge`, which
+  leaves a signed checkpoint and refuses to purge a log that fails
+  verification.
+
+What it cannot show:
+
+- **Someone with the device key and write access can rebuild the chain.** Any
+  program running as the same OS user can usually read the key from the
+  keychain, then rewrite rows and re-sign everything after them. The log then
+  verifies. Tamper evidence holds only against people and programs that cannot
+  get the key.
+- **Deleting the whole file, or putting back an older copy of it, is not
+  detected on this machine.** A new log simply starts. Comparing the chain
+  head in an earlier export with the current log reveals a rollback, so
+  customers should keep periodic exports (`safeguard audit export`) somewhere
+  the user cannot change.
+- **Timestamps come from the local clock**, which the user can change. They are
+  not trusted timestamps.
+- **A third party cannot check the HMACs without the device key**, and holding
+  the key would let them forge rows. Without it they can still recompute every
+  row hash and check the links in an export.
+- Purged rows are overwritten inside the database file, but copies in
+  backups, filesystem snapshots or SSD wear-levelling are outside its reach.
+- If the log is broken, the gateway refuses to write to it, so the proxy
+  should stop sending until the file is moved aside (and kept as evidence).
+
+The log is evidence of what this gateway sent. It does not show what other
+software on the machine sent, or what the user pasted into a cloud service
+directly.
 
 Compliance with GDPR, HIPAA or any other regime remains the customer's
 responsibility. The gateway provides controls and evidence for it.
