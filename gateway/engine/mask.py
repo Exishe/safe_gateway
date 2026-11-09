@@ -1,9 +1,12 @@
 """Replace detected values with placeholders (ADR 0001, ADR 0002)."""
 
+from collections.abc import Iterable, Sequence
 from collections.abc import Mapping as MappingABC
+from dataclasses import dataclass
 
-from gateway.engine.placeholders import CANONICAL, MAX_COUNTER, canonical
-from gateway.engine.types import EntityType
+from gateway.engine.detect import EngineConfig, detect
+from gateway.engine.placeholders import CANONICAL, MAX_COUNTER, TOKEN, canonical
+from gateway.engine.types import EntityType, Span
 
 
 class Mapping:
@@ -72,3 +75,80 @@ class Mapping:
         self._originals.clear()
         self._placeholders.clear()
         self._counters.clear()
+
+
+@dataclass
+class _Region:
+    start: int
+    end: int
+    entity_type: EntityType
+
+
+def _span_regions(text: str, spans: Iterable[Span]) -> list[_Region]:
+    """The spans, overlapping ones united under the first one's type (fail-safe)."""
+    regions: list[_Region] = []
+    for span in sorted(spans, key=lambda s: (s.start, -s.end)):
+        if span.end > len(text):
+            msg = f"span {span.start}..{span.end} outside a text of {len(text)} characters"
+            raise ValueError(msg)
+        if regions and span.start < regions[-1].end:  # touching spans stay apart
+            regions[-1].end = max(regions[-1].end, span.end)
+        else:
+            regions.append(_Region(span.start, span.end, span.entity_type))
+    return regions
+
+
+def _literal_regions(text: str, start: int, end: int) -> list[_Region]:
+    """Placeholder-shaped tokens of text[start:end], an unmasked stretch (ADR 0001 point 4).
+
+    Searched as the stretch will read in the masked text: a placeholder's bracket on
+    each side that borders a masked region. So a label such as `SSN ` before a masked
+    number stays, and nothing that would read as a token after masking slips through.
+    """
+    left = "]" if start > 0 else ""
+    probe = left + text[start:end] + ("[" if end < len(text) else "")
+    offset = start - len(left)
+    return [
+        _Region(m.start() + offset, m.end() + offset, EntityType.LITERAL)
+        for m in TOKEN.finditer(probe, len(left))
+    ]
+
+
+def _regions(text: str, spans: Iterable[Span]) -> list[_Region]:
+    regions: list[_Region] = []
+    cursor = 0
+    for region in _span_regions(text, spans):
+        regions.extend(_literal_regions(text, cursor, region.start))
+        regions.append(region)
+        cursor = region.end
+    regions.extend(_literal_regions(text, cursor, len(text)))
+    return regions
+
+
+def mask(text: str, spans: Iterable[Span], mapping: Mapping | None = None) -> tuple[str, Mapping]:
+    """`text` with each span, and each placeholder-shaped token, replaced by a placeholder.
+
+    A given mapping is extended in place and returned, so several texts can share one.
+    """
+    mapping = Mapping() if mapping is None else mapping
+    pieces: list[str] = []
+    cursor = 0
+    for region in _regions(text, spans):
+        pieces.append(text[cursor : region.start])
+        pieces.append(mapping.placeholder_for(text[region.start : region.end], region.entity_type))
+        cursor = region.end
+    pieces.append(text[cursor:])
+    return "".join(pieces), mapping
+
+
+def mask_messages(
+    texts: Sequence[str], lang: str = "auto", config: EngineConfig | None = None
+) -> tuple[list[str], Mapping]:
+    """Detect and mask each text in order with one mapping (ADR 0002 point 1).
+
+    Numbering follows first appearance across the messages, so resending a
+    conversation gives each value the same placeholder on every turn.
+    """
+    mapping = Mapping()
+    masked = [mask(text, detect(text, lang=lang, config=config), mapping)[0] for text in texts]
+    return masked, mapping

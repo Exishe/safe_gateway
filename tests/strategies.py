@@ -179,3 +179,92 @@ def phones(draw: st.DrawFn) -> str:
     text = phonenumbers.format_number(number, draw(st.sampled_from(_PHONE_FORMATS)))
     # phonenumbers reads Arabic-Indic and full-width digits; Devanagari is not promised.
     return with_unicode_digits(text, draw(st.sampled_from(DIGIT_ZEROS[:3])))
+
+
+# ------------------------------------------------------------------ Phase 2: masking
+
+import itertools  # noqa: E402
+
+from gateway.engine.types import EntityType, Span  # noqa: E402
+
+# Pieces of placeholders and their tolerant forms (ADR 0003), whole and broken, so
+# generated texts keep landing on the edges of the token grammar.
+PLACEHOLDER_FRAGMENTS = (
+    "[PERSON_1]",
+    "[person 1]",
+    "[Person-2]",
+    "PERSON_1",
+    "PERSON 2",
+    "person 1",
+    "[LITERAL_1]",
+    "LITERAL_2",
+    "[DATE_OF_BIRTH_1]",
+    "DATE_OF_BIRTH 3",
+    "SSN_1",
+    "[EMAIL_12]",
+    "[SSN_",
+    "_1]",
+    "PERSON",
+    "DATE",
+    "[",
+    "]",
+    "_",
+    "-",
+    " ",
+    "1",
+    "12",
+    "X",
+    "١",  # Arabic-Indic one
+)
+
+
+def text_pieces() -> st.SearchStrategy[str]:
+    """Arbitrary unicode, placeholder fragments and structured identifiers."""
+    return st.one_of(
+        st.text(max_size=10),
+        st.sampled_from(PLACEHOLDER_FRAGMENTS),
+        credit_cards(),
+        us_ssns(),
+        ibans(),
+        emails(),
+        phones(),
+    )
+
+
+@st.composite
+def texts_with_identifiers(draw: st.DrawFn) -> str:
+    pieces = draw(st.lists(text_pieces(), max_size=8))
+    return draw(st.sampled_from(["", " ", "\n"])).join(pieces)
+
+
+@st.composite
+def placeholder_texts(draw: st.DrawFn) -> str:
+    """Texts made mostly of placeholder fragments, for rehydrate and streaming."""
+    pieces = st.one_of(st.sampled_from(PLACEHOLDER_FRAGMENTS), st.text(max_size=4))
+    return "".join(draw(st.lists(pieces, max_size=12)))
+
+
+@st.composite
+def any_spans(draw: st.DrawFn, text: str, *, disjoint: bool) -> list[Span]:
+    """Hand-made spans over `text`: disjoint (touching allowed), or anything."""
+    kinds = st.sampled_from(list(EntityType))
+    if not text:
+        return []
+    if disjoint:
+        cuts = sorted(draw(st.sets(st.integers(0, len(text)), max_size=8)))
+        pairs = zip(cuts[0::2], cuts[1::2], strict=False)
+        return [Span(a, b, draw(kinds), 0.9, "test") for a, b in pairs if a < b]
+    starts = draw(st.lists(st.integers(0, len(text) - 1), max_size=5))
+    spans = []
+    for start in starts:
+        end = draw(st.integers(start + 1, len(text)))
+        spans.append(Span(start, end, draw(kinds), 0.9, "test"))
+    return spans
+
+
+@st.composite
+def chunkings(draw: st.DrawFn, text: str) -> list[str]:
+    """`text` cut into consecutive chunks at random points (empty chunks included)."""
+    cuts = sorted(draw(st.lists(st.integers(0, len(text)), max_size=12)))
+    bounds = [0, *cuts, len(text)]
+    return [text[a:b] for a, b in itertools.pairwise(bounds)]

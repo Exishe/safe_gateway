@@ -79,3 +79,118 @@ def test_clear_forgets_everything() -> None:
     mapping.clear()
     assert len(mapping) == 0
     assert mapping.placeholder_for("Boris", EntityType.PERSON) == "[PERSON_1]"
+
+
+def test_an_empty_value_is_refused() -> None:
+    with pytest.raises(ValueError, match="empty"):
+        Mapping().placeholder_for("", EntityType.PERSON)
+
+
+# ------------------------------------------------------------------ mask and mask_messages
+
+from gateway.engine.detect import EngineConfig, detect  # noqa: E402
+from gateway.engine.mask import mask, mask_messages  # noqa: E402
+from gateway.engine.rehydrate import rehydrate  # noqa: E402
+from gateway.engine.types import Span  # noqa: E402
+
+NO_NER = EngineConfig(ner="off")
+SSN_DASHES = "234-56-7890"  # pragma: allowlist secret
+SSN_SPACES = "234 56 7890"  # pragma: allowlist secret
+
+
+def span(start: int, end: int, kind: EntityType = EntityType.PERSON) -> Span:
+    return Span(start, end, kind, 0.9, "test")
+
+
+def mask_detected(text: str) -> tuple[str, Mapping]:
+    return mask(text, detect(text, config=NO_NER))
+
+
+def test_one_value_written_twice_gets_one_placeholder() -> None:
+    masked, mapping = mask_detected(f"SSN {SSN_DASHES}, again {SSN_DASHES}.")
+    assert masked == "SSN [SSN_1], again [SSN_1]."
+    assert mapping.to_dict() == {"[SSN_1]": SSN_DASHES}
+
+
+def test_two_spellings_of_one_value_get_two_placeholders() -> None:
+    masked, mapping = mask_detected(f"SSN {SSN_DASHES} or {SSN_SPACES}.")
+    assert masked == "SSN [SSN_1] or [SSN_2]."
+    assert mapping.original("[SSN_2]") == SSN_SPACES
+
+
+def test_placeholder_shaped_input_is_masked_as_literal() -> None:
+    text = "Earlier answer: [PERSON_1] met PERSON 2 and [literal-1]."
+    masked, mapping = mask(text, [])
+    assert masked == "Earlier answer: [LITERAL_1] met [LITERAL_2] and [LITERAL_3]."
+    assert rehydrate(masked, mapping) == (text, [])
+
+
+def test_lower_case_unbracketed_text_is_left_alone() -> None:
+    masked, mapping = mask("only person 1 of 3 signed", [])
+    assert masked == "only person 1 of 3 signed"
+    assert len(mapping) == 0
+
+
+def test_overlapping_spans_are_united_never_dropped() -> None:
+    masked, mapping = mask("abcdef!", [span(0, 4), span(2, 6, EntityType.EMAIL)])
+    assert masked == "[PERSON_1]!"
+    assert mapping.to_dict() == {"[PERSON_1]": "abcdef"}
+
+
+def test_touching_spans_stay_separate() -> None:
+    masked, _ = mask("abcdef", [span(0, 3), span(3, 6, EntityType.EMAIL)])
+    assert masked == "[PERSON_1][EMAIL_1]"
+
+
+def test_a_label_before_a_masked_value_is_kept() -> None:
+    # "SSN 234" alone would read as a rule 3 token; once the number is masked it cannot.
+    masked, _ = mask_detected(f"SSN {SSN_DASHES} and PHONE 2 here")
+    assert masked == "SSN [SSN_1] and [LITERAL_1] here"
+
+
+def test_a_span_inside_a_placeholder_shaped_token_round_trips() -> None:
+    text = "x [PERSON_1] y"
+    masked, mapping = mask(text, [span(10, 11, EntityType.SSN)])
+    assert masked == "x [PERSON_[SSN_1]] y"
+    assert rehydrate(masked, mapping) == (text, [])
+
+
+@pytest.mark.parametrize(
+    ("text", "spans"),
+    [
+        ("XPERSON_1 y", [span(0, 1, EntityType.CODENAME)]),
+        ("PERSON_12 y", [span(8, 9, EntityType.SSN)]),
+        ("[PERSONx_1]", [span(7, 8, EntityType.CODENAME)]),
+        ("[PERSON x]", [span(8, 9)]),
+    ],
+)
+def test_a_span_next_to_placeholder_like_text_round_trips(text: str, spans: list[Span]) -> None:
+    masked, mapping = mask(text, spans)
+    assert rehydrate(masked, mapping) == (text, [])
+
+
+def test_the_mapping_holds_originals_only() -> None:
+    text = f"Mail anna.petrova@example.org, SSN {SSN_DASHES}."
+    masked, mapping = mask_detected(text)
+    assert masked == "Mail [EMAIL_1], SSN [SSN_1]."
+    assert sorted(mapping.to_dict().values()) == sorted(["anna.petrova@example.org", SSN_DASHES])
+
+
+def test_a_given_mapping_is_extended_and_numbering_continues() -> None:
+    mapping = Mapping()
+    first, _ = mask("Anna", [span(0, 4)], mapping)
+    second, same = mask("Boris and Anna", [span(0, 5), span(10, 14)], mapping)
+    assert same is mapping
+    assert (first, second) == ("[PERSON_1]", "[PERSON_2] and [PERSON_1]")
+
+
+def test_a_span_outside_the_text_raises() -> None:
+    with pytest.raises(ValueError, match="outside"):
+        mask("abc", [span(1, 4)])
+
+
+def test_mask_messages_shares_one_mapping_in_order() -> None:
+    texts = ["Mail anna@example.org", "Again anna@example.org and bob@example.com"]
+    masked, mapping = mask_messages(texts, config=NO_NER)
+    assert masked == ["Mail [EMAIL_1]", "Again [EMAIL_1] and [EMAIL_2]"]
+    assert mapping.original("[EMAIL_2]") == "bob@example.com"
