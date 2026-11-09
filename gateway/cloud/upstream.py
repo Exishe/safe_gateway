@@ -13,7 +13,13 @@ from urllib.parse import quote
 import httpx
 
 from gateway import __version__
-from gateway.cloud.providers import PROVIDERS, ApiShape, Provider, check_base_url
+from gateway.cloud.providers import (
+    PROVIDERS,
+    ApiShape,
+    Provider,
+    check_base_url,
+    is_loopback_host,
+)
 from gateway.secrets import ApiKey
 
 ANTHROPIC_VERSION = "2023-06-01"
@@ -101,9 +107,11 @@ class Upstream:
             raise ValueError(msg)
         self.provider = settings.provider
         self.shape: ApiShape = info.shape
-        self.local = info.local
         self.url = _url(settings)
         self.host = httpx.URL(self.url).host
+        # From where the bytes go, not the provider type: an Ollama on another host
+        # is not local (security review M2). /health and the audit log report this.
+        self.local = is_loopback_host(self.host)
         self._headers = _headers(settings.provider, api_key if info.needs_key else None)
         self._client = httpx.AsyncClient(
             transport=transport,

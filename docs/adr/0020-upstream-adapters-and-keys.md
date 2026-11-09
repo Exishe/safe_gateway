@@ -26,7 +26,11 @@ goal 4), never from files or the environment.
    | `azure_openai` | OpenAI | none, required | `/openai/deployments/{model}/chat/completions?api-version={api_version}` | `api-key` | no |
    | `ollama` | OpenAI | `http://127.0.0.1:11434/v1` | `/chat/completions` | none | yes |
 
-   Ollama is reached through its OpenAI-compatible endpoint. `api_version`
+   Ollama is reached through its OpenAI-compatible endpoint. The `local`
+   column is the provider's usual case; the adapter's `local` flag, which
+   `/health` and the audit log report, is computed from the configured host
+   (true only for a loopback host), so an Ollama on another machine is not
+   reported as local (security review M2, 2026-11-09). `api_version`
    defaults to `2024-10-21` (Azure's GA version); Azure's newer `/openai/v1`
    API is not used yet.
 2. **Only the configured base URL.** The URL is built from the configuration

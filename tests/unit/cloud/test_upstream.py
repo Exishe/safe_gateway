@@ -109,6 +109,25 @@ def test_ollama_sends_no_key_and_is_local() -> None:
     assert upstream.shape is ApiShape.OPENAI
 
 
+@pytest.mark.parametrize(
+    ("provider", "base_url", "local"),
+    [
+        (Provider.OLLAMA, "https://ollama.example.com/v1", False),  # a remote Ollama
+        (Provider.OLLAMA, "http://localhost:11434/v1", True),
+        (Provider.OLLAMA, "http://[::1]:11434/v1", True),
+        (Provider.OPENAI, "http://127.0.0.1:1234/v1", True),  # a local OpenAI-shaped server
+        (Provider.OPENAI, "https://api.openai.test/v1", False),
+    ],
+)
+def test_local_means_the_host_is_this_machine(
+    provider: Provider, base_url: str, *, local: bool
+) -> None:
+    """Security review M2: `local` followed the provider type, so a remote Ollama read as local."""
+    key = None if provider is Provider.OLLAMA else ApiKey(FAKE_KEY)
+    upstream = _upstream(provider, base_url, _recording([]), key=key)
+    assert upstream.local is local
+
+
 def test_provider_that_needs_a_key_refuses_to_start_without_one() -> None:
     with pytest.raises(ValueError, match="keychain"):
         _upstream(Provider.OPENAI, "https://api.openai.test/v1", _recording([]))
