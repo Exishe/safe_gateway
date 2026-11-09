@@ -1,0 +1,42 @@
+# License policy for code that ships with SafeGuard Gateway (hard rule 1).
+# Applies to the runtime dependency closure of safeguard-gateway, not to dev tools.
+# Matching is case-insensitive.
+
+[allowed]
+# Exact names: SPDX ids, the last part of a "License :: ..." classifier, and
+# common short spellings found in the free-text License field.
+names = [
+    # SPDX
+    "MIT", "MIT-0", "MIT-CMU", "0BSD", "BSD-2-Clause", "BSD-3-Clause",
+    "Apache-2.0", "PSF-2.0", "Python-2.0", "MPL-2.0", "ISC", "Unlicense",
+    "CC0-1.0", "Zlib", "HPND", "CC-BY-4.0",
+    # Classifier names
+    "MIT License", "MIT No Attribution License (MIT-0)", "BSD License",
+    "Apache Software License", "Python Software Foundation License",
+    "Mozilla Public License 2.0 (MPL 2.0)", "ISC License (ISCL)",
+    "The Unlicense (Unlicense)", "Public Domain", "zlib/libpng License",
+    "Historical Permission Notice and Disclaimer (HPND)",
+    "CC0 1.0 Universal (CC0 1.0) Public Domain Dedication",
+    # Free-text spellings
+    "BSD", "BSD 3-Clause", "BSD 2-Clause", "Apache 2.0", "Apache License 2.0",
+    "Apache License, Version 2.0", "Apache Software License 2.0", "PSF", "MPL 2.0",
+]
+
+[forbidden]
+# Substrings. Checked after [review] so that LGPL is not mistaken for GPL.
+patterns = [
+    "AGPL", "Affero", "GPL", "General Public License", "CC-BY-NC", "NonCommercial",
+    "Non-Commercial", "SSPL", "Server Side Public License", "BUSL", "Business Source",
+]
+
+[review]
+# Substrings that need a human decision before shipping.
+patterns = ["LGPL", "Lesser General Public", "Library General Public"]
+
+[denied]
+# Never allowed, whatever their metadata says (brief, hard rule 1).
+packages = ["pymupdf", "pymupdfb", "pymupdf4llm", "fitz", "pdftext"]
+
+[exceptions]
+# package-name = "who reviewed it, when, and why it is acceptable"
+# Exceptions can only clear "review". They never clear "forbidden".
