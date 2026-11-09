@@ -28,11 +28,12 @@ local-first.
 | Work | ADRs | Status |
 |------|------|--------|
 | Fix 7 Phase 2 red-team findings (`test_leak_hunt_2.py`) | 0014 amendment | running |
-| Model download hardening (M3 marker file, M4 redirects and size cap) | 0006 amendment | running |
+| Model download hardening (M3 marker file, M4 redirects and size cap) | 0006 amendment | merged b1b3015 |
+| Fix 15 leak-hunt 1c findings (`test_leak_hunt_1c.py`) + shape property tests + benchmark re-run | 0016/0023 amendments | running |
 | Phase 3 parsers (pdf, docx, xlsx, txt, eml + redacted write-back) | 0017, 0018 | running |
 | Phase 4 proxy (`safeguard serve`, OpenAI/Anthropic shapes, adapters) | 0019, 0020 | running |
 | Phase 5 audit log (hash chain, HMAC, verify, export, retention) | 0021, 0022 | running |
-| Leak-hunt 1c on the newest engine changes (`test_leak_hunt_1c.py`) | none | running |
+| Leak-hunt 1c on the newest engine changes (`test_leak_hunt_1c.py`) | none | merged 050ff8c (15 strict xfails) |
 
 If an agent's worktree branch has commits but the agent is gone, merge what
 is there and finish the remainder yourself or with a new agent.
