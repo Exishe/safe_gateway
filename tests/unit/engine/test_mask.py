@@ -259,3 +259,12 @@ def test_mask_messages_shares_one_mapping_in_order() -> None:
     masked, mapping = mask_messages(texts, config=NO_NER)
     assert masked == ["Mail [EMAIL_1]", "Again [EMAIL_1] and [EMAIL_2]"]
     assert mapping.original("[EMAIL_2]") == "bob@example.com"
+
+
+@pytest.mark.parametrize(
+    "text", [f"PERSON_1{chr(0xFF12)} and {chr(0x436)}PERSON 2", f"PERSON_1{chr(0x661)}"]
+)
+def test_a_unicode_word_character_beside_upper_case_text_is_not_a_literal(text: str) -> None:
+    masked, mapping = mask(text, [])
+    assert (masked, len(mapping)) == (text, 0)
+    assert rehydrate(masked, mapping) == (text, [])

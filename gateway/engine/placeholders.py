@@ -16,16 +16,28 @@ _NAMES = sorted((t.value for t in EntityType), key=len, reverse=True)  # longest
 _TYPES = "|".join(_NAMES)
 _NUMBER = f"[0-9]{{1,{_COUNTER_DIGITS}}}"
 # A word character or a square bracket next to an unbracketed token disqualifies it.
-# Brackets matter: in masked text the neighbours of an original segment's edges are
-# placeholder brackets, so excluding them means no new token can appear at a seam.
+# Any Unicode word character counts (ADR 0014 point 3): a full-width digit after
+# `PERSON_1` makes another number, not PERSON_1 followed by text. Brackets matter: in
+# masked text the neighbours of an original segment's edges are placeholder brackets,
+# so excluding them means no new token can appear at a seam.
 _EDGE = r"[\w\[\]]"
 
+
+def _any_case(word: str) -> str:
+    """`word` in any ASCII case: PERSON -> [Pp][Ee]... (Unicode IGNORECASE would also
+    take the long s or the Kelvin sign, and the grammar itself stays ASCII)."""
+    return "".join(f"[{c.upper()}{c.lower()}]" if c.isalpha() else re.escape(c) for c in word)
+
+
+_ANY_CASE_TYPES = "|".join(_any_case(name) for name in _NAMES)
+
+# Compiled without re.ASCII so that \w at the edges is Unicode; every other part of the
+# grammar is spelled out in ASCII.
 TOKEN = re.compile(
     # Rules 1 and 2: bracketed, type in any case, `_`, space or `-`.
-    rf"\[(?P<btype>(?i:{_TYPES}))[_ \-](?P<bnum>{_NUMBER})\]"
+    rf"\[(?P<btype>{_ANY_CASE_TYPES})[_ \-](?P<bnum>{_NUMBER})\]"
     # Rule 3: unbracketed, upper-case type only, `_` or space.
-    rf"|(?<!{_EDGE})(?P<utype>{_TYPES})[_ ](?P<unum>{_NUMBER})(?!{_EDGE})",
-    re.ASCII,
+    rf"|(?<!{_EDGE})(?P<utype>{_TYPES})[_ ](?P<unum>{_NUMBER})(?!{_EDGE})"
 )
 
 CANONICAL = re.compile(rf"\[(?P<type>{_TYPES})_(?P<number>[1-9][0-9]{{0,{_COUNTER_DIGITS - 1}}})\]")

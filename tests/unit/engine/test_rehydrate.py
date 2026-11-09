@@ -140,3 +140,45 @@ def test_every_two_chunk_split_matches_rehydrate(mapping: Mapping) -> None:
 
 def test_one_character_chunks_match_rehydrate(mapping: Mapping) -> None:
     assert stream(list(ANSWER), mapping) == rehydrate(ANSWER, mapping)
+
+
+# ------------------------------------------------------------------ Unicode edges (leak hunt 2)
+
+FULLWIDTH_TWO = chr(0xFF12)
+ARABIC_INDIC_ONE = chr(0x661)
+CYRILLIC_ZHE = chr(0x436)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"PERSON_1{FULLWIDTH_TWO} signed",
+        f"{FULLWIDTH_TWO}PERSON_1 signed",
+        f"PERSON 1{ARABIC_INDIC_ONE} signed",
+        f"{CYRILLIC_ZHE}PERSON_1 signed",
+        f"PERSON_1{CYRILLIC_ZHE} signed",
+    ],
+)
+def test_a_unicode_word_character_touching_an_unbracketed_token_blocks_it(
+    mapping: Mapping, text: str
+) -> None:
+    assert rehydrate(text, mapping) == (text, [])
+
+
+def test_the_token_grammar_stays_ascii(mapping: Mapping) -> None:
+    long_s = f"[PER{chr(0x17F)}ON_1]"  # Unicode case folding reads the long s as `s`
+    fullwidth_number = f"[PERSON_{FULLWIDTH_TWO}]"
+    assert rehydrate(f"{long_s} {fullwidth_number}", mapping) == (
+        f"{long_s} {fullwidth_number}",
+        [],
+    )
+
+
+def test_a_non_word_unicode_character_does_not_block(mapping: Mapping) -> None:
+    assert rehydrate("\u00abPERSON_1\u00bb", mapping) == ("\u00abAnna Petrova\u00bb", [])
+
+
+def test_streaming_holds_an_unbracketed_token_for_a_unicode_digit(mapping: Mapping) -> None:
+    text = f"see PERSON_1{FULLWIDTH_TWO} now"
+    assert stream(["see PERSON_1", f"{FULLWIDTH_TWO} now"], mapping) == (text, [])
+    assert stream(list(text), mapping) == rehydrate(text, mapping)

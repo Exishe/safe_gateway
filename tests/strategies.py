@@ -214,6 +214,15 @@ PLACEHOLDER_FRAGMENTS = (
     "1",
     "12",
     "X",
+    # Non-ASCII word characters touching a token (ADR 0014 point 3): a full-width two,
+    # an Arabic-Indic one, a Cyrillic letter, an Armenian letter; and a long s and a
+    # Kelvin sign, which Unicode case folding would read as `s` and `k`.
+    chr(0xFF12),
+    chr(0x661),
+    chr(0x436),
+    chr(0x561),
+    f"[PER{chr(0x17F)}ON_1]",
+    f"[{chr(0x212A)}EY_1]",
     "١",  # Arabic-Indic one
 )
 

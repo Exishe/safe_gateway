@@ -180,7 +180,6 @@ def test_nan_session_ttl_is_refused() -> None:
 # ------------------------------------------------------------------ (c) restore only what was meant
 
 
-@FINDING
 def test_unicode_digit_touching_an_unbracketed_token() -> None:
     """ADR 0014 point 3: rule 3 does not match when a word character touches either end.
     TOKEN is compiled with re.ASCII, so a full-width digit is not a word character to it:
