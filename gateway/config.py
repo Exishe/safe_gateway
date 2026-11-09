@@ -11,6 +11,8 @@ from gateway.cloud.providers import MODEL_NAME, PROVIDERS, Provider, check_base_
 from gateway.engine.types import EntityType
 
 DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024
+# Audit purges below this need `--force` (security review M10); config refuses them.
+MIN_RETENTION_DAYS = 7
 DEFAULT_AZURE_API_VERSION = "2024-10-21"
 
 _TOP_FIELDS = frozenset(
@@ -129,9 +131,14 @@ def _positive_int(data: Mapping[str, object], name: str, default: int) -> int:
 
 
 def _retention_days(data: Mapping[str, object]) -> int | None:
-    if data.get("retention_days") is None:
+    value = data.get("retention_days")
+    if value is None:
         return None
-    return _positive_int(data, "retention_days", 1)
+    if isinstance(value, bool) or not isinstance(value, int) or value < MIN_RETENTION_DAYS:
+        # No override here: a shorter period is a one-off `audit purge --force`.
+        msg = f"'retention_days' must be a whole number of at least {MIN_RETENTION_DAYS}"
+        raise ConfigError(msg)
+    return value
 
 
 def _provider(data: Mapping[str, object]) -> Provider:

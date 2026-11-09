@@ -187,6 +187,18 @@ retention without making the rest unverifiable.
        decision, so the tool does not delete it by default. Purging runs at
        start-up only; a gateway left running for months purges at its next
        start.
+    6. **Security review, 2026-11-09 (M9, M10).** Before the file is created
+       or tightened to 0600, an existing path is checked: a symbolic link, a
+       non-regular file, or a non-empty file that is not an audit log of this
+       schema is refused (`NotAnAuditLog`) and left as it was. The file is
+       opened with `O_NOFOLLOW` and its mode set through the open descriptor.
+       Every directory created on the way is 0700, not only the last.
+       `audit purge --db FILE` needs `--older-than-days`: `config.toml` speaks
+       for the default home's log only. Retention periods under 7 days are
+       refused unless `audit purge --force` is given; `config.toml` cannot set
+       one at all. The period used is recorded by the checkpoint already:
+       `ts_utc` minus `purged_before_utc`. No column was added, so the schema
+       stays at version 1.
 
 ## Consequences
 

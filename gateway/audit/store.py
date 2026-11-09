@@ -17,9 +17,17 @@ from types import TracebackType
 from typing import Self
 
 from gateway.audit.chain import GENESIS_HASH, head_hmac, row_hash, row_hmac
-from gateway.audit.db import SCHEMA_VERSION, AuditLogError, check_schema, read_head
+from gateway.audit.db import (
+    SCHEMA_VERSION,
+    AuditLogError,
+    NotAnAuditLog,
+    check_schema,
+    open_readonly,
+    read_head,
+)
 from gateway.audit.rows import checkpoint_content, format_ts, is_hex64, request_content
 from gateway.audit.verify import VerifyResult, verify_connection
+from gateway.config import MIN_RETENTION_DAYS
 from gateway.engine.session_disk import KeyProvider
 from gateway.secrets import device_key, load_device_key
 
@@ -94,13 +102,49 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+# Windows has no O_NOFOLLOW; the symlink check before opening still applies there.
+_OPEN_FLAGS = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+
+
+def _make_private_dirs(directory: Path) -> None:
+    """Create `directory` and any missing parents, each 0700; existing ones keep their mode."""
+    missing: list[Path] = []
+    current = directory
+    while not current.exists():
+        missing.append(current)
+        current = current.parent
+    for created in reversed(missing):
+        created.mkdir(mode=_DIR_MODE, exist_ok=True)
+        created.chmod(_DIR_MODE)  # mkdir's mode is cut by the umask only, never widened
+
+
+def _check_existing(path: Path) -> None:
+    """Refuse a path that is not ours before changing anything about it (review M9)."""
+    if path.is_symlink():
+        msg = f"{path} is a symbolic link; the audit log must be a regular file"
+        raise NotAnAuditLog(msg)
+    if not path.exists():
+        return
+    if not path.is_file():
+        msg = f"{path} is not a regular file"
+        raise NotAnAuditLog(msg)
+    if path.stat().st_size > 0:
+        open_readonly(path).close()  # NotAnAuditLog for any other file or database
+
+
 def _prepare_file(path: Path) -> None:
     # Created 0600 before SQLite opens it: SQLite would use the umask, and the
     # journal files it makes copy the database file's mode.
-    path.parent.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
-    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, _FILE_MODE)
-    os.close(descriptor)
-    path.chmod(_FILE_MODE)
+    _check_existing(path)
+    _make_private_dirs(path.parent)
+    descriptor = os.open(path, _OPEN_FLAGS, _FILE_MODE)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, _FILE_MODE)  # the file opened, not whatever the path names now
+        else:
+            path.chmod(_FILE_MODE)
+    finally:
+        os.close(descriptor)
 
 
 def _configure(connection: sqlite3.Connection) -> None:
@@ -231,10 +275,19 @@ class AuditLog:
             self._append(content, head_hash)
             return head_id + 1
 
-    def purge(self, *, older_than_days: int) -> PurgeResult:
-        """Delete the oldest rows older than the cutoff behind a checkpoint (ADR 0021 point 9)."""
+    def purge(self, *, older_than_days: int, force: bool = False) -> PurgeResult:
+        """Delete the oldest rows older than the cutoff behind a checkpoint (ADR 0021 point 9).
+
+        The checkpoint's `ts_utc` minus its `purged_before_utc` is the period used.
+        """
         if type(older_than_days) is not int or older_than_days < 1:
             msg = "the retention period must be a whole number of days, at least 1"
+            raise ValueError(msg)
+        if older_than_days < MIN_RETENTION_DAYS and not force:
+            msg = (
+                f"a retention period under {MIN_RETENTION_DAYS} days needs force "
+                f"(--force on the command line)"
+            )
             raise ValueError(msg)
         with self._lock, self._transaction():
             now = self._clock()

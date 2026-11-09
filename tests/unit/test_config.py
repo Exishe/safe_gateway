@@ -156,6 +156,7 @@ def test_key_message_names_the_field_not_the_value(tmp_path: Path) -> None:
         ({"retention_days": "90"}, "retention_days"),
         ({"retention_days": 1.5}, "retention_days"),
         ({"retention_days": -3}, "retention_days"),
+        ({"retention_days": 6}, "retention_days"),  # under the floor (review M10)
         ({"model": ""}, "model"),
         ({"model": 3}, "model"),
         ({"proxy": {"max_body_bytes": 0}}, "max_body_bytes"),

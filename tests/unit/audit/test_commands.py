@@ -14,6 +14,7 @@ from gateway.cli import main
 from gateway.engine.session_disk import InMemoryKeyProvider
 from gateway.secrets import AUDIT_KEY_ID, KeyringKeyProvider
 from tests.audit_support import Clock, all_rows, fill, tamper
+from tests.proxy_fakes import MemoryKeyring
 
 LONG_AGO = datetime(2020, 1, 1, tzinfo=UTC)
 
@@ -221,7 +222,7 @@ def test_purge_refuses_a_config_the_gateway_would_refuse(
     assert len(all_rows(db)) == 3
 
 
-class LeakyKeyring(NoKeyring):
+class LeakyKeyring(MemoryKeyring):
     """A backend whose error message repeats what it was handling."""
 
     def get_password(self, service: str, username: str) -> str | None:
@@ -241,3 +242,26 @@ def test_a_keychain_error_prints_its_type_not_its_message(
     err = capsys.readouterr().err
     assert "secret-material" not in err
     assert "KeyringError" in err
+
+
+def test_purge_under_the_floor_needs_force(db: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["audit", "purge", "--older-than-days", "3"]) == 2
+    assert "--force" in capsys.readouterr().err
+    assert len(all_rows(db)) == 3
+    assert main(["audit", "purge", "--older-than-days", "3", "--force"]) == 0
+    assert [row["kind"] for row in all_rows(db)] == ["checkpoint"]
+
+
+def test_purge_with_db_does_not_read_the_default_homes_config(
+    home: Path, keys: InMemoryKeyProvider, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Security review M9: --db purged another log under the default home's retention."""
+    other = tmp_path / "other" / "audit.db"
+    with AuditLog(other, keys, clock=Clock(now=LONG_AGO)) as log:
+        fill(log, 2)
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.toml").write_text("retention_days = 30\n")
+    assert main(["audit", "purge", "--db", str(other)]) == 2
+    assert "--older-than-days" in capsys.readouterr().err
+    assert len(all_rows(other)) == 2
+    assert main(["audit", "purge", "--db", str(other), "--older-than-days", "30"]) == 0

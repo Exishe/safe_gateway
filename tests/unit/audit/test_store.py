@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import os
 import sqlite3
 import stat
 import threading
@@ -65,6 +66,60 @@ def test_an_existing_file_is_tightened_to_0600(db: Path, keys: InMemoryKeyProvid
     db.chmod(0o644)
     AuditLog(db, keys).close()
     assert mode(db) == 0o600
+
+
+# Security review M9: the file was chmod-ed before anyone checked it was an audit log,
+# symlinks were followed, and parent directories made on the way were left at the umask.
+
+
+def test_a_file_that_is_not_an_audit_log_keeps_its_mode(
+    tmp_path: Path, keys: InMemoryKeyProvider
+) -> None:
+    other = tmp_path / "notes.txt"
+    other.write_text("not a database, and not ours to chmod\n", encoding="utf-8")
+    other.chmod(0o644)
+    with pytest.raises(NotAnAuditLog):
+        AuditLog(other, keys)
+    assert mode(other) == 0o644
+    assert other.read_text(encoding="utf-8").startswith("not a database")
+
+
+def test_another_sqlite_database_keeps_its_mode(tmp_path: Path, keys: InMemoryKeyProvider) -> None:
+    other = tmp_path / "app.db"
+    connection = sqlite3.connect(other)
+    connection.execute("CREATE TABLE t (x INTEGER)")
+    connection.commit()
+    connection.close()
+    other.chmod(0o644)
+    with pytest.raises(NotAnAuditLog):
+        AuditLog(other, keys)
+    assert mode(other) == 0o644
+
+
+def test_a_symlink_is_refused_and_its_target_untouched(
+    tmp_path: Path, keys: InMemoryKeyProvider
+) -> None:
+    target = tmp_path / "elsewhere.db"
+    target.touch()
+    target.chmod(0o644)
+    link = tmp_path / "audit.db"
+    link.symlink_to(target)
+    with pytest.raises(NotAnAuditLog, match="symbolic link"):
+        AuditLog(link, keys)
+    assert mode(target) == 0o644
+    assert target.stat().st_size == 0
+
+
+def test_every_directory_it_creates_is_0700(tmp_path: Path, keys: InMemoryKeyProvider) -> None:
+    tmp_path.chmod(0o755)
+    previous = os.umask(0o022)
+    try:
+        AuditLog(tmp_path / "a" / "b" / "audit.db", keys).close()
+    finally:
+        os.umask(previous)
+    assert mode(tmp_path / "a") == 0o700
+    assert mode(tmp_path / "a" / "b") == 0o700
+    assert mode(tmp_path) == 0o755  # an existing directory keeps its mode
 
 
 def test_the_table_has_the_documented_columns(log: AuditLog, db: Path) -> None:

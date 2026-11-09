@@ -16,7 +16,13 @@ from keyring.errors import KeyringError
 from gateway.audit.db import NotAnAuditLog, default_audit_path, open_readonly
 from gateway.audit.export import build_export, day_range, summary_lines, write_private
 from gateway.audit.pdf import text_pdf
-from gateway.audit.store import AuditChainBroken, AuditLog, DeviceKeyMissing, utc_now
+from gateway.audit.store import (
+    MIN_RETENTION_DAYS,
+    AuditChainBroken,
+    AuditLog,
+    DeviceKeyMissing,
+    utc_now,
+)
 from gateway.audit.verify import VerifyResult, verify_file
 from gateway.config import config_path, load_config
 from gateway.engine.session_disk import KeyProvider
@@ -63,7 +69,14 @@ def register(add_parser: Callable[..., argparse.ArgumentParser]) -> None:
     _add_db(export)
     purge = actions.add_parser("purge", help="delete old rows behind a checkpoint")
     purge.add_argument(
-        "--older-than-days", type=_days, help="default: retention_days in config.toml"
+        "--older-than-days",
+        type=_days,
+        help="default: retention_days in config.toml (required with --db)",
+    )
+    purge.add_argument(
+        "--force",
+        action="store_true",
+        help=f"allow a period under {MIN_RETENTION_DAYS} days",
     )
     _add_db(purge)
     audit.set_defaults(audit_parser=audit)
@@ -137,6 +150,10 @@ def _export(args: argparse.Namespace) -> int:
 
 
 def _purge(args: argparse.Namespace) -> int:
+    if args.db is not None and args.older_than_days is None:
+        # config.toml belongs to the default home's log, not to the file named here.
+        _err("with --db, pass --older-than-days N: config.toml applies to the default log only")
+        return CANNOT
     # The same reader as `safeguard serve`, so both apply the same period.
     days = args.older_than_days or load_config().retention_days
     if days is None:
@@ -151,7 +168,7 @@ def _purge(args: argparse.Namespace) -> int:
         return OK
     with AuditLog(path, default_key_provider()) as log:
         try:
-            result = log.purge(older_than_days=days)
+            result = log.purge(older_than_days=days, force=args.force)
         except AuditChainBroken as error:
             _err(str(error))
             return BROKEN

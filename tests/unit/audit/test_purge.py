@@ -1,14 +1,22 @@
 import sqlite3
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from gateway.audit.rows import COLUMNS, format_ts
-from gateway.audit.store import AuditChainBroken, AuditLog, PurgeResult
+from gateway.audit.store import MIN_RETENTION_DAYS, AuditChainBroken, AuditLog, PurgeResult
 from gateway.audit.verify import Reason
 from gateway.engine.session_disk import InMemoryKeyProvider
-from tests.audit_support import START, Clock, all_rows, payload_sha, record_request, tamper
+from tests.audit_support import (
+    START,
+    Clock,
+    all_rows,
+    fill,
+    payload_sha,
+    record_request,
+    tamper,
+)
 
 
 @pytest.fixture
@@ -102,7 +110,32 @@ def test_an_empty_log_purges_nothing(log: AuditLog, clock: Clock) -> None:
 
 def test_retention_needs_at_least_one_day(log: AuditLog) -> None:
     with pytest.raises(ValueError, match="at least 1"):
-        log.purge(older_than_days=0)
+        log.purge(older_than_days=0, force=True)
+
+
+@pytest.mark.parametrize("days", [1, 6])
+def test_a_period_under_the_floor_needs_force(
+    log: AuditLog, clock: Clock, db: Path, days: int
+) -> None:
+    """Security review M10: one mistyped number could purge all but today's rows."""
+    fill(log, 3)
+    clock.now += timedelta(days=45)
+    with pytest.raises(ValueError, match=f"{MIN_RETENTION_DAYS} days"):
+        log.purge(older_than_days=days)
+    assert len(all_rows(db)) == 3
+    assert log.purge(older_than_days=days, force=True).deleted == 3
+
+
+def test_the_checkpoint_records_the_period_through_its_cutoff(
+    log: AuditLog, clock: Clock, db: Path
+) -> None:
+    fill(log, 2)
+    clock.now += timedelta(days=45)
+    log.purge(older_than_days=30)
+    (checkpoint,) = all_rows(db)
+    made = datetime.fromisoformat(str(checkpoint["ts_utc"]))
+    cutoff = datetime.fromisoformat(str(checkpoint["purged_before_utc"]))
+    assert made - cutoff == timedelta(days=30)
 
 
 def test_only_a_prefix_goes_when_the_clock_stepped_back(
