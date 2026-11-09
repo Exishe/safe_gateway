@@ -73,7 +73,7 @@ goal 4), never from files or the environment.
    model = "gpt-4o-mini"          # optional; required for azure_openai (the deployment)
    api_version = "2024-10-21"     # azure_openai only
    gazetteer = "~/clients.csv"    # optional
-   retention_days = 30            # audit retention, used from Phase 5
+   retention_days = 30            # optional: purge audit rows older than this (default: keep all)
 
    [thresholds]                   # optional, per entity type, 0..1
    PERSON = 0.6

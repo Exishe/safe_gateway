@@ -441,6 +441,7 @@ def _add_routes(app: FastAPI, gateway: _Gateway, model: str | None) -> None:
                 "version": __version__,
                 "provider": upstream.provider.value,
                 "local": upstream.local,
+                "audit": not isinstance(gateway.audit, NullAuditSink),
             }
         )
 

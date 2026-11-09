@@ -11,7 +11,6 @@ from gateway.cloud.providers import MODEL_NAME, PROVIDERS, Provider, check_base_
 from gateway.engine.types import EntityType
 
 DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024
-DEFAULT_RETENTION_DAYS = 30
 DEFAULT_AZURE_API_VERSION = "2024-10-21"
 
 _TOP_FIELDS = frozenset(
@@ -56,7 +55,8 @@ class GatewayConfig:
     model: str | None = None
     api_version: str | None = None
     gazetteer: Path | None = None
-    retention_days: int = DEFAULT_RETENTION_DAYS
+    # Audit rows older than this are purged; None keeps every row (ADR 0021 point 12).
+    retention_days: int | None = None
     thresholds: Mapping[EntityType, float] = field(default_factory=dict)
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
 
@@ -126,6 +126,12 @@ def _positive_int(data: Mapping[str, object], name: str, default: int) -> int:
         msg = f"{name!r} must be a whole number of at least 1"
         raise ConfigError(msg)
     return value
+
+
+def _retention_days(data: Mapping[str, object]) -> int | None:
+    if data.get("retention_days") is None:
+        return None
+    return _positive_int(data, "retention_days", 1)
 
 
 def _provider(data: Mapping[str, object]) -> Provider:
@@ -224,7 +230,7 @@ def parse_config(data: Mapping[str, object]) -> GatewayConfig:
         model=_model(data, provider),
         api_version=_api_version(data, provider),
         gazetteer=_gazetteer(data),
-        retention_days=_positive_int(data, "retention_days", DEFAULT_RETENTION_DAYS),
+        retention_days=_retention_days(data),
         thresholds=_thresholds(data),
         proxy=_proxy(data),
     )

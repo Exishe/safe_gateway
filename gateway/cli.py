@@ -1,4 +1,4 @@
-"""The `safeguard` command line: `scan`, `mask`, `models` and `serve`; `audit` comes later."""
+"""The `safeguard` command line: `scan`, `mask`, `models`, `audit` and `serve`."""
 
 import argparse
 import json
@@ -86,6 +86,11 @@ def _build_parser() -> argparse.ArgumentParser:
     serve = commands.add_parser("serve", help="run the masking proxy on 127.0.0.1")
     serve.add_argument("--host", default=server.LOOPBACK, help="must be 127.0.0.1")
     serve.add_argument("--port", type=int, default=server.DEFAULT_PORT)
+    serve.add_argument(
+        "--no-audit",
+        action="store_true",
+        help="serve without the audit log (for a machine with no OS keychain); not recommended",
+    )
     return parser
 
 
@@ -305,8 +310,14 @@ def _models(args: argparse.Namespace) -> int:
 
 
 def _serve(args: argparse.Namespace) -> int:
+    if args.no_audit:
+        print(
+            "safeguard: warning: --no-audit: no audit log is written, so nothing records "
+            "what this gateway sends upstream.",
+            file=sys.stderr,
+        )
     try:
-        return server.run(host=args.host, port=args.port)
+        return server.run(host=args.host, port=args.port, audit=not args.no_audit)
     except (ValueError, server.StartupError) as error:  # ConfigError and NotLoopback included
         print(f"safeguard: {error}", file=sys.stderr)
         return 2

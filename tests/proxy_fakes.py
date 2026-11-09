@@ -1,12 +1,16 @@
 """A recording, in-process upstream and Faker personal data for the proxy tests."""
 
 import json
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Generator, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+import keyring
 from faker import Faker
+from keyring.backend import KeyringBackend
+from keyring.errors import PasswordDeleteError
 
 from gateway.cloud.providers import Provider
 from gateway.cloud.upstream import Upstream, UpstreamSettings
@@ -170,3 +174,33 @@ class RecordingSink:
 
     def record(self, event: AuditEvent) -> None:
         self.events.append(event)
+
+
+class MemoryKeyring(KeyringBackend):
+    """A keyring backend in a dict, standing in for the OS keychain in `serve` tests."""
+
+    priority = 1  # type: ignore[assignment]  (keyring declares it as a class property)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.store: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service: str, username: str) -> str | None:
+        return self.store.get((service, username))
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        self.store[(service, username)] = password
+
+    def delete_password(self, service: str, username: str) -> None:
+        if self.store.pop((service, username), None) is None:
+            raise PasswordDeleteError(username)
+
+
+@contextmanager
+def keyring_backend(backend: KeyringBackend) -> Generator[KeyringBackend]:
+    previous = keyring.get_keyring()
+    keyring.set_keyring(backend)
+    try:
+        yield backend
+    finally:
+        keyring.set_keyring(previous)

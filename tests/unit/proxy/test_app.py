@@ -45,7 +45,9 @@ def test_health() -> None:
         "version": __version__,
         "provider": "ollama",
         "local": True,
+        "audit": False,  # no sink given: nothing is recorded
     }
+    assert _client(sink=RecordingSink()).get("/health").json()["audit"] is True
 
 
 def test_audit_is_not_implemented_yet() -> None:

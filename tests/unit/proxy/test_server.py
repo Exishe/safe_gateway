@@ -1,12 +1,17 @@
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
+from keyring.backends.fail import Keyring as NoKeyring
 from starlette.testclient import TestClient
 
+from gateway.audit import AuditLog
 from gateway.cloud.providers import Provider
 from gateway.config import ConfigError, GatewayConfig
+from gateway.engine.session_disk import InMemoryKeyProvider
 from gateway.proxy import server
 from gateway.proxy.server import (
     DEFAULT_PORT,
@@ -17,8 +22,11 @@ from gateway.proxy.server import (
     check_host,
     run,
 )
-from gateway.secrets import ApiKey, KeychainError
+from gateway.secrets import AUDIT_KEY_ID, SERVICE, ApiKey, KeychainError, KeyringKeyProvider
+from tests.audit_support import Clock, all_rows, fill, tamper
+from tests.proxy_fakes import MemoryKeyring, keyring_backend
 
+LONG_AGO = datetime(2020, 1, 1, tzinfo=UTC)
 FAKE_KEY = "fake-key-for-serve-0123456789"  # pragma: allowlist secret
 
 
@@ -118,3 +126,89 @@ def test_gazetteer_is_loaded(tmp_path: Path) -> None:
 def test_unreadable_gazetteer_is_a_startup_error(tmp_path: Path) -> None:
     with pytest.raises(StartupError, match="gazetteer"):
         build_app(GatewayConfig(gazetteer=tmp_path / "missing.csv"))
+
+
+# ------------------------------------------------------------------ the audit log at start-up
+
+
+@pytest.fixture(autouse=True)
+def memory_keyring() -> Iterator[MemoryKeyring]:
+    """No test here reaches the developer's real keychain."""
+    with keyring_backend(MemoryKeyring()) as backend:
+        assert isinstance(backend, MemoryKeyring)
+        yield backend
+
+
+@pytest.fixture
+def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    path = tmp_path / "sg"
+    monkeypatch.setenv("SAFEGUARD_HOME", str(path))
+    return path
+
+
+def _served_app(uvicorn_run: Recorder) -> FastAPI:
+    ((app, _),) = uvicorn_run.calls
+    return app
+
+
+def test_serve_writes_the_audit_log_by_default(
+    uvicorn_run: Recorder, home: Path, memory_keyring: MemoryKeyring
+) -> None:
+    assert run() == 0
+    assert (home / "audit.db").is_file()
+    assert (SERVICE, AUDIT_KEY_ID) in memory_keyring.store  # the device key, in the keychain
+    health = TestClient(_served_app(uvicorn_run), base_url="http://127.0.0.1").get("/health")
+    assert health.json()["audit"] is True
+
+
+def test_no_keychain_refuses_to_start_and_names_the_flag(uvicorn_run: Recorder, home: Path) -> None:
+    del home
+    with keyring_backend(NoKeyring()), pytest.raises(StartupError) as raised:
+        run()
+    message = str(raised.value)
+    assert "keychain" in message
+    assert "--no-audit" in message
+    assert uvicorn_run.calls == []
+
+
+def test_no_audit_serves_without_the_keychain_or_a_log(uvicorn_run: Recorder, home: Path) -> None:
+    with keyring_backend(NoKeyring()):
+        assert run(audit=False) == 0
+    assert not (home / "audit.db").exists()
+    health = TestClient(_served_app(uvicorn_run), base_url="http://127.0.0.1").get("/health")
+    assert health.json()["audit"] is False
+
+
+def test_a_log_that_fails_verification_refuses_to_start(uvicorn_run: Recorder, home: Path) -> None:
+    with AuditLog(home / "audit.db", KeyringKeyProvider()) as log:
+        fill(log, 3)
+    tamper(home / "audit.db", "UPDATE audit_log SET bytes_out = 1 WHERE id = 2")
+    with pytest.raises(StartupError, match=r"row 2.*audit verify"):
+        run()
+    assert uvicorn_run.calls == []
+
+
+def test_a_log_from_another_keychain_refuses_to_start(uvicorn_run: Recorder, home: Path) -> None:
+    with AuditLog(home / "audit.db", InMemoryKeyProvider()) as log:
+        fill(log, 1)
+    with pytest.raises(StartupError, match="device key"):
+        run()
+    assert uvicorn_run.calls == []
+
+
+def test_retention_days_is_applied_at_start(uvicorn_run: Recorder, home: Path) -> None:
+    home.mkdir()
+    (home / "config.toml").write_text("retention_days = 30\n", encoding="utf-8")
+    with AuditLog(home / "audit.db", KeyringKeyProvider(), clock=Clock(now=LONG_AGO)) as log:
+        fill(log, 3)
+    assert run() == 0
+    assert [row["kind"] for row in all_rows(home / "audit.db")] == ["checkpoint"]
+    del uvicorn_run
+
+
+def test_without_retention_days_every_row_is_kept(uvicorn_run: Recorder, home: Path) -> None:
+    with AuditLog(home / "audit.db", KeyringKeyProvider(), clock=Clock(now=LONG_AGO)) as log:
+        fill(log, 3)
+    assert run() == 0
+    assert len(all_rows(home / "audit.db")) == 3
+    del uvicorn_run

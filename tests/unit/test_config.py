@@ -46,7 +46,7 @@ def test_missing_file_gives_local_ollama_defaults(
         model=None,
         api_version=None,
         gazetteer=None,
-        retention_days=30,
+        retention_days=None,  # keep every row until the user sets a period (ADR 0021)
         thresholds={},
         proxy=ProxyConfig(),
     )
@@ -153,6 +153,9 @@ def test_key_message_names_the_field_not_the_value(tmp_path: Path) -> None:
         ({"base_url": "https://u:p@api.example.com"}, "base_url"),  # pragma: allowlist secret
         ({"retention_days": 0}, "retention_days"),
         ({"retention_days": True}, "retention_days"),
+        ({"retention_days": "90"}, "retention_days"),
+        ({"retention_days": 1.5}, "retention_days"),
+        ({"retention_days": -3}, "retention_days"),
         ({"model": ""}, "model"),
         ({"model": 3}, "model"),
         ({"proxy": {"max_body_bytes": 0}}, "max_body_bytes"),

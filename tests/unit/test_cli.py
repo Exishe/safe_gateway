@@ -605,20 +605,50 @@ def test_mask_of_other_suffixes_keeps_the_text_path(
 
 # ------------------------------------------------------------------ safeguard serve (Phase 4)
 
+from keyring.backends.fail import Keyring as NoKeyring  # noqa: E402
+
 from gateway.proxy import server  # noqa: E402
+from tests.proxy_fakes import MemoryKeyring, keyring_backend  # noqa: E402
 
 
-def test_serve_passes_host_and_port_to_the_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[tuple[str, int]] = []
+def test_serve_passes_host_port_and_audit_to_the_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, int, bool]] = []
 
-    def fake_run(host: str, port: int) -> int:
-        calls.append((host, port))
+    def fake_run(host: str, port: int, *, audit: bool) -> int:
+        calls.append((host, port, audit))
         return 0
 
     monkeypatch.setattr(server, "run", fake_run)
     assert main(["serve"]) == 0
     assert main(["serve", "--port", "9000"]) == 0
-    assert calls == [("127.0.0.1", 8787), ("127.0.0.1", 9000)]
+    assert main(["serve", "--no-audit"]) == 0
+    assert calls == [
+        ("127.0.0.1", 8787, True),
+        ("127.0.0.1", 9000, True),
+        ("127.0.0.1", 8787, False),
+    ]
+
+
+def test_serve_without_a_keychain_names_no_audit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("SAFEGUARD_HOME", str(tmp_path))
+    started: list[object] = []
+    monkeypatch.setattr(server.uvicorn, "run", lambda *a, **k: started.append((a, k)))
+    with keyring_backend(NoKeyring()):
+        assert main(["serve"]) == 2
+    assert "--no-audit" in capsys.readouterr().err
+    assert started == []
+
+
+def test_serve_no_audit_warns_that_nothing_is_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("SAFEGUARD_HOME", str(tmp_path))
+    monkeypatch.setattr(server.uvicorn, "run", lambda *_a, **_k: None)
+    with keyring_backend(NoKeyring()):
+        assert main(["serve", "--no-audit"]) == 0
+    assert "no audit log" in capsys.readouterr().err
 
 
 def test_serve_refuses_a_non_loopback_host(
@@ -637,5 +667,6 @@ def test_serve_reports_a_missing_key(
     monkeypatch.setenv("SAFEGUARD_HOME", str(tmp_path))
     (tmp_path / "config.toml").write_text('provider = "openai"\n', encoding="utf-8")
     monkeypatch.setattr(server, "read_api_key", lambda _: None)
-    assert main(["serve"]) == 2
+    with keyring_backend(MemoryKeyring()):
+        assert main(["serve"]) == 2
     assert "keyring set safeguard-gateway api-key:openai" in capsys.readouterr().err

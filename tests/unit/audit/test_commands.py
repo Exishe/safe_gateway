@@ -201,3 +201,20 @@ def test_purge_refuses_a_broken_log(db: Path, capsys: pytest.CaptureFixture[str]
     assert main(["audit", "purge", "--older-than-days", "30"]) == 1
     assert "row 1" in capsys.readouterr().err
     assert len(all_rows(db)) == 3
+
+
+def test_purge_reads_the_full_gateway_config(db: Path, home: Path) -> None:
+    (home / "config.toml").write_text(
+        'provider = "ollama"\nretention_days = 30\n\n[proxy]\nmax_body_bytes = 1024\n'
+    )
+    assert main(["audit", "purge"]) == 0
+    assert [row["kind"] for row in all_rows(db)] == ["checkpoint"]
+
+
+def test_purge_refuses_a_config_the_gateway_would_refuse(
+    db: Path, home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (home / "config.toml").write_text("retention_days = 30\nretention_dayz = 1\n")
+    assert main(["audit", "purge"]) == 2
+    assert "retention_dayz" in capsys.readouterr().err
+    assert len(all_rows(db)) == 3

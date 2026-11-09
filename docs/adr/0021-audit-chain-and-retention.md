@@ -96,8 +96,8 @@ retention without making the rest unverifiable.
    update the head, commit.
 
 9. **Retention.** `purge(older_than_days=N)`, N at least 1, from
-   `safeguard audit purge --older-than-days N` or, without the flag, the
-   top-level `retention_days` of `<SAFEGUARD_HOME>/config.toml`. In one
+   `safeguard audit purge --older-than-days N` or, without the flag,
+   `retention_days` from `config.toml` (point 12.5). In one
    transaction:
    1. verify the whole log, and refuse if it is broken, because purging the
       broken part would launder the evidence;
@@ -146,9 +146,47 @@ retention without making the rest unverifiable.
     int` (the new row id). `AuditLogSink` in `gateway/audit/sink.py` wraps it
     for Phase 4's per-request `AuditSink` hook and accepts any
     `Mapping[str, int]` of counts, such as a `Counter` keyed by `EntityType`.
-    Phase 4 is built in parallel, so its exact method name is wired in the
-    integration step. The proxy should call it from a worker thread, since it
-    waits for the disk.
+    It implements the proxy's `record(event)` (point 12). The proxy calls it
+    from a worker thread, since it waits for the disk.
+
+12. **Proxy integration (Phase 4 + 5).** Decided 2026-11-09, without the owner
+    (reversible).
+    1. `AuditLogSink` implements the proxy's `AuditSink.record(event)` (ADR
+       0019). A row is written for every event whose masked payload was handed
+       to the upstream adapter, whatever happened next: answered, upstream error
+       status, timeout or network failure, a stream that broke midway, a client
+       that left. Requests refused before forwarding, `/mask` and session
+       deletes send nothing anywhere and write no row. `session_id` is `""`
+       (the chat routes keep no session), `bytes_out` is the length of the exact
+       body sent, `masked_payload_sha256` its digest, `status` the upstream's own
+       HTTP status whenever one came back (also when the client or the stream
+       left later), 0 when none did. An IPv6 host is stored in brackets.
+    2. **Fail closed while serving.** The row is written after the response
+       (ADR 0019), so a failed write cannot undo the request in flight. Once a
+       write fails, the chat routes answer 503 and forward nothing more until
+       `serve` is restarted; `/mask` keeps working because it sends nothing.
+       No row is written before forwarding: it would need a second write per
+       request and still could not record the outcome.
+    3. **Start-up.** `safeguard serve` opens `<SAFEGUARD_HOME>/audit.db` with
+       the keychain's device key, verifies the whole log (or purges, which
+       verifies first) and refuses to start, before binding, when the keychain
+       is unavailable, the key is missing for a log with rows, or the log fails
+       verification. The message names the cause and `--no-audit`.
+    4. **`--no-audit` is kept**, as an explicit per-run flag, never a
+       `config.toml` setting, so it cannot be left on silently. Without it a
+       machine with no usable OS keychain (a headless Linux box without a
+       Secret Service) could not use the gateway at all, and the masking is
+       worth more than its absence. With it, `serve` prints a warning, writes
+       nothing and never asks the keychain for the device key; `/health` says
+       `"audit": false` and `/audit` answers 404.
+    5. **Retention.** `retention_days` is read through `gateway/config.py`
+       only (the separate reader of point 9 is gone), by `audit purge` and at
+       `serve` start-up. Its default is now **none: every row is kept** until
+       the user sets a period. Phase 4 had defaulted it to 30; a purge cannot
+       be undone, and how long evidence must be kept is the customer's
+       decision, so the tool does not delete it by default. Purging runs at
+       start-up only; a gateway left running for months purges at its next
+       start.
 
 ## Consequences
 

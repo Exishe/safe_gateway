@@ -3,10 +3,11 @@
 Shared by the writer (`store.py`) and the checker (`verify.py`); nothing here writes.
 """
 
-import os
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
+
+from gateway.config import safeguard_home
 
 SCHEMA_VERSION = 1
 TABLES = frozenset({"audit_log", "audit_head"})
@@ -28,8 +29,7 @@ class NotAnAuditLog(AuditLogError):  # noqa: N818  (reads as what happened)
 
 def default_audit_path() -> Path:
     """`<SAFEGUARD_HOME>/audit.db`, with SAFEGUARD_HOME defaulting to `~/.safeguard`."""
-    home = os.environ.get("SAFEGUARD_HOME")
-    return (Path(home) if home else Path.home() / ".safeguard") / "audit.db"
+    return safeguard_home() / "audit.db"
 
 
 def check_schema(connection: sqlite3.Connection) -> bool:

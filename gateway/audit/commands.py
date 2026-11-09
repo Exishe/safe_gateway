@@ -16,9 +16,9 @@ from keyring.errors import KeyringError
 from gateway.audit.db import NotAnAuditLog, default_audit_path, open_readonly
 from gateway.audit.export import build_export, day_range, summary_lines, write_private
 from gateway.audit.pdf import text_pdf
-from gateway.audit.retention import retention_days
 from gateway.audit.store import AuditChainBroken, AuditLog, DeviceKeyMissing, utc_now
 from gateway.audit.verify import VerifyResult, verify_file
+from gateway.config import config_path, load_config
 from gateway.engine.session_disk import KeyProvider
 from gateway.secrets import KeyringKeyProvider, load_device_key
 
@@ -137,12 +137,12 @@ def _export(args: argparse.Namespace) -> int:
 
 
 def _purge(args: argparse.Namespace) -> int:
-    home = default_audit_path().parent
-    days = args.older_than_days or retention_days(home)
+    # The same reader as `safeguard serve`, so both apply the same period.
+    days = args.older_than_days or load_config().retention_days
     if days is None:
         _err(
             "no retention period: pass --older-than-days N or set retention_days "
-            f"in {home / 'config.toml'}"
+            f"in {config_path()}"
         )
         return CANNOT
     path = _path(args)
