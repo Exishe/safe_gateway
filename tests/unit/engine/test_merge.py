@@ -26,6 +26,16 @@ def test_a_fallback_span_keeps_only_what_its_validating_recognizer_left() -> Non
     assert defer([valid, shape], DEFERS, text) == [valid, span(15, 19, 0.85, E.PHONE, "shape")]
 
 
+def test_a_validated_match_inside_a_fallback_does_not_cut_it() -> None:
+    # libphonenumber read "83600-7213" without its "+68": the shape is the better reading.
+    valid = span(4, 14, 0.95, E.PHONE, "valid")
+    shape = span(0, 14, 0.85, E.PHONE, "shape")
+    assert defer([valid, shape], DEFERS, "+68 83600-7213") == [
+        valid,
+        shape,
+    ]  # pragma: allowlist secret
+
+
 def test_a_fallback_span_inside_a_validated_one_is_dropped() -> None:
     valid, shape = span(0, 14, 0.95, E.PHONE, "valid"), span(2, 10, 0.85, E.PHONE, "shape")
     assert defer([valid, shape], DEFERS) == [valid]

@@ -70,6 +70,23 @@ def test_plus_phone_followed_by_a_postcode_drops_the_postcode() -> None:
     assert found(PHONE_SHAPE, text) == ["+99 20 7946 0958"]  # pragma: allowlist secret
 
 
+@pytest.mark.parametrize(
+    ("recognizer", "text", "number"),
+    [
+        (PHONE_SHAPE, "+99 912 345 678 9ab", "+99 912 345 678"),  # pragma: allowlist secret
+        (
+            PHONE_CONTEXT,
+            "Tel: 012.345.6789 01K@example.com",  # pragma: allowlist secret
+            "012.345.6789",  # pragma: allowlist secret
+        ),
+    ],
+)
+def test_a_last_group_glued_to_a_word_is_not_part_of_the_phone(
+    recognizer: Recognizer, text: str, number: str
+) -> None:
+    assert found(recognizer, text) == [number]
+
+
 # ------------------------------------------------------------------ phone, keyword-gated
 
 

@@ -28,6 +28,7 @@ _PLUS = re.compile(rf"(?<![\w+])\+\(?{_DIGITS}")
 # Not inside a word or a "+" number, and not continuing a number ("1.555...").
 _BARE = re.compile(rf"(?<![\w+(])(?<!\d[ .\-/])\(?{_DIGITS}")
 _GROUP = re.compile(r"\d+")
+_WORD = re.compile(r"\w")
 # "phone" may end a word (telephone, smartphone); the rest must start one, so
 # "cancellation" does not read as "cell" and "hotel" not as "tel".
 _KEYWORD = re.compile(
@@ -40,9 +41,12 @@ def _within_digit_limit(text: str, start: int, end: int) -> tuple[int, int]:
     """The longest prefix ending at a group with at most 15 digits.
 
     A number followed by a postcode on the same line ("+99 20 7946 0958 10001")
-    joins it into one run; the trailing groups are dropped, not the phone.
+    joins it into one run; the trailing groups are dropped, not the phone. A last
+    group glued to a word ("01K@example.com") belongs to that word and is dropped too.
     """
     groups = [(start + m.start(), start + m.end()) for m in _GROUP.finditer(text[start:end])]
+    if len(groups) > 1 and end < len(text) and _WORD.match(text, end):
+        groups.pop()
     count, last = 0, 0
     for index, (group_start, group_end) in enumerate(groups):
         count += group_end - group_start

@@ -39,10 +39,13 @@ recognizer, so a validated value keeps its recognizer and score:
    nearest specific keyword names the type; a generic one only gives NATIONAL_ID, so
    "водительское удостоверение" is a driving licence. A keyword is never part of the
    value.
-3. **Fallbacks defer to the validating phone recognizer** (`merge.defer`). Where
-   libphonenumber found "+374 77 123456", the shape "+374 77 123456 0010" keeps only
-   "0010": the validated phone keeps its exact span, and no digit that a rule found is
-   left unmasked (ADR 0013).
+3. **Fallbacks defer to the validating phone recognizer** (`merge.defer`) when it
+   found a phone at the fallback's start. Where libphonenumber found "+374 77 123456",
+   the shape "+374 77 123456 0010" keeps only "0010": the validated phone keeps its
+   exact span, and no digit that a rule found is left unmasked (ADR 0013). A validated
+   match further in ("83600-7213" read without the "+68" before it) read only part of
+   the number, so the shape is kept whole and wins the merge as the longer span. A
+   last digit group glued to a word ("01K@example.com") is not part of a phone.
 4. **Scores.** 0.55 for a card shape is above the default threshold, so it is masked;
    a customer who sees order numbers masked raises the CREDIT_CARD threshold above 0.55
    and keeps Luhn-valid cards (1.0).

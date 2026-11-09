@@ -80,8 +80,14 @@ def defer(
     kept = []
     for span in spans:
         primary = defers_to.get(span.recognizer)
-        gaps = [] if primary is None else covered[primary].gaps(span.start, span.end)
-        if primary is None or gaps == [(span.start, span.end)]:
+        if primary is None:
+            kept.append(span)
+            continue
+        gaps = covered[primary].gaps(span.start, span.end)
+        # Defer only to a validated value at the fallback's start: the fallback ran on past
+        # its end. A validated match further in read only part of it ("83600-7213" without
+        # its "+68"), and the fallback is the better reading.
+        if gaps and gaps[0][0] == span.start:
             kept.append(span)
             continue
         for gap_start, gap_end in gaps:
