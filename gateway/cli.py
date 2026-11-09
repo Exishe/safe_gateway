@@ -1,4 +1,4 @@
-"""The `safeguard` command line: `scan`, `mask` and `models`; `serve`, `audit` come later."""
+"""The `safeguard` command line: `scan`, `mask`, `models` and `serve`; `audit` comes later."""
 
 import argparse
 import json
@@ -23,6 +23,7 @@ from gateway.engine.mask import Mapping, mask
 from gateway.engine.recognizers.gazetteer import load_gazetteer
 from gateway.engine.types import Span
 from gateway.parsers import formats
+from gateway.proxy import server
 
 CONTEXT = 20  # characters shown on each side of a detection
 
@@ -81,6 +82,10 @@ def _build_parser() -> argparse.ArgumentParser:
     model_commands.add_parser("list", help="show which models are installed")
     models.set_defaults(models_parser=models)
     audit_commands.register(commands.add_parser)
+
+    serve = commands.add_parser("serve", help="run the masking proxy on 127.0.0.1")
+    serve.add_argument("--host", default=server.LOOPBACK, help="must be 127.0.0.1")
+    serve.add_argument("--port", type=int, default=server.DEFAULT_PORT)
     return parser
 
 
@@ -299,6 +304,14 @@ def _models(args: argparse.Namespace) -> int:
     return 0
 
 
+def _serve(args: argparse.Namespace) -> int:
+    try:
+        return server.run(host=args.host, port=args.port)
+    except (ValueError, server.StartupError) as error:  # ConfigError and NotLoopback included
+        print(f"safeguard: {error}", file=sys.stderr)
+        return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -310,6 +323,8 @@ def main(argv: list[str] | None = None) -> int:
         return _models(args)
     if args.command == "audit":
         return audit_commands.run(args)
+    if args.command == "serve":
+        return _serve(args)
     parser.print_help()
     return 0
 
