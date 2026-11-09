@@ -194,6 +194,7 @@ def _scrub_sheet(sheet: Worksheet) -> tuple[int, int]:
     # Filter criteria and sort conditions hold cell values; the drop-down range stays.
     sheet.auto_filter = AutoFilter(ref=sheet.auto_filter.ref)
     sheet.scenarios = ScenarioList()  # what-if input values, user names, comments
+    sheet.sheet_properties.codeName = None  # a VBA code name is free text
     sheet.data_validations = DataValidationList()
     sheet.conditional_formatting = ConditionalFormattingList()
     sheet.HeaderFooter = HeaderFooter()
@@ -224,6 +225,7 @@ def _scrub(workbook: Workbook) -> tuple[int, int]:
     workbook.defined_names.clear()
     workbook._external_links = []  # noqa: SLF001
     workbook.loaded_theme = None  # openpyxl writes its default theme instead
+    workbook.code_name = None
     workbook.properties = DocumentProperties(creator="")
     workbook.custom_doc_props = CustomPropertyList()
     return removed, tables

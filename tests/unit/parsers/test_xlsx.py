@@ -126,10 +126,13 @@ def _structures_workbook(tmp_path: Path, fake: Faker) -> tuple[Path, list[str]]:
     header, row_value, criterion, literal, custom_list, style_name, scenario = (
         fake.unique.email() for _ in range(7)
     )
+    code_name = fake.unique.user_name()  # a VBA code name: an identifier, still free text
     workbook = openpyxl.Workbook()
+    workbook.code_name = code_name
     sheet = workbook.active
     assert sheet is not None
     sheet.title = "Data"
+    sheet.sheet_properties.codeName = code_name
     sheet.append([header, "Amount"])
     sheet.append([row_value, 5])
     sheet.append([criterion, 6])
@@ -162,7 +165,8 @@ def _structures_workbook(tmp_path: Path, fake: Faker) -> tuple[Path, list[str]]:
     filtered["A1"].style = style_name
     path = tmp_path / "structures.xlsx"
     workbook.save(path)
-    return path, [header, row_value, criterion, literal, custom_list, style_name, scenario]
+    values = [header, row_value, criterion, literal, custom_list, style_name, scenario]
+    return path, [*values, code_name]
 
 
 def _zip_bytes(path: Path) -> dict[str, bytes]:
