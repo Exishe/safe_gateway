@@ -286,6 +286,17 @@ class AuditLog:
         with self._lock:
             return verify_connection(self._connection, self._key)
 
+    def newest(self, limit: int, before_id: int | None = None) -> list[dict[str, object]]:
+        """Up to `limit` rows, newest first, with ids below `before_id` when given."""
+        with self._lock:
+            cursor = self._connection.execute(
+                "SELECT * FROM audit_log WHERE (:before IS NULL OR id < :before) "
+                "ORDER BY id DESC LIMIT :limit",
+                {"before": before_id, "limit": limit},
+            )
+            names = [column[0] for column in cursor.description]
+            return [dict(zip(names, values, strict=True)) for values in cursor]
+
     def close(self) -> None:
         self._connection.close()
 

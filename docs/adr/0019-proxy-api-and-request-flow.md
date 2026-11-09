@@ -32,7 +32,7 @@ user's browser, can send it requests.
    | `DELETE /session/{id}` | 204, or 404 when there is no such session |
    | `GET /health` | status, version, provider, whether the upstream is local |
    | `GET /v1/models` | the configured model, OpenAI list shape, answered locally |
-   | `GET /audit` | 501 until Phase 5 |
+   | `GET /audit` | recent audit rows (metadata only) and the `verify` result; 404 with `--no-audit` |
 
    There are no OpenAPI or documentation pages.
 3. A chat route forwards only to a provider that speaks its shape (ADR 0020):
@@ -113,10 +113,22 @@ session-delete request, in a worker thread, after the response ends, with:
 route, outcome, status code, provider, upstream host, model, whether it
 streamed, distinct masked values per entity type, unresolved placeholder count,
 SHA-256 of the exact bytes sent upstream and of the exact bytes received,
-start time and duration. No field holds text. The default sink does nothing;
-Phase 5 replaces it with the hash-chained log. A sink that raises is logged by
-exception type and does not change the response, which has already been sent;
-Phase 5 decides whether it also needs a record before forwarding.
+start time and duration, plus the length of the bytes sent upstream, the
+upstream's own status (None when none came back) and whether the upstream is
+local. No field holds text. `create_app`'s default sink does nothing;
+`safeguard serve` passes `AuditLogSink`, the hash-chained log (ADR 0021 point
+12). A sink that raises is logged by exception type and does not change the
+response, which has already been sent; from then on the chat routes answer 503
+and forward nothing (fail closed, ADR 0021 point 12.2).
+
+`GET /audit?limit=N&before_id=ID` (added with Phase 5): rows newest first,
+`limit` from 1 to 500 (default 50), `before_id` to page back, and
+`next_before_id` in the answer while older rows exist. A row shows id, kind,
+time, host, model, entity counts, payload hash, bytes out, status, local, the
+checkpoint fields and `row_hash`; never the session hash or the HMAC. Each
+call also runs `verify` over the whole log and returns its result, so a broken
+log shows as broken. Unknown or out-of-range parameters are a 400. The route
+sits behind the same Host, Origin and loopback guards as every other.
 
 ### Trust boundary on 127.0.0.1
 

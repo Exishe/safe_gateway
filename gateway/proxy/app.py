@@ -29,7 +29,13 @@ from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.mask import Mapping, mask, mask_messages
 from gateway.engine.session import SessionNotFound, SessionStore
 from gateway.proxy.anthropic_shape import ANTHROPIC
-from gateway.proxy.audit import AuditEvent, AuditSink, NullAuditSink, entity_counts
+from gateway.proxy.audit import (
+    AuditEvent,
+    AuditReader,
+    AuditSink,
+    NullAuditSink,
+    entity_counts,
+)
 from gateway.proxy.errors import RequestRejected, invalid
 from gateway.proxy.guards import LocalOnlyGuard
 from gateway.proxy.openai_shape import OPENAI
@@ -45,6 +51,9 @@ MAX_SESSIONS = 10_000  # a local client cannot grow the store without bound
 _ROUTE_FOR_SHAPE = {ApiShape.OPENAI: CHAT_ROUTE, ApiShape.ANTHROPIC: MESSAGES_ROUTE}
 _NO_STORE = {"cache-control": "no-store"}  # answers hold personal data again
 _MASK_FIELDS = frozenset({"text", "texts", "session_id"})
+AUDIT_DEFAULT_LIMIT = 50
+AUDIT_MAX_LIMIT = 500
+_AUDIT_PARAMS = frozenset({"limit", "before_id"})
 AUDIT_FAILED_MESSAGE = (
     "the audit log could not be written, so the gateway forwards nothing more; "
     "run `safeguard audit verify` and restart `safeguard serve`"
@@ -414,6 +423,27 @@ def _mask_request_fields(data: Body) -> tuple[list[str], str | None]:
     return texts, session_id
 
 
+def _whole_number(value: str, name: str, low: int, high: int) -> int:
+    if not value.isascii() or not value.isdigit() or not low <= int(value) <= high:
+        msg = f"{name!r} must be a whole number from {low} to {high}"
+        raise invalid(msg)
+    return int(value)
+
+
+def _audit_params(request: Request) -> tuple[int, int | None]:
+    params = request.query_params
+    unknown = sorted(set(params) - _AUDIT_PARAMS)
+    if unknown:
+        msg = f"unknown parameter {unknown[0]!r}; expected limit and before_id"
+        raise invalid(msg)
+    limit = _whole_number(
+        params.get("limit", str(AUDIT_DEFAULT_LIMIT)), "limit", 1, AUDIT_MAX_LIMIT
+    )
+    before = params.get("before_id")
+    before_id = None if before is None else _whole_number(before, "before_id", 1, 2**53 - 1)
+    return limit, before_id
+
+
 def _add_routes(app: FastAPI, gateway: _Gateway, model: str | None) -> None:
     def chat_route(shape: Shape, route: str) -> Callable[[Request], Any]:
         async def handler(request: Request) -> Response:
@@ -456,12 +486,26 @@ def _add_routes(app: FastAPI, gateway: _Gateway, model: str | None) -> None:
         return JSONResponse({"object": "list", "data": data})
 
     @app.get("/audit")
-    async def audit() -> Response:
-        return _native_error(
-            status.HTTP_501_NOT_IMPLEMENTED,
-            "not_implemented",
-            "the audit log arrives in Phase 5",
-        )
+    async def audit(request: Request) -> Response:
+        reader = gateway.audit
+        if not isinstance(reader, AuditReader):
+            message = "no audit log: the gateway was started with --no-audit"
+            return _native_error(status.HTTP_404_NOT_FOUND, "not_found", message)
+        try:
+            limit, before_id = _audit_params(request)
+        except RequestRejected as error:
+            return _native_error(error.status, error.error_type, error.message)
+        # One more row than asked tells whether an older page exists.
+        rows = await run_in_threadpool(reader.recent, limit + 1, before_id)
+        verification = await run_in_threadpool(reader.verification)
+        page = rows[:limit]
+        more = len(rows) > limit
+        body = {
+            "rows": page,
+            "next_before_id": page[-1]["id"] if more else None,
+            "verification": verification,
+        }
+        return JSONResponse(body, headers=_NO_STORE)
 
 
 def create_app(  # noqa: PLR0913  (keyword-only options, each with a safe default)

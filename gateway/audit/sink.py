@@ -6,6 +6,7 @@ rows: a request refused before forwarding, `/mask` and session deletes send noth
 anywhere, so they leave none.
 """
 
+import json
 from collections.abc import Mapping
 from typing import Self
 
@@ -16,6 +17,21 @@ from gateway.engine.session_disk import KeyProvider
 from gateway.proxy.audit import AuditEvent
 from gateway.secrets import KeyringKeyProvider
 
+# What `GET /audit` shows of a row: no session hash, no HMAC, nothing that is text.
+_SHOWN = (
+    "id",
+    "kind",
+    "ts_utc",
+    "upstream_host",
+    "model",
+    "masked_payload_sha256",
+    "bytes_out",
+    "status",
+    "purged_through_id",
+    "purged_count",
+    "purged_before_utc",
+    "row_hash",
+)
 NO_RESPONSE = 0  # ADR 0021 point 3: no status line came back (network error, timeout)
 
 
@@ -56,8 +72,43 @@ class AuditLogSink:
     def verify(self) -> VerifyResult:
         return self._log.verify()
 
+    def recent(self, limit: int, before_id: int | None) -> list[dict[str, object]]:
+        """Rows newest first, as `GET /audit` shows them (ADR 0019)."""
+        return [_shown(row) for row in self._log.newest(limit, before_id)]
+
+    def verification(self) -> dict[str, object]:
+        result = self._log.verify()
+        return {
+            "ok": result.ok,
+            "rows_checked": result.rows_checked,
+            "first_bad_id": result.first_bad_id,
+            "reason": None if result.reason is None else str(result.reason),
+            "detail": result.detail,
+            "head_id": result.head_id,
+            "head_hash": result.head_hash,
+            "purged_through_id": result.purged_through_id,
+        }
+
     def close(self) -> None:
         self._log.close()
+
+
+def _shown(row: Mapping[str, object]) -> dict[str, object]:
+    # A tampered cell may hold any SQLite type; it is shown as text, never served raw.
+    shown = {
+        name: row[name] if type(row[name]) in (int, str) else repr(row[name])
+        for name in _SHOWN
+        if row.get(name) is not None
+    }
+    if row.get("local") is not None:
+        shown["local"] = row["local"] == 1
+    counts = row.get("entity_counts_json")
+    if isinstance(counts, str):
+        try:
+            shown["entity_counts"] = json.loads(counts)
+        except ValueError:  # an edited row: verification reports it
+            shown["entity_counts"] = None
+    return shown
 
 
 def _plain(counts: Mapping[str, int]) -> dict[str, int]:

@@ -50,12 +50,6 @@ def test_health() -> None:
     assert _client(sink=RecordingSink()).get("/health").json()["audit"] is True
 
 
-def test_audit_is_not_implemented_yet() -> None:
-    response = _client().get("/audit")
-    assert response.status_code == 501
-    assert "Phase 5" in response.json()["error"]["message"]
-
-
 def test_models_lists_the_configured_model() -> None:
     payload = _client().get("/v1/models").json()
     assert payload["object"] == "list"

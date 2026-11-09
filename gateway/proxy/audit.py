@@ -9,7 +9,7 @@ from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from gateway.engine.mask import Mapping as PlaceholderMapping
 from gateway.engine.placeholders import CANONICAL
@@ -37,6 +37,15 @@ class AuditEvent:
 
 class AuditSink(Protocol):
     def record(self, event: AuditEvent) -> None: ...
+
+
+@runtime_checkable
+class AuditReader(Protocol):
+    """A sink that can also show its log, for `GET /audit` (metadata only)."""
+
+    def recent(self, limit: int, before_id: int | None) -> list[dict[str, object]]: ...
+
+    def verification(self) -> dict[str, object]: ...
 
 
 class NullAuditSink:
