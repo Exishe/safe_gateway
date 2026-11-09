@@ -105,6 +105,13 @@ with each phase; the threat model gets its full review before the first pilot.
   boundary against the network and web pages, not against local malware.
 - The proxy forwards text only. Requests with images, files, audio or tool
   calls are refused, not masked (ADR 0019).
+- Within one request, the proxy detects in every message (system prompt and
+  all turns) before masking any, so a value found in one message is also
+  masked where another message of the same request holds it in a form
+  detection alone misses, such as an SSN glued into a file name (verified by
+  `tests/integration/proxy/test_known_values.py`, ADR 0014 amendment 1). A
+  value that detection misses in every message of the request is still sent
+  as written; the mapping does not carry over between requests.
 - `/mask` returns the session's placeholder map to the caller, because the
   extension restores answers itself (ADR 0002 point 2). The map is personal
   data; the caller must keep it in memory and drop it with the session.
@@ -132,10 +139,17 @@ with each phase; the threat model gets its full review before the first pilot.
 ## What the audit log proves, and what it does not
 
 The audit log (`~/.safeguard/audit.db`, ADR 0021 and 0022) has one row per
-request sent upstream: time, upstream host, model, how many values of each
-type were masked, a sha256 of the masked payload, bytes sent, the upstream
-status, and a sha256 of the session id. It never stores raw or masked text; a
-property test searches every cell and every byte of the file for it. Each row
+request `safeguard serve` sends upstream, including requests that ended in an
+upstream error, a timeout, a broken stream or a client that left: time,
+upstream host, model, how many values of each type were masked, a sha256 of
+the masked payload, bytes sent, the upstream status (0 when none came back),
+whether the upstream is on this machine, and a sha256 of the session id (empty
+for chat requests). It never stores raw or masked text; tests search every
+cell and every byte of the file for it, including after real requests through
+the proxy. `serve` refuses to start without the keychain or with a log that
+fails verification, unless started with `--no-audit`, which writes no log at
+all. The row is written after the answer; if a write fails, the proxy
+forwards nothing more until restarted. Each row
 is chained to the previous one by a hash and signed with an HMAC under a
 device key kept in the OS keychain.
 
@@ -168,8 +182,9 @@ What it cannot show:
   row hash and check the links in an export.
 - Purged rows are overwritten inside the database file, but copies in
   backups, filesystem snapshots or SSD wear-levelling are outside its reach.
-- If the log is broken, the gateway refuses to write to it, so the proxy
-  should stop sending until the file is moved aside (and kept as evidence).
+- If the log is broken, the gateway refuses to write to it, and the proxy
+  refuses to start, or stops forwarding, until the file is moved aside (and
+  kept as evidence).
 
 The log is evidence of what this gateway sent. It does not show what other
 software on the machine sent, or what the user pasted into a cloud service
