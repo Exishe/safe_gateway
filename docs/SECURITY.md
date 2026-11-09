@@ -32,6 +32,8 @@ with each phase; the threat model gets its full review before the first pilot.
 | Permission list: only named commands run without a prompt (pytest, ruff, ty, `python -m tools.*`, `safeguard`, uv sync/add/lock, git status/diff/log/show/add/commit, push to `origin claude/*`); `gh gist`, `gh api`, `git -c` and `git push http*` are denied | `.claude/settings.json` |
 | Proxy: refuses to bind anywhere but 127.0.0.1; Host, Origin, content-type and body-size checks before any route; an integration test asserts no Faker value reaches the upstream body | `safeguard serve` start-up, every request, every test run |
 | Bandit, pip-audit, Semgrep, zizmor | CI on every push |
+| Redacted document copies (`safeguard mask FILE -o OUT`, ADR 0018): a DOCX copy keeps only allowlisted elements and attributes per part; XLSX copies drop tables, filter criteria, sort state, scenarios and custom number formats; EML copies keep only From/To/Cc/Subject and the MIME structure; a PDF copy is rebuilt from the masked text; DOCX and XLSX copies are refused if they would hold an unexpected zip member. Tests built with Faker check that no original value is in any zip member's raw bytes, the .eml bytes or the PDF's decompressed streams | every `mask` of a document; every test run |
+| Document input limits: .docx and .xlsx over 200 MB uncompressed or 10,000 zip members are refused before they are opened; malformed XML exits 2 with a reason; OCR temporary files go to an owner-only directory removed after each call | every `mask` of a document |
 | Model downloads (`safeguard models pull`): pinned SHA-256 per file; redirects only over https to a fixed list of hosts; a per-file byte cap; partial downloads deleted; a model counts as installed only with a completion marker for its current pin (ADR 0006, amended) | every `models pull`, `models list` and model load |
 
 ## Limits
@@ -96,6 +98,20 @@ with each phase; the threat model gets its full review before the first pilot.
   and is not found. Reading letters as digits would also turn ordinary words
   into candidates, so this waits for real OCR samples to measure against
   (ADR 0013).
+- A redacted copy of a document reduces exposure; it is not proof that the file
+  is clean. A value the detector missed is copied like any other text. In a
+  DOCX copy, font names and the values of allowed formatting attributes are
+  kept without checking them against their schema types, so a hand-crafted
+  file can still hide text there. Equations, text boxes, images and unknown
+  elements are removed from DOCX copies, and from what the model reads, so the
+  user may need the original for them. XLSX copies keep what openpyxl models
+  unless ADR 0018 lists it as removed (for example font names and sheet
+  protection hashes). The full list is in ADR 0018.
+- The size caps bound what is decompressed, not memory: a document just under
+  200 MB uncompressed can still need several times that in memory to parse.
+- OCR runs Tesseract on the page image through temporary files. They live in
+  an owner-only directory that is removed after each call; if the process is
+  killed, that directory stays behind until the user deletes it.
 - Long unbroken runs of numbers are slow. Every possible group of digits is
   checked for every identifier type, so 100 KB of single-spaced digits takes
   several seconds instead of under one. Ordinary documents are not affected;

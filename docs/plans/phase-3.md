@@ -127,5 +127,5 @@
 
 - Verified: the full gate (ruff format and check, ty, no-egress, licenses, pytest; coverage 94.79%), and `safeguard mask` with NER on generated .docx, .pdf, .xlsx and .eml samples. Each copy was re-opened with python-docx, pypdf, openpyxl and `email`: placeholders present, and no original in the text, the zip members or the raw bytes.
 - The OCR tests ran against Tesseract 5.3.4 (eng, rus). They skip with a reason where Tesseract is not installed.
-- Finding for the engine: 12-digit Maestro numbers are not detected. They are Luhn-valid, and card numbers may have 12 to 19 digits; the card recognizer accepts 13 to 19. Recorded as a strict xfail in `tests/integration/test_document_corpus.py`; the corpus draws only card types the recognizer covers.
+- Finding for the engine: 12-digit Maestro numbers are not detected. They are Luhn-valid, and card numbers may have 12 to 19 digits; the card recognizer accepts 13 to 19. Recorded as a strict xfail in `tests/integration/test_document_corpus.py`; the corpus draws only card types the recognizer covers. Fixed after the security review: a 12-digit number that is Luhn-valid, starts with a Maestro IIN (50, 56-69) and is a whole digit run is now a card; the xfail is removed.
 - Copies are written with mode 0600 (the mode of the temporary file they start as), like the JSON map.

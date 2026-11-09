@@ -67,9 +67,11 @@ Facts checked before deciding (2026-11-09, scratch environment):
      refused rather than silently dropped.
    - DOCX: python-docx opens the package and gives every part's XML. Units are
      the `w:p` elements of the body, headers, footers, footnotes, endnotes and
-     comments, read at the level of `w:t`, `w:delText` and `w:instrText`, so
-     tracked deletions and field codes are masked too. Text inside drawings,
-     pictures and embedded objects is not read; ADR 0018 removes those.
+     comments, read at the level of `w:t`, `w:delText`, `w:instrText` and
+     `w:delInstrText`, so tracked deletions and field codes are masked too.
+     Text is read only through elements on the copy's allowlist (ADR 0018
+     point 2, amended): text inside drawings, pictures, embedded objects,
+     equations or an unknown element is not read, because the copy removes it.
    - XLSX: openpyxl with `data_only=True`, so a formula cell is read as its
      cached value. Every worksheet, row by row: cells joined by `\t`, rows by
      `\n`. Dates are written in ISO form, integral floats without `.0`.
@@ -86,6 +88,12 @@ Facts checked before deciding (2026-11-09, scratch environment):
    whole page when it cannot be matched). Languages are the installed subset of
    `eng`, `rus` and `hye`. When Tesseract is not installed the page is refused
    with that reason: an unread page is never passed off as an empty one.
+   pytesseract writes the page image, and Tesseract its output, as files in
+   the temporary directory. For each call the temporary directory is a new
+   owner-only (0700) directory, removed afterwards even when Tesseract fails
+   (security review M5). Python's `tempfile.tempdir` is process-wide, so OCR
+   calls are serialised by a lock. If the process is killed, the directory is
+   left behind, still owner-only.
 6. **`tools/check_no_egress.py` gives `gateway/parsers/` the engine rules** (no
    network, no `subprocess`, no dynamic code), and forbids `pytesseract`
    everywhere under `gateway/` except `gateway/parsers/ocr.py`. Phase 0 let
