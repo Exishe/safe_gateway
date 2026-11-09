@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 
 from gateway import __version__
+from gateway.cloud import hub
+from gateway.cloud.hub import GLINER_MODEL
 from gateway.cloud.models import (
     SPACY_MODELS,
     ModelDownloadError,
@@ -37,7 +39,7 @@ def _build_parser() -> argparse.ArgumentParser:
     scan.add_argument(
         "--no-ner",
         action="store_true",
-        help="skip names, organisations, places and dates (no model is loaded)",
+        help="skip names, organisations, places and dates (no spaCy or GLiNER model is loaded)",
     )
 
     mask_parser = commands.add_parser(
@@ -65,7 +67,9 @@ def _build_parser() -> argparse.ArgumentParser:
     model_commands = models.add_subparsers(dest="models_command", metavar="ACTION")
     pull_parser = model_commands.add_parser("pull", help="download the pinned models (network)")
     pull_parser.add_argument(
-        "--only", choices=sorted(SPACY_MODELS), help="pull one language's model only"
+        "--only",
+        choices=[*sorted(SPACY_MODELS), "gliner"],
+        help="pull one model only: a spaCy language, or gliner (Armenian and other text)",
     )
     model_commands.add_parser("list", help="show which models are installed")
     models.set_defaults(models_parser=models)
@@ -123,7 +127,10 @@ def _scan(args: argparse.Namespace) -> int:
         print(f"safeguard: cannot read input: {error}", file=sys.stderr)
         return 2
 
-    config = EngineConfig(gazetteer=gazetteer, ner="off" if args.no_ner else "auto")
+    if args.no_ner:
+        config = EngineConfig(gazetteer=gazetteer, ner="off", gliner="off")
+    else:
+        config = EngineConfig(gazetteer=gazetteer)
     spans = detect(text, config=config)
     if args.json:
         _print_json(text, spans)
@@ -181,12 +188,20 @@ def _models_list() -> int:
         path = install_dir(spec)
         status = "installed" if path.is_dir() else "missing"
         print(f"{lang:<6}{spec.name:<18}{spec.version:<9}{status:<11}{path}")
+    path = hub.install_dir(GLINER_MODEL)
+    status = "installed" if path.is_dir() else "missing"
+    print(f"{'other':<6}{GLINER_MODEL.name:<18}{GLINER_MODEL.revision[:7]:<9}{status:<11}{path}")
     return 0
 
 
 def _models_pull(only: str | None) -> int:
     # The one command that reaches the network (ADR 0006): pinned URLs, checked digests.
-    wanted = [SPACY_MODELS[only]] if only else list(SPACY_MODELS.values())
+    if only is None:
+        wanted = list(SPACY_MODELS.values())
+    elif only == "gliner":
+        wanted = []
+    else:
+        wanted = [SPACY_MODELS[only]]
     with open_client() as client:
         for spec in wanted:
             if install_dir(spec).is_dir():
@@ -199,6 +214,19 @@ def _models_pull(only: str | None) -> int:
                 print(f"safeguard: {error}", file=sys.stderr)
                 return 1
             print(f"{spec.name} {spec.version}: verified and installed at {path}")
+        if only not in {None, "gliner"}:
+            return 0
+        gliner = GLINER_MODEL
+        if hub.install_dir(gliner).is_dir():
+            print(f"{gliner.name}: already installed at {hub.install_dir(gliner)}")
+            return 0
+        print(f"{gliner.name}: downloading {len(gliner.files)} pinned files", flush=True)
+        try:
+            path = hub.pull(gliner, client)
+        except (ModelDownloadError, OSError, ValueError) as error:
+            print(f"safeguard: {error}", file=sys.stderr)
+            return 1
+        print(f"{gliner.name}: verified and installed at {path}")
     return 0
 
 

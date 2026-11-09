@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
+from gateway.engine.gliner_ner import DEFAULT_THRESHOLD, GlinerRecognizer, gliner_model_dir
 from gateway.engine.merge import merge
 from gateway.engine.ner import SPACY_MODEL_DIRS, ModelMissing, SpacyNerRecognizer, model_dir
 from gateway.engine.recognizers.credit_card import CREDIT_CARD
@@ -38,9 +39,10 @@ PRIORITY = (
     "us_ssn",
     "ner_en",
     "ner_ru",
+    "gliner",
 )
 # "auto" routes each paragraph by script (gateway/engine/script.py); the rest force one.
-# Armenian ("hy") and undetermined ("und") text get no NER until Phase 1c.
+# Armenian ("hy") and undetermined ("und") text go to GLiNER (ADR 0014).
 LANGUAGES = ("auto", *SPACY_MODEL_DIRS, "hy", "und")
 
 
@@ -49,7 +51,12 @@ class EngineConfig:
     thresholds: Mapping[EntityType, float] = field(default_factory=dict)
     phone_regions: Sequence[str] = DEFAULT_REGIONS
     gazetteer: Gazetteer | None = None
+    # "off" turns every model off, GLiNER included.
     ner: Literal["auto", "off"] = "auto"
+    # "auto": GLiNER reads text with no spaCy model (hy, und). "all": also en and ru, beside
+    # spaCy, for ADDRESS and DATE_OF_BIRTH, which spaCy does not label.
+    gliner: Literal["auto", "all", "off"] = "auto"
+    gliner_threshold: float = DEFAULT_THRESHOLD
 
 
 def _recognizers(config: EngineConfig) -> list[Recognizer]:
@@ -95,17 +102,47 @@ def _ner_for(lang: str, *, forced: bool) -> SpacyNerRecognizer | None:
     return SpacyNerRecognizer(lang, path)
 
 
-def _ner_spans(text: str, lang: str) -> list[Span]:
+def _gliner(config: EngineConfig) -> GlinerRecognizer | None:
+    """GLiNER, or None (with one warning per process) when its model is not installed."""
+    try:
+        path = gliner_model_dir()
+    except ModelMissing as missing:
+        # Never raised, even for a forced language: without GLiNER the text still gets
+        # every structured recognizer and the gazetteer.
+        if "gliner" not in _WARNED:
+            _WARNED.add("gliner")
+            _log.warning(
+                "%s. Names, organisations, places and addresses in Armenian and other text "
+                "without a spaCy model are not detected.",
+                missing,
+            )
+        return None
+    # Cheap: the model itself is loaded once per process (gliner_ner.load_gliner).
+    return GlinerRecognizer(path, threshold=config.gliner_threshold)
+
+
+def _wants_gliner(lang: str, config: EngineConfig) -> bool:
+    if config.gliner == "all":
+        return True
+    return config.gliner == "auto" and lang not in SPACY_MODEL_DIRS
+
+
+def _ner_spans(text: str, lang: str, config: EngineConfig) -> list[Span]:
     pieces = segments(text) if lang == "auto" else [(0, len(text), lang)]
     spans = []
     for start, end, piece_lang in pieces:
-        recognizer = _ner_for(piece_lang, forced=lang != "auto")
-        if recognizer is None:
-            continue
-        spans.extend(
-            Span(s.start + start, s.end + start, s.entity_type, s.score, s.recognizer)
-            for s in recognizer.find(text[start:end])
-        )
+        recognizers: list[Recognizer] = []
+        spacy = _ner_for(piece_lang, forced=lang != "auto")
+        if spacy is not None:
+            recognizers.append(spacy)
+        gliner = _gliner(config) if _wants_gliner(piece_lang, config) else None
+        if gliner is not None:
+            recognizers.append(gliner)
+        for recognizer in recognizers:
+            spans.extend(
+                Span(s.start + start, s.end + start, s.entity_type, s.score, s.recognizer)
+                for s in recognizer.find(text[start:end])
+            )
     return spans
 
 
@@ -114,9 +151,10 @@ def detect(text: str, lang: str = "auto", config: EngineConfig | None = None) ->
 
     Recognizers, NER included, read a cleaned copy (unicode spaces and dashes unified,
     invisible characters removed); each span is mapped back to the original (ADR 0013).
-    With `lang="auto"` each paragraph goes to the NER model of its script, and a model
-    that is not installed is skipped with one warning per process. Naming a language
-    sends the whole text to that model and raises ModelMissing if it is not installed.
+    With `lang="auto"` each paragraph goes to the NER model of its script (GLiNER for
+    Armenian and other scripts), and a model that is not installed is skipped with one
+    warning per process. Naming a language sends the whole text to that model and raises
+    ModelMissing if its spaCy model is not installed; a missing GLiNER only warns.
     """
     if lang not in LANGUAGES:
         msg = f"unsupported language {lang!r}; expected one of {', '.join(LANGUAGES)}"
@@ -127,6 +165,6 @@ def detect(text: str, lang: str = "auto", config: EngineConfig | None = None) ->
     view = clean_view(text)
     found = [span for recognizer in _recognizers(config) for span in recognizer.find(view.text)]
     if config.ner == "auto":
-        found.extend(_ner_spans(view.text, lang))
+        found.extend(_ner_spans(view.text, lang, config))
     spans = [_as_written(span, view) for span in found]
     return merge(spans, config.thresholds, PRIORITY, text=text)

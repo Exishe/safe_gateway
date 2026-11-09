@@ -92,9 +92,11 @@ def test_scan_of_a_missing_file_exits_2(tmp_path: Path, capsys: pytest.CaptureFi
 import hashlib  # noqa: E402
 import io  # noqa: E402
 import zipfile  # noqa: E402
+from dataclasses import replace  # noqa: E402
 
 import httpx  # noqa: E402
 
+from gateway.cloud.hub import HubFile, HubModelSpec  # noqa: E402
 from gateway.cloud.models import ModelSpec  # noqa: E402
 
 
@@ -105,9 +107,30 @@ def _fake_wheel(name: str) -> bytes:
     return buffer.getvalue()
 
 
+GLINER_REVISION = "0123456789abcdef0123456789abcdef01234567"  # pragma: allowlist secret
+GLINER_FILES = {
+    ("example/gliner", "gliner_config.json"): b'{"model_name": "example/backbone"}',
+    ("example/gliner", "pytorch_model.bin"): b"weights",
+    ("example/backbone", "config.json"): b'{"model_type": "deberta-v2"}',
+    ("example/backbone", "tokenizer_config.json"): b"{}",
+}
+
+
+def _fake_gliner() -> tuple[HubModelSpec, dict[str, bytes]]:
+    files = tuple(
+        HubFile(repo, GLINER_REVISION, path, hashlib.sha256(data).hexdigest())
+        for (repo, path), data in GLINER_FILES.items()
+    )
+    served = {
+        f"https://huggingface.co/{repo}/resolve/{GLINER_REVISION}/{path}": data
+        for (repo, path), data in GLINER_FILES.items()
+    }
+    return HubModelSpec("xx_gliner", GLINER_REVISION, "example/backbone", files), served
+
+
 @pytest.fixture
 def fake_models(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, ModelSpec]:
-    """Two small fake wheels served by a mock transport, under an empty SAFEGUARD_HOME."""
+    """Small fake wheels and GLiNER files served by a mock transport, under an empty home."""
     monkeypatch.setenv("SAFEGUARD_HOME", str(tmp_path / "sg"))
     wheels = {f"https://models.example.org/{n}.whl": _fake_wheel(n) for n in ("xx_en", "xx_ru")}
     specs = {
@@ -117,12 +140,15 @@ def fake_models(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Mo
             ("ru", "xx_ru", "https://models.example.org/xx_ru.whl"),
         )
     }
+    gliner, served = _fake_gliner()
+    payloads = {**wheels, **served}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        payload = wheels.get(str(request.url))
+        payload = payloads.get(str(request.url))
         return httpx.Response(200, content=payload) if payload else httpx.Response(404)
 
     monkeypatch.setattr("gateway.cli.SPACY_MODELS", specs)
+    monkeypatch.setattr("gateway.cli.GLINER_MODEL", gliner)
     monkeypatch.setattr(
         "gateway.cli.open_client", lambda: httpx.Client(transport=httpx.MockTransport(handler))
     )
@@ -137,12 +163,13 @@ def test_models_list_shows_each_model_as_missing_then_installed(
     out = capsys.readouterr().out
     assert "xx_en" in out
     assert "xx_ru" in out
-    assert out.count("missing") == 2
+    assert "xx_gliner" in out
+    assert out.count("missing") == 3
 
     (tmp_path / "sg" / "models" / "spacy" / "xx_en-1.0.0").mkdir(parents=True)
     assert main(["models", "list"]) == 0
     out = capsys.readouterr().out
-    assert out.count("missing") == 1
+    assert out.count("missing") == 2
     assert "installed" in out
     assert str(tmp_path / "sg" / "models" / "spacy" / "xx_en-1.0.0") in out
 
@@ -168,7 +195,40 @@ def test_models_pull_installs_every_model_and_skips_what_is_there(
 
     spacy_dir = tmp_path / "sg" / "models" / "spacy"
     assert sorted(p.name for p in spacy_dir.iterdir()) == ["xx_en-1.0.0", "xx_ru-1.0.0"]
+    gliner_dir = tmp_path / "sg" / "models" / "gliner"
+    assert [p.name for p in gliner_dir.iterdir()] == [f"xx_gliner-{GLINER_REVISION}"]
     assert "already installed" in capsys.readouterr().out
+
+
+@pytest.mark.usefixtures("fake_models")
+def test_models_pull_only_gliner_installs_gliner_only(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["models", "pull", "--only", "gliner"]) == 0
+
+    target = tmp_path / "sg" / "models" / "gliner" / f"xx_gliner-{GLINER_REVISION}"
+    assert (target / "pytorch_model.bin").read_bytes() == b"weights"
+    assert not (tmp_path / "sg" / "models" / "spacy").exists()
+    assert str(target) in capsys.readouterr().out
+
+
+def test_models_pull_reports_a_bad_gliner_file_and_exits_1(
+    fake_models: dict[str, ModelSpec],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    del fake_models
+    good, _ = _fake_gliner()
+    bad = HubModelSpec(
+        good.name,
+        good.revision,
+        good.backbone,
+        (*good.files[:-1], replace(good.files[-1], sha256="0" * 64)),
+    )
+    monkeypatch.setattr("gateway.cli.GLINER_MODEL", bad)
+
+    assert main(["models", "pull", "--only", "gliner"]) == 1
+    assert "SHA-256 mismatch" in capsys.readouterr().err
 
 
 def test_models_pull_reports_a_bad_download_and_exits_1(

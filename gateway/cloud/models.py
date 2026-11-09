@@ -96,19 +96,26 @@ def pull(spec: ModelSpec, client: httpx.Client) -> Path:
 
 
 def _download(spec: ModelSpec, client: httpx.Client, destination: Path) -> None:
+    download_verified(spec.url, spec.sha256, spec.name, client, destination)
+
+
+def download_verified(
+    url: str, sha256: str, label: str, client: httpx.Client, destination: Path
+) -> None:
+    """Stream `url` to `destination`; ModelDownloadError unless its SHA-256 is `sha256`."""
     digest = hashlib.sha256()
     try:
-        with client.stream("GET", spec.url) as response, destination.open("wb") as out:
+        with client.stream("GET", url) as response, destination.open("wb") as out:
             response.raise_for_status()
             for chunk in response.iter_bytes():
                 digest.update(chunk)
                 out.write(chunk)
     except httpx.HTTPError as error:
-        msg = f"{spec.name}: download failed: {error}"
+        msg = f"{label}: download failed: {error}"
         raise ModelDownloadError(msg) from error
-    if digest.hexdigest() != spec.sha256:
+    if digest.hexdigest() != sha256:
         msg = (
-            f"{spec.name}: SHA-256 mismatch, expected {spec.sha256}, got {digest.hexdigest()}; "
+            f"{label}: SHA-256 mismatch, expected {sha256}, got {digest.hexdigest()}; "
             "nothing was installed"
         )
         raise ModelDownloadError(msg)

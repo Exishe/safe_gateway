@@ -240,6 +240,112 @@ def test_a_forced_language_without_its_model_raises() -> None:
         detect(EN, lang="en")
 
 
+# ------------------------------------------------------------------ GLiNER routing (Phase 1c)
+
+from gateway.engine.gliner_ner import GLINER_MODEL_DIR  # noqa: E402
+
+UND = "Ζορβαθ Κουιλλίν από την Αθήνα."  # Greek: no spaCy model, script "und"
+
+
+class RecordingGliner:
+    """Stands in for GlinerRecognizer: each capitalised word is a PERSON; records its input."""
+
+    name = "gliner"
+    calls: list[str]
+    thresholds: list[float]
+
+    def __init__(self, model_dir: Path, *, threshold: float = 0.5) -> None:
+        assert (model_dir / "gliner_config.json").is_file()
+        RecordingGliner.thresholds.append(threshold)
+
+    def find(self, text: str) -> list[Span]:
+        RecordingGliner.calls.append(text)
+        words = re.finditer(r"\b[^\W\d_][^\W\d_]+", text)
+        return [Span(m.start(), m.end(), E.PERSON, 0.8, self.name) for m in words]
+
+
+@pytest.fixture
+def fake_gliner(
+    fake_ner: list[tuple[str, str]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[str]:
+    """fake_ner, plus an installed-looking GLiNER directory and a recording GLiNER."""
+    del fake_ner
+    path = tmp_path / "models" / "gliner" / GLINER_MODEL_DIR
+    path.mkdir(parents=True)
+    (path / "gliner_config.json").write_text('{"encoder_config": {}}', encoding="utf-8")
+    for name in ("pytorch_model.bin", "tokenizer_config.json", "config.json"):
+        (path / name).write_bytes(b"{}")
+    monkeypatch.setattr(RecordingGliner, "calls", [], raising=False)
+    monkeypatch.setattr(RecordingGliner, "thresholds", [], raising=False)
+    monkeypatch.setattr(detect_module, "GlinerRecognizer", RecordingGliner)
+    return RecordingGliner.calls
+
+
+def test_armenian_and_undetermined_paragraphs_go_to_gliner(
+    fake_gliner: list[str], fake_ner: list[tuple[str, str]]
+) -> None:
+    text = f"{MIXED}\n{UND}"
+    spans = detect(text)
+
+    assert fake_ner == [("en", EN), ("ru", RU)]
+    assert fake_gliner == [HY, UND]
+    assert "Զորվաթ" in by_recognizer(text, spans, "gliner")
+    assert "Αθήνα" in by_recognizer(text, spans, "gliner")
+
+
+def test_gliner_all_also_reads_english_and_russian(
+    fake_gliner: list[str], fake_ner: list[tuple[str, str]]
+) -> None:
+    detect(MIXED, config=EngineConfig(gliner="all"))
+    assert fake_ner == [("en", EN), ("ru", RU)]
+    assert fake_gliner == [EN, RU, HY]
+
+
+def test_gliner_threshold_comes_from_the_config(fake_gliner: list[str]) -> None:
+    detect(HY, config=EngineConfig(gliner_threshold=0.35))
+    assert RecordingGliner.thresholds == [0.35]
+    assert fake_gliner == [HY]
+
+
+@pytest.mark.parametrize(
+    "config", [EngineConfig(gliner="off"), EngineConfig(ner="off")], ids=["gliner-off", "ner-off"]
+)
+def test_gliner_off_or_ner_off_loads_no_gliner(
+    fake_gliner: list[str], config: EngineConfig
+) -> None:
+    spans = detect(MIXED, config=config)
+    assert fake_gliner == []
+    assert not [s for s in spans if s.recognizer == "gliner"]
+
+
+@pytest.mark.parametrize("lang", ["hy", "und"])
+def test_a_forced_armenian_or_undetermined_text_goes_to_gliner_whole(
+    fake_gliner: list[str], lang: str
+) -> None:
+    detect(MIXED, lang=lang)
+    assert fake_gliner == [MIXED]
+
+
+def test_a_missing_gliner_model_warns_once_and_never_crashes(
+    fake_ner: list[tuple[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    del fake_ner
+    monkeypatch.setattr(detect_module, "_WARNED", set())
+    config = EngineConfig(gazetteer=Gazetteer({"Զորվաթ Քվիլլին": E.PERSON}))
+
+    with caplog.at_level(logging.WARNING):
+        first = found(HY, config)
+        second = detect(HY, lang="hy", config=config)
+
+    assert ("Զորվաթ Քվիլլին", E.PERSON) in first
+    assert len(second) == len(first)
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "safeguard models pull --only gliner" in warnings[0]
+
+
 # ------------------------------------------------------------------ the real models
 
 
