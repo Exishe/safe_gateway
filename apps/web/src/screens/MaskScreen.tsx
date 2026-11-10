@@ -223,7 +223,7 @@ export function MaskScreen({ state }: { state: GatewayState }) {
   }
 
   async function send() {
-    if (review === null || "error" in review || state.kind !== "ready" || model === "") return;
+    if (review === null || "error" in review || state.kind !== "ready" || model === "" || sessionId === null) return;
     const controller = new AbortController();
     abort.current = controller;
     const sent = review.request;
@@ -233,6 +233,7 @@ export function MaskScreen({ state }: { state: GatewayState }) {
         shapeFor(state.health.provider),
         model,
         sent,
+        sessionId,
         (piece) => {
           setExchange((current) => (current === null ? current : { ...current, answer: current.answer + piece }));
         },
@@ -334,7 +335,8 @@ export function MaskScreen({ state }: { state: GatewayState }) {
               <Info />
               <p className="text-sm">
                 Switched-off values go into your request as written. The gateway checks every request again before it
-                leaves this computer and masks whatever its detectors find, so some may still be masked.
+                leaves this computer: a value this check found is masked again with the same placeholder, and so is
+                anything else its detectors find.
               </p>
             </Alert>
           )}

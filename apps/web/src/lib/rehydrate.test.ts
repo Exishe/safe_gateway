@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { restore } from "./rehydrate";
+import { flag, restore } from "./rehydrate";
+
+describe("flag", () => {
+  // The gateway restored the answer with the session (ADR 0025); what is still
+  // placeholder-shaped, it left as written on purpose (a link, an unknown token).
+  it("restores nothing and flags every placeholder-shaped token", () => {
+    const answer = "Dear Ann Roe, see [x](https://a.invalid/?q=[EMAIL_1]) and [PERSON_99].";
+    const result = flag(answer);
+    expect(result.text).toBe(answer);
+    expect(result.unresolved).toEqual(["[EMAIL_1]", "[PERSON_99]"]);
+    expect(result.parts.some((p) => p.kind === "restored")).toBe(false);
+  });
+
+  it("leaves an answer without placeholders as one text part", () => {
+    expect(flag("Dear Ann Roe.").parts).toEqual([{ kind: "text", text: "Dear Ann Roe." }]);
+  });
+});
 
 const MAP = { "[PERSON_1]": "Ann Roe", "[EMAIL_1]": "ann@roe.test" };
 

@@ -81,6 +81,28 @@ describe("GatewayClient", () => {
     expect(calls[0]?.init?.method).toBe("DELETE");
   });
 
+  it.each([
+    ["openai", "/v1/chat/completions", 'data: {"choices":[{"index":0,"delta":{"content":"Hi [PERSON_1]"}}]}\n\n'],
+    [
+      "anthropic",
+      "/v1/messages",
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi [PERSON_1]"}}\n\n',
+    ],
+  ] as const)("sends the %s chat in its session, as a header and never in the body", async (shape, path, sse) => {
+    const { fetch, calls } = fakeFetch(
+      () => new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } }),
+    );
+    const pieces: string[] = [];
+    await new GatewayClient("", fetch).chat(shape, "m", "Hi [PERSON_1]", "sess-1", (p) => pieces.push(p));
+    expect(calls[0]?.url).toBe(path);
+    expect(new Headers(calls[0]?.init?.headers).get("x-safeguard-session")).toBe("sess-1");
+    // The body is exactly the chat request: no session field rides along in it.
+    const messages = [{ role: "user", content: "Hi [PERSON_1]" }];
+    const body = shape === "anthropic" ? { model: "m", max_tokens: 1024, stream: true, messages } : { model: "m", stream: true, messages };
+    expect(calls[0]?.init?.body).toBe(JSON.stringify(body));
+    expect(pieces.join("")).toBe("Hi [PERSON_1]");
+  });
+
   it("lists the configured model", async () => {
     const { fetch } = fakeFetch(() => json({ object: "list", data: [{ id: "llama3.2" }] }));
     expect(await new GatewayClient("", fetch).models()).toEqual(["llama3.2"]);

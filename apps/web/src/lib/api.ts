@@ -6,6 +6,9 @@ import { type ChatShape, SSEParser, textOf } from "./sse";
 // page is on 127.0.0.1:5173 and calls the gateway across origins, which the gateway
 // allows only with `[proxy] allow_dev_ui = true` in config.toml (ADR 0024).
 
+// The header that names the /mask session of a chat request (gateway/proxy/app.py).
+export const SESSION_HEADER = "x-safeguard-session";
+
 export interface Detection {
   start: number;
   end: number;
@@ -92,10 +95,10 @@ export class GatewayClient {
     return response.json();
   }
 
-  private static post(body: unknown, signal?: AbortSignal): RequestInit {
+  private static post(body: unknown, signal?: AbortSignal, headers: Record<string, string> = {}): RequestInit {
     const init: RequestInit = {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
     };
     if (signal !== undefined) init.signal = signal;
@@ -137,11 +140,18 @@ export class GatewayClient {
     return { kind: "ok", view: parseAudit(await response.json()) };
   }
 
-  /** Streams the answer to `text`, calling `onText` with each new piece. */
+  /**
+   * Streams the answer to `text`, calling `onText` with each new piece.
+   *
+   * Sent in the `/mask` session `sessionId` (ADR 0025): the gateway keeps the
+   * session's placeholders, so the model sees their types, and restores the answer
+   * with the session itself. The id goes in a header the gateway never forwards.
+   */
   async chat(
     shape: ChatShape,
     model: string,
     text: string,
+    sessionId: string,
     onText: (piece: string) => void,
     signal?: AbortSignal,
   ): Promise<void> {
@@ -151,7 +161,7 @@ export class GatewayClient {
       shape === "anthropic"
         ? { model, max_tokens: 1024, stream: true, messages }
         : { model, stream: true, messages };
-    const response = await this.send(path, GatewayClient.post(body, signal));
+    const response = await this.send(path, GatewayClient.post(body, signal, { [SESSION_HEADER]: sessionId }));
     if (!response.ok) throw await errorFrom(response);
     if (response.body === null) throw new GatewayError(502, "The gateway sent no answer.");
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();

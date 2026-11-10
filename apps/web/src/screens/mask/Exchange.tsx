@@ -1,9 +1,7 @@
-import { useId, useState } from "react";
 import { Warning } from "@/components/icons";
 import { Alert } from "@/components/ui/alert";
-import { Switch } from "@/components/ui/switch";
 import { familyOf } from "@/lib/entities";
-import { type Part, restore } from "@/lib/rehydrate";
+import { type Part, flag, restore } from "@/lib/rehydrate";
 
 export interface ExchangeState {
   sent: string;
@@ -45,18 +43,11 @@ function RequestText({ text, mapping }: { text: string; mapping: Record<string, 
   );
 }
 
-function AnswerPart({ part, raw }: { part: Part; raw: boolean }) {
-  if (part.kind === "text") return <span>{part.text}</span>;
+// The gateway restored the answer in the session (ADR 0025); only what it left as
+// written is marked, so a token it kept out of a link is never restored here.
+function AnswerPart({ part }: { part: Part }) {
   if (part.kind === "unresolved") return <Unresolved text={part.text} />;
-  if (raw) return <Token text={part.placeholder} />;
-  return (
-    <span
-      className="rounded-sm underline decoration-binding decoration-dotted decoration-2 underline-offset-4"
-      title={`Restored on this computer from ${part.placeholder}`}
-    >
-      {part.text}
-    </span>
-  );
+  return <span>{part.text}</span>;
 }
 
 function Pane({ title, note, children, labelId }: { title: string; note: string; children: React.ReactNode; labelId: string }) {
@@ -82,9 +73,7 @@ export function Exchange({
   mapping: Record<string, string>;
   destination: string;
 }) {
-  const [raw, setRaw] = useState(false);
-  const rawId = useId();
-  const restored = exchange === null ? null : restore(exchange.answer, mapping);
+  const restored = exchange === null ? null : flag(exchange.answer);
   const finished = exchange !== null && exchange.status !== "streaming";
   const unresolved = restored?.unresolved ?? [];
   // Once sent, the pane shows what went out, until a switch changes the next request.
@@ -111,7 +100,7 @@ export function Exchange({
         </div>
       </Pane>
 
-      <Pane labelId="answer-title" title="Answer" note="Placeholders in the answer are replaced with the real values on this computer.">
+      <Pane labelId="answer-title" title="Answer" note="The gateway on this computer put the real values back into the answer.">
         {finished && unresolved.length > 0 && (
           <Alert tone="seal" className="mb-3" role="alert">
             <Warning />
@@ -142,7 +131,7 @@ export function Exchange({
           {restored === null ? (
             <span className="text-ink-muted">The answer appears here once you send the request.</span>
           ) : (
-            restored.parts.map((part, i) => <AnswerPart key={i} part={part} raw={raw} />)
+            restored.parts.map((part, i) => <AnswerPart key={i} part={part} />)
           )}
           {exchange?.status === "streaming" && (
             <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-binding align-[-0.15em]" aria-hidden="true" />
@@ -162,14 +151,6 @@ export function Exchange({
                       ? "Answer complete, with placeholders that could not be restored."
                       : "Answer complete. Every placeholder was restored."}
           </p>
-          {exchange !== null && (
-            <div className="flex items-center gap-2">
-              <Switch id={rawId} checked={raw} onCheckedChange={setRaw} />
-              <label htmlFor={rawId} className="cursor-pointer text-sm">
-                Show placeholders
-              </label>
-            </div>
-          )}
         </div>
         {exchange?.status === "failed" && exchange.error !== null && (
           <Alert tone="seal" className="mt-3" role="alert">

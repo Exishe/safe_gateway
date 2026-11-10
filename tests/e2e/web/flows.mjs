@@ -118,6 +118,16 @@ function auditPage(url, ok) {
     : { rows: NEWER_ROWS, next_before_id: 2, verification: verification(ok) };
 }
 
+// What the UI's text holds: a name, an email, a card and an IBAN, one of each. The UI
+// sends its chat requests in the /mask session (ADR 0025), so the gateway keeps the
+// session's placeholders and its audit entry counts their real types.
+const REAL_COUNTS = ["Card number 1", "Email 1", "IBAN 1", "Name 1"];
+
+async function countsOf(row) {
+  const items = await row.getByRole("cell").nth(3).getByRole("listitem").allTextContents();
+  return items.map((t) => t.trim()).sort();
+}
+
 async function auditRows(page) {
   const table = page.getByRole("table");
   await table.waitFor();
@@ -220,22 +230,13 @@ async function main() {
     log.push(`INFO real audit entry: ${cells.join(" | ")}`);
     expect(cells[1] === "127.0.0.1", `upstream ${cells[1]}`); // the log keeps the host, not the port
     expect(cells[2] === MODEL, `model ${cells[2]}`);
-    // The UI sends its session's placeholders, which the chat route wraps as [LITERAL_n]
-    // (ADR 0024): the gateway's own counts see 4 placeholder-shaped values, not their types.
-    expect(cells[3] === "Placeholder-shaped text 4", `counts ${cells[3]}`);
+    const counts = await countsOf(rows.first());
+    expect(JSON.stringify(counts) === JSON.stringify(REAL_COUNTS), `counts ${counts.join(", ")}`);
+    expect(!cells[3].includes("Placeholder-shaped"), `counts ${cells[3]}`);
     expect(cells[4] === "200", `status ${cells[4]}`);
     expect(cells[5] === "This computer", `where ${cells[5]}`);
     await shot(page, "03-audit-real-1280-light");
     await openTab(page, "Mask & send");
-  });
-
-  await step("Show placeholders swaps restored values for their placeholders", async () => {
-    await page.getByRole("switch", { name: "Show placeholders" }).click();
-    let answer = await page.getByRole("region", { name: "Answer" }).textContent();
-    expect(answer.includes("[EMAIL_1]") && !answer.includes(DATA.email), "placeholders not shown");
-    await page.getByRole("switch", { name: "Show placeholders" }).click();
-    answer = await page.getByRole("region", { name: "Answer" }).textContent();
-    expect(answer.includes(DATA.email), "values not back");
   });
 
   await step("a value switched off in the ledger is sent as written and masked again by the gateway", async () => {
@@ -259,8 +260,10 @@ async function main() {
     expect((await rows.count()) === 2, `expected 2 entries, found ${await rows.count()}`);
     const newest = await rows.first().getByRole("cell").allTextContents();
     log.push(`INFO newest real audit entry: ${newest.join(" | ")}`);
-    // The second send held the email in clear: the gateway detected and counted it itself.
-    expect(newest[3] === "Email 1Placeholder-shaped text 3", `counts ${newest[3]}`);
+    // The second send held the email in clear: the session already holds it, so the
+    // gateway masked it again as [EMAIL_1] and the counts are the same real types.
+    const counts = await countsOf(rows.first());
+    expect(JSON.stringify(counts) === JSON.stringify(REAL_COUNTS), `counts ${counts.join(", ")}`);
   });
 
   await step("older entries load by before_id, from a mocked log", async () => {

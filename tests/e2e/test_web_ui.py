@@ -129,6 +129,14 @@ def test_every_flow_in_the_browser(servers: tuple[Path, dict[str, str]], tmp_pat
     # The second send held the email in clear; the gateway masked it again on the way out.
     for value in [DATA.name, DATA.email, DATA.card, DATA.iban]:
         assert value not in sent, "a value reached the upstream unmasked"
+    # Sent in the /mask session (ADR 0025): the model sees typed placeholders, never a
+    # [LITERAL_n] standing in for one, and never the session id.
+    for body in bodies:
+        text = json.dumps(body)
+        for placeholder in ["[PERSON_1]", "[EMAIL_1]", "[CREDIT_CARD_1]", "[IBAN_1]"]:
+            assert placeholder in text
+        assert "LITERAL" not in text
+        assert "session" not in text.lower()
 
     # The log the browser read is the real one: the command line verifies it too.
     verify = subprocess.run(  # noqa: PLW1510  (asserted below)

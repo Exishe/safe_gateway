@@ -1,10 +1,10 @@
 import { ENTITY_TYPES } from "./entities";
 
 // The placeholder grammar of gateway/engine/placeholders.py (ADR 0014), used here to
-// find what is placeholder-shaped in an answer. The gateway itself already restored
-// its own placeholders and put back the session's ones it wrapped as [LITERAL_n]
-// (ADR 0001 point 4), so only exact [TYPE_N] tokens of this session are restored
-// here. Every other placeholder-shaped token is flagged, never hidden.
+// find what is placeholder-shaped. `restore` marks the session's placeholders in the
+// request the UI sends. Answers come back already restored by the gateway, which
+// sends chat requests in the session (ADR 0025), so `flag` restores nothing: a token
+// the gateway left as written (inside a link, or unknown) stays so, and is flagged.
 const NAMES = [...ENTITY_TYPES].sort((a, b) => b.length - a.length);
 const ANY_CASE = NAMES.map((name) => name.replace(/[A-Z]/g, (c) => `[${c}${c.toLowerCase()}]`)).join("|");
 const UPPER = NAMES.join("|");
@@ -44,4 +44,13 @@ export function restore(answer: string, mapping: Readonly<Record<string, string>
   }
   if (cursor < answer.length) parts.push({ kind: "text", text: answer.slice(cursor) });
   return { text: parts.map((p) => p.text).join(""), parts, unresolved };
+}
+
+/**
+ * An answer the gateway already restored: every placeholder-shaped token left in
+ * it is flagged and shown as written, never replaced. Restoring here would undo
+ * the gateway's refusal to restore inside a link (ADR 0003 amendment 1).
+ */
+export function flag(answer: string): Restored {
+  return restore(answer, {});
 }
