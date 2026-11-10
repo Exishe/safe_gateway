@@ -1,0 +1,285 @@
+name: ci
+
+# Every push: one Ubuntu job. No `pull_request` trigger: all PRs come from branches
+# in this repo, which `push` already covers (a second trigger ran the job twice;
+# ADR 0007). macOS and Windows only on version tags or by
+# hand, because private-repo minutes on those runners count 10x and 2x (ADR 0007).
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Per ref and event: a push supersedes an older push, but never cancels the manual
+# macOS and Windows run (ADR 0007) started on the same branch.
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  HYPOTHESIS_PROFILE: ci
+
+jobs:
+  checks:
+    name: checks (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.32"
+
+      - name: Install
+        run: uv sync --locked
+
+      # NER models are downloaded fresh on every run and checked against the
+      # pinned SHA-256, so the `models` tests run in CI too (ADR 0012). Not
+      # cached on purpose: a poisoned cache would skip that check (zizmor).
+      - name: Pull NER models (verified against pinned SHA-256)
+        run: uv run safeguard models pull
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Types
+        run: uv run ty check
+
+      - name: No egress from the engine (hard rule 2)
+        run: uv run python -m tools.check_no_egress
+
+      - name: Licenses of shipped dependencies (hard rule 1)
+        run: uv run python -m tools.check_licenses
+
+      - name: Tests
+        run: uv run pytest
+
+      # The last layer for personal data and keys: local hooks can be skipped,
+      # CI cannot.
+      - name: Identifier-shaped PII in tracked files
+        run: uv run python -m tools.scan_pii --tracked
+
+      - name: Secrets in tracked files
+        run: git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline
+
+      - name: Bandit (medium and above)
+        run: uv run bandit -c pyproject.toml -r gateway tools -q -ll
+
+      - name: Dependency CVEs
+        run: |
+          uv export --locked --all-groups --no-emit-project --format requirements-txt \
+            -o "$RUNNER_TEMP/requirements.txt" -q
+          uv run pip-audit --disable-pip --progress-spinner off -r "$RUNNER_TEMP/requirements.txt"
+
+      - name: Semgrep
+        run: >-
+          uv run semgrep scan --config p/python --config p/secrets
+          --metrics=off --error gateway tools
+
+      - name: Workflow security
+        # Offline audits; action SHAs were pinned from the official repos' tags.
+        run: uv run zizmor --offline .github/workflows .github/dependabot.yml
+
+  # The web UI (ADR 0024): licenses, lint with typecheck, unit tests, build.
+  # No dependency cache on purpose (cache poisoning, zizmor); install scripts are off
+  # because nothing in the tree needs them.
+  web:
+    name: web UI (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Licenses of shipped and direct packages (hard rule 1)
+        run: npm run licenses
+
+      - name: Lint and typecheck
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  # The browser extension (ADR 0026): licenses, lint with typecheck, unit tests (the
+  # rehydrator against the engine's parity vectors included), build for Chrome and
+  # Firefox. Same rules as the web job: no dependency cache, install scripts off.
+  extension:
+    name: browser extension (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/extension
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Licenses of shipped and direct packages (hard rule 1)
+        run: npm run licenses
+
+      - name: Lint and typecheck
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build (dist/chrome and dist/firefox)
+        run: npm run build
+
+  platforms:
+    name: tests (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest] # macos-14 is arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.32"
+
+      - name: Install
+        run: uv sync --locked
+
+      # Platform markers differ: the .dmg and .msi ship dependencies Ubuntu never sees.
+      - name: Licenses of shipped dependencies on this platform
+        run: uv run python -m tools.check_licenses
+
+      - name: Tests
+        run: uv run pytest
+
+  # The desktop installers (ADR 0027): a PyInstaller sidecar plus the Tauri 2 shell,
+  # unsigned (a certificate costs money; docs/APPROVAL_NEEDED.md). Tags and manual runs
+  # only: macOS minutes count 10x and Windows 2x (ADR 0007).
+  desktop:
+    name: desktop (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14 # arm64
+            bundle: dmg
+            pattern: "*.dmg"
+          - os: windows-latest
+            bundle: msi
+            pattern: "*.msi"
+          - os: ubuntu-latest
+            bundle: deb
+            pattern: "*.deb"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.32"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Linux system libraries for Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev patchelf
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Python dependencies, with the build-time group
+        run: uv sync --locked --group sidecar
+
+      - name: Attributions are current
+        if: runner.os == 'Linux'
+        run: uv run python -m tools.gen_notices --check
+
+      - name: Web UI build (the sidecar carries it)
+        working-directory: apps/web
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Sidecar (PyInstaller one-folder, no models)
+        run: uv run --group sidecar python -m tools.build_sidecar
+
+      # The frozen build must answer /health before it goes into an installer.
+      - name: Sidecar answers /health
+        shell: bash
+        run: |
+          exe=apps/desktop/src-tauri/resources/safeguard-sidecar/safeguard-sidecar
+          [ -f "$exe.exe" ] && exe="$exe.exe"
+          SAFEGUARD_HOME="$RUNNER_TEMP/sg" "$exe" serve --no-audit &
+          pid=$!
+          for _ in $(seq 1 60); do
+            curl --silent --fail --max-time 2 http://127.0.0.1:8787/health && break
+            sleep 2
+          done
+          curl --silent --fail --max-time 2 http://127.0.0.1:8787/health
+          kill "$pid"
+
+      - name: Shell logic tests
+        run: cargo test --locked -j 2 --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+      - name: Desktop build tools
+        working-directory: apps/desktop
+        run: |
+          npm ci --ignore-scripts
+          npm run licenses
+
+      - name: Installer (unsigned)
+        working-directory: apps/desktop
+        run: npx tauri build --bundles ${{ matrix.bundle }}
+
+      - name: Keep the installer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 (checked against refs/tags/v4.6.2 on 2026-11-10)
+        with:
+          name: safeguard-gateway-${{ matrix.bundle }}-unsigned
+          path: apps/desktop/src-tauri/target/release/bundle/${{ matrix.bundle }}/${{ matrix.pattern }}
+          if-no-files-found: error
+          retention-days: 30

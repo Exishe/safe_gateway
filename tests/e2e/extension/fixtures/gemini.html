@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- Fixture: gemini.google.com's composer (a Quill editor in rich-textarea) and thread. -->
+<html lang="en">
+  <head><meta charset="utf-8" /><style>[contenteditable], textarea { display: block; min-height: 3em; min-width: 20em; border: 1px solid #888; padding: 4px; }</style><title>Gemini (fixture)</title></head>
+  <body
+    data-editor="rich-textarea .ql-editor"
+    data-send="button.send-button"
+    data-user-tag="user-query"
+    data-user-attrs="{}"
+    data-bot-tag="model-response"
+    data-bot-attrs="{}"
+    data-bot-inner="message-content"
+    data-rerender="false"
+  >
+    <main>
+      <div id="thread"></div>
+      <rich-textarea>
+        <div class="ql-editor" contenteditable="true" role="textbox" aria-label="Enter a prompt here"><p></p></div>
+      </rich-textarea>
+      <button type="button" class="send-button" aria-label="Send message">Send</button>
+    </main>
+    <script src="/__fixture/chat.js"></script>
+  </body>
+</html>

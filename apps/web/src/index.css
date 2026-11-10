@@ -1,0 +1,196 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Tokens. Archival paper and binding teal; claret is kept for what needs attention
+ * (an unresolved placeholder, a broken chain). Every pair used for text meets WCAG AA;
+ * see docs/adr/0024-web-ui.md for the measured ratios.
+ */
+:root {
+  --paper: #f4f6f3;
+  --surface: #ffffff;
+  --sunken: #eceee9;
+  --ink: #16202a;
+  --ink-muted: #4a5763;
+  --rule: #d3d9d4;
+  --rule-strong: #9aa59f;
+  --binding: #1e4d5c;
+  --binding-hover: #173d49;
+  --on-binding: #ffffff;
+  --binding-wash: #e1ecee;
+  --seal: #9b2c3b;
+  --seal-wash: #f8e6e8;
+  --ok: #2f6b4f;
+  --ok-wash: #e2f0e8;
+  --focus: #1e4d5c;
+
+  --identity-wash: #dce7f2;
+  --identity: #2d5a8a;
+  --contact-wash: #dcefe4;
+  --contact: #2f6b4f;
+  --money-wash: #f5e7c8;
+  --money: #7f5310;
+  --health-wash: #f6dde2;
+  --health: #9b2c3b;
+  --matter-wash: #e6e1f0;
+  --matter: #5b4a86;
+  --literal-wash: #e4e6e8;
+  --literal: #535d68;
+  --on-family: #ffffff;
+
+  color-scheme: light;
+}
+
+.dark {
+  --paper: #121a21;
+  --surface: #19232c;
+  --sunken: #0e151b;
+  --ink: #e4e9e6;
+  --ink-muted: #9daab5;
+  --rule: #2c3a46;
+  --rule-strong: #4f6170;
+  --binding: #86c1cf;
+  --binding-hover: #a3d2dd;
+  --on-binding: #0d1a20;
+  --binding-wash: #1d3640;
+  --seal: #f08c98;
+  --seal-wash: #3e1f26;
+  --ok: #86cfa9;
+  --ok-wash: #1b3529;
+  --focus: #a3d2dd;
+
+  --identity-wash: #1f3550;
+  --identity: #9dc0e6;
+  --contact-wash: #1e3a2e;
+  --contact: #93d1b0;
+  --money-wash: #3d3018;
+  --money: #e3c27e;
+  --health-wash: #43232b;
+  --health: #f0a3ae;
+  --matter-wash: #2f2a45;
+  --matter: #c2b4e8;
+  --literal-wash: #2a3138;
+  --literal: #b6bec6;
+  --on-family: #10181f;
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-binding: var(--binding);
+  --color-binding-hover: var(--binding-hover);
+  --color-on-binding: var(--on-binding);
+  --color-binding-wash: var(--binding-wash);
+  --color-seal: var(--seal);
+  --color-seal-wash: var(--seal-wash);
+  --color-ok: var(--ok);
+  --color-ok-wash: var(--ok-wash);
+  --color-focus: var(--focus);
+
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", P052, Georgia, serif;
+  --font-sans: system-ui, "Segoe UI", "Noto Sans", "Noto Sans Armenian", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    min-height: 100dvh;
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--binding-wash);
+    color: var(--ink);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Entity families: the wash under a value, the strong colour of its tab. */
+@layer components {
+  .fam-identity { --fam-wash: var(--identity-wash); --fam: var(--identity); }
+  .fam-contact { --fam-wash: var(--contact-wash); --fam: var(--contact); }
+  .fam-money { --fam-wash: var(--money-wash); --fam: var(--money); }
+  .fam-health { --fam-wash: var(--health-wash); --fam: var(--health); }
+  .fam-matter { --fam-wash: var(--matter-wash); --fam: var(--matter); }
+  .fam-literal { --fam-wash: var(--literal-wash); --fam: var(--literal); }
+
+  /*
+   * The one bold element: a detected value carries a file tab with its placeholder.
+   * Switched off, the tab lifts away (struck through) and the value loses its wash.
+   */
+  .exhibit {
+    background: var(--fam-wash);
+    box-shadow: inset 0 -2px 0 var(--fam);
+    border-radius: 2px;
+    padding: 0.05em 0.15em;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  .exhibit-tab {
+    display: inline-block;
+    margin-left: 0.1em;
+    padding: 0 0.35em;
+    border-radius: 3px 3px 0 0;
+    background: var(--fam);
+    color: var(--on-family);
+    font-family: var(--font-mono);
+    font-size: 0.7em;
+    line-height: 1.5;
+    vertical-align: 0.35em;
+    white-space: nowrap;
+    transition: transform 160ms ease, opacity 160ms ease;
+  }
+  .exhibit[aria-pressed="false"] {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--rule-strong);
+    border-radius: 3px;
+  }
+  .exhibit[aria-pressed="false"] .exhibit-tab {
+    background: transparent;
+    color: var(--ink-muted);
+    text-decoration: line-through;
+    transform: translateY(-0.2em);
+  }
+  .exhibit:disabled {
+    cursor: default;
+  }
+
+  .token {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+}

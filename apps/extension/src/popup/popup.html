@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>SafeGuard</title>
+    <link rel="stylesheet" href="./popup.css" />
+    <script type="module" src="./popup.ts"></script>
+  </head>
+  <body>
+    <main class="sheet">
+      <header class="head">
+        <svg class="seal" viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="3" y="7" width="26" height="20" rx="3" class="seal-fill" />
+          <path d="M3 10a3 3 0 0 1 3-3h7l3 3h10a3 3 0 0 1 3 3" class="seal-line" />
+          <rect x="8" y="16" width="16" height="4" rx="1" class="seal-bar" />
+        </svg>
+        <div>
+          <h1 class="wordmark">SafeGuard</h1>
+          <p class="tagline">Masks what you send from this browser</p>
+        </div>
+      </header>
+
+      <section class="card" aria-labelledby="gateway-title">
+        <h2 id="gateway-title" class="label">Gateway</h2>
+        <p class="state" id="state" data-state="checking">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="state-text">Checking 127.0.0.1:8787…</span>
+        </p>
+        <p class="detail" id="state-detail"></p>
+      </section>
+
+      <section class="card" aria-labelledby="tab-title">
+        <h2 id="tab-title" class="label">This tab</h2>
+        <p class="count"><span id="count" class="figure">0</span> <span id="count-label">values pseudonymised</span></p>
+        <ul id="types" class="types" aria-label="By type"></ul>
+        <p id="empty" class="detail">Nothing masked in this tab yet.</p>
+      </section>
+
+      <div class="actions">
+        <button id="clear" type="button" class="button" disabled>Clear this tab's session</button>
+        <a id="dashboard" class="button ghost" href="http://127.0.0.1:8787/" target="_blank" rel="noreferrer">Open dashboard</a>
+      </div>
+      <p id="said" class="said" role="status" aria-live="polite"></p>
+
+      <p class="foot">
+        Masking reduces exposure; it is not a guarantee. The site's own page can still read what you type before it is masked.
+      </p>
+    </main>
+  </body>
+</html>

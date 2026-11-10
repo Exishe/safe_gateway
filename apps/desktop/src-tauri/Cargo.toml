@@ -1,0 +1,30 @@
+[package]
+name = "safeguard-desktop"
+version = "0.0.0"
+description = "SafeGuard Gateway desktop shell: starts the local gateway and shows its own UI"
+edition = "2021"
+rust-version = "1.80"
+license = "LicenseRef-Proprietary"
+publish = false
+
+[lib]
+name = "safeguard_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Features are listed on purpose: `tray-icon` for the menu bar icon, `image-png` to
+# read it. No `devtools`, no `protocol-asset`, no shell, fs or http plugins (ADR 0027).
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

@@ -1,0 +1,183 @@
+[project]
+name = "safeguard-gateway"
+version = "0.0.0"
+description = "Local-first privacy gateway: masks personal data before it reaches a cloud AI model."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "LicenseRef-Proprietary"
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "cryptography>=50.0.2",
+    "fastapi>=0.162.2",
+    "gliner>=0.2.30",
+    "httpx>=0.28.1",
+    "keyring>=25.7.0",
+    "openpyxl>=3.1.5",
+    "pdfminer-six>=20260107",
+    "phonenumbers>=9.0.43",
+    "pillow>=13.0.0",
+    "presidio-analyzer>=2.2.366",
+    "protobuf>=7.36.2",
+    "pypdf>=7.0.0",
+    "pytesseract>=0.3.13",
+    "python-docx>=1.2.0",
+    "spacy>=3.8.0,<3.9.0",
+    "torch>=2.15.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+safeguard = "gateway.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+# CI pins the same uv (setup-uv `version:`), so resolution is the same everywhere.
+required-version = ">=0.11.32,<0.12"
+# Semgrep 1.184.0 (newest) pins mcp and OpenTelemetry to releases with known
+# CVEs, which fails pip-audit. These raise them to the fixed releases; the scan
+# was re-run with them (0 findings, 187 rules). Drop once Semgrep moves its pins.
+override-dependencies = [
+    "mcp>=1.30,<2",
+    "opentelemetry-api>=1.45.1",
+    "opentelemetry-sdk>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "opentelemetry-instrumentation-requests>=0.66b1",
+    "opentelemetry-instrumentation-threading>=0.66b1",
+]
+
+[tool.uv.build-backend]
+# Flat layout as fixed by the brief (ADR 0008): the package is ./gateway
+module-name = "gateway"
+module-root = ""
+
+# GLiNER runs on the CPU (ADR 0015). On Linux the PyPI torch wheel pulls in the CUDA
+# stack (gigabytes, NVIDIA-licensed), so torch comes from PyTorch's CPU-only index there.
+# `explicit`: nothing else is ever resolved from that index.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Third-party skill files copied from the user's account; not project code.
+extend-exclude = [".claude/skills"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",       # docstrings: comments explain why, not a docstring on every function
+    "COM812",  # conflicts with the formatter
+    "ISC001",  # conflicts with the formatter
+    "TD002",   # TODO author
+    "TD003",   # TODO issue link
+    "CPY",     # license is declared once at project level (ADR 0008)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["gateway", "tools"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # assert is how pytest works
+    "S104",    # tests name 0.0.0.0 to check that it is refused
+    "S603",    # tests run our own hook scripts with fixed arguments
+    "PLR2004", # literal values in assertions are the point
+    "INP001",  # test dirs are not packages
+    "RUF001",  # Cyrillic and Armenian test text is intended, not a lookalike
+]
+"tools/**" = [
+    "T201",    # these are CLI tools; print is their output
+]
+"gateway/cli.py" = [
+    "T201",
+]
+
+# ---------------------------------------------------------------- ty
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.terminal]
+error-on-warning = true
+
+[tool.ty.src]
+include = ["gateway", "tools", "tests"]
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--import-mode=importlib",
+    # Hard rule: tests never touch the network (ADR 0006).
+    "--disable-socket",
+    "--allow-unix-socket",
+    "--cov=gateway",
+    "--cov=tools",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-fail-under=80",
+]
+markers = [
+    "integration: talks to local services on loopback; opts in to sockets",
+    "e2e: drives a real browser",
+    "benchmark: recall measurement, slow",
+    "models: loads the spaCy models from `safeguard models pull`; skipped when they are absent",
+]
+
+[tool.coverage.run]
+branch = true
+
+# ---------------------------------------------------------------- bandit
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+
+[dependency-groups]
+audit = [
+    "bandit>=1.9.4",
+    "detect-secrets>=1.5.0",
+    "pip-audit>=2.10.1",
+    "semgrep==1.184.0",
+    "zizmor>=1.32.0",
+]
+lint = [
+    "ruff>=0.17.4",
+    "shellcheck-py>=0.11.0.1",
+    "ty>=0.0.99",
+]
+test = [
+    "faker>=40.44.0",
+    "hypothesis>=6.170.15",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "pytest-socket>=0.8.1",
+]
+tools = [
+    "packaging>=26.3",
+]
+# Build time only (ADR 0027). Not part of `dev`, so `uv sync` and the license check of
+# the runtime closure never see it. PyInstaller is GPL-2.0-or-later with a bootloader
+# exception that lets the frozen app carry any license; hard rule 1 allows tooling.
+sidecar = [
+    "pyinstaller>=6.20.0",
+]
+# `uv sync` installs the dev group by default; it pulls in everything above.
+dev = [
+    { include-group = "lint" },
+    { include-group = "test" },
+    { include-group = "audit" },
+    { include-group = "tools" },
+]

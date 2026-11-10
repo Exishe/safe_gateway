@@ -1,0 +1,15 @@
+{
+  "name": "safeguard-desktop",
+  "private": true,
+  "version": "0.0.0",
+  "description": "SafeGuard Gateway desktop shell (Tauri 2); build tooling only, the app itself is Rust plus static pages",
+  "license": "UNLICENSED",
+  "scripts": {
+    "tauri": "tauri",
+    "build": "tauri build",
+    "licenses": "node scripts/check-licenses.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  }
+}

@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+dist/
+build/
+
+# Local data: never commit customer or test runtime state
+.safeguard/
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets
+.env
+.env.*
+
+# Node / front ends (later phases)
+node_modules/
+
+# Agent scratch
+.superpowers/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Agent worktrees created by Claude Code (scratch, never committed)
+.claude/worktrees/
+
+# Benchmark datasets downloaded by tools/benchmark_openpii.py (never committed)
+.cache/
+
+# Browser test screenshots (tests/e2e/test_web_ui.py)
+tests/e2e/artifacts/
+
+# Desktop shell (ADR 0027): Rust build output, generated schemas, the frozen sidecar
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/resources/safeguard-sidecar/

@@ -1,0 +1,84 @@
+name: weekly
+
+# A scheduled scan of the same tools CI runs on pushes, plus the npm audits and the
+# leak-hunt regression tests. Ubuntu only: macOS and Windows minutes count 10x and
+# 2x against the free budget (ADR 0007, ADR 0028). Scheduled runs use the default
+# branch; start it by hand to scan another branch.
+on:
+  schedule:
+    - cron: "23 4 * * 1" # Monday 04:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  HYPOTHESIS_PROFILE: ci
+
+jobs:
+  python:
+    name: python scans and leak-hunt tests (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.32"
+
+      - name: Install
+        run: uv sync --locked
+
+      # The leak-hunt tests need the NER models; they are checked against the
+      # pinned SHA-256 on every pull (ADR 0006, ADR 0012).
+      - name: Pull NER models (verified against pinned SHA-256)
+        run: uv run safeguard models pull
+
+      - name: Semgrep
+        run: >-
+          uv run semgrep scan --config p/python --config p/secrets
+          --metrics=off --error gateway tools
+
+      - name: Dependency CVEs (locked export)
+        run: |
+          uv export --locked --all-groups --no-emit-project --format requirements-txt \
+            -o "$RUNNER_TEMP/requirements.txt" -q
+          uv run pip-audit --disable-pip --progress-spinner off -r "$RUNNER_TEMP/requirements.txt"
+
+      - name: Leak-hunt regression tests (engine)
+        run: uv run pytest tests/unit/engine -k leak_hunt
+
+      - name: Leak-hunt regression tests (parsers)
+        run: uv run pytest tests/unit/parsers/test_leak_hunt_parsers.py
+
+  npm:
+    name: npm audit (${{ matrix.app }}, ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [web, extension]
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      # Reads package-lock.json; nothing is installed, so no install scripts run.
+      - name: npm audit (shipped packages only)
+        run: npm audit --omit=dev

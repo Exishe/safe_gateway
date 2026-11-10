@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- Fixture: chat.openai.com's older composer, a React-style <textarea>. -->
+<html lang="en">
+  <head><meta charset="utf-8" /><style>[contenteditable], textarea { display: block; min-height: 3em; min-width: 20em; border: 1px solid #888; padding: 4px; }</style><title>ChatGPT legacy (fixture)</title></head>
+  <body
+    data-editor="#prompt-textarea"
+    data-send="button[data-testid='send-button']"
+    data-user-tag="div"
+    data-user-attrs='{"data-message-author-role":"user"}'
+    data-bot-tag="div"
+    data-bot-attrs='{"data-message-author-role":"assistant"}'
+    data-bot-inner="div.markdown"
+    data-rerender="false"
+  >
+    <main>
+      <div id="thread"></div>
+      <form onsubmit="return false">
+        <textarea id="prompt-textarea" rows="2" aria-label="Message ChatGPT"></textarea>
+        <button type="button" data-testid="send-button">Send</button>
+      </form>
+    </main>
+    <script src="/__fixture/chat.js"></script>
+  </body>
+</html>

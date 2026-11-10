@@ -1,0 +1,30 @@
+{
+  "name": "safeguard-extension",
+  "private": true,
+  "version": "0.7.0",
+  "description": "SafeGuard Gateway browser extension: masks prompts on ChatGPT, Claude and Gemini through the local gateway on 127.0.0.1:8787",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "build": "tsc -b && node scripts/build.mjs",
+    "lint": "tsc -b && eslint . --max-warnings 0",
+    "test": "vitest run",
+    "licenses": "node scripts/check-licenses.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/chrome": "0.3.7",
+    "@types/node": "22.19.17",
+    "eslint": "9.39.5",
+    "globals": "17.14.0",
+    "jsdom": "31.0.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vite": "8.3.7",
+    "vitest": "5.1.0"
+  }
+}

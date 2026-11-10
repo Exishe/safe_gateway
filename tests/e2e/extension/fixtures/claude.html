@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- Fixture: claude.ai's composer (ProseMirror, role=textbox) and thread. -->
+<html lang="en">
+  <head><meta charset="utf-8" /><style>[contenteditable], textarea { display: block; min-height: 3em; min-width: 20em; border: 1px solid #888; padding: 4px; }</style><title>Claude (fixture)</title></head>
+  <body
+    data-editor="div.ProseMirror"
+    data-send="button[aria-label='Send message']"
+    data-user-tag="div"
+    data-user-attrs='{"data-testid":"user-message"}'
+    data-bot-tag="div.font-claude-response"
+    data-bot-attrs='{"data-is-streaming":"false"}'
+    data-bot-inner="div.prose"
+    data-rerender="false"
+  >
+    <main>
+      <div id="thread"></div>
+      <fieldset>
+        <div class="ProseMirror" contenteditable="true" role="textbox" aria-label="Write your prompt to Claude"><p></p></div>
+        <button type="button" aria-label="Send message">Send</button>
+      </fieldset>
+    </main>
+    <script src="/__fixture/chat.js"></script>
+  </body>
+</html>
