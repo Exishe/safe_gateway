@@ -23,20 +23,23 @@ local-first.
 - Guard hardening (security review I1, I2, M1, M5–M10), hook deadlock fixes
   (ADR 0010).
 
-## In flight (agent worktrees under `.claude/worktrees/`)
+## Status (2026-11-10, head 36b50c4)
 
-Merged on the branch (head 1afdaae, gate green: 2125 passed): Phases 2-5 and
-their integration (`safeguard serve` writes the audit log, `GET /audit`), the
-Phase 6 web UI, the security review fixes (I1-I4 and the minors), leak-hunt
-1c fixes, and the 1d tests (21 strict xfails).
+Every phase this session could finish is built, merged and pushed:
 
-| Work | Status |
-|------|--------|
-| Fix 21 leak-hunt 1d findings, then re-run the benchmark | running (resumed after the usage limit) |
-| Web UI e2e against the real audit log, with a test-only file keyring | running (resumed) |
+- **Phases 0–7:** built, with tests, red-team rounds, security reviews, the web UI,
+  the extension, and the Tauri desktop shell with installers built in CI.
+- **Phase 8, free parts:**
+  - weekly scan (`.github/workflows/weekly.yml`; it runs once this branch is on the
+    default branch);
+  - `docs/SECURITY_OVERVIEW.md`;
+  - `docs/RUNBOOK_SUSPECTED_LEAK.md`.
 
-If an agent's worktree branch has commits but the agent is gone, merge what
-is there and finish the remainder yourself or with a new agent.
+CI run 42765143614 on 1855771 is green for the Ubuntu checks, the Windows tests,
+the web UI, the extension, and the desktop `.deb` and `.msi`. Tags v0.0.0 to v0.3.0
+were created but could not be pushed: this session's git access allows only the
+working branch (HTTP 403). The commands are in `docs/RELEASE_CHECKS.md`. No agent is
+running.
 
 ## Needs the owner
 
@@ -44,8 +47,11 @@ is there and finish the remainder yourself or with a new agent.
   42760447775). The likely cause is the private repository's Actions minutes or
   spending limit for macOS runners, which are billed at 10x. Check GitHub, Settings,
   Billing and plans, then Actions. The session does not retry it.
+- **Tags:** push v0.0.0 to v0.3.0 (commands in `docs/RELEASE_CHECKS.md`).
+- **Merge:** merge this branch to the default branch so the weekly scan runs.
 - **Live checks:** run against a local Ollama model; try the extension on the live
-  chat sites; test on Firefox.
+  chat sites; test on Firefox. These unlock tags v0.4.0 to v0.7.0.
+- **Pilot:** collect firms' feedback in `docs/pilot-feedback.md`, then tag v0.8.0.
 
 ## Merge procedure
 

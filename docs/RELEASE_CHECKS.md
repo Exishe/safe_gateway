@@ -20,9 +20,20 @@ they started; see "Needs the owner" in `docs/plans/PROGRESS.md`.
 | v0.6.0 | 6 | the plan has the owner tag it after looking at the macOS build | no: needs macOS CI (billing) and the owner |
 | v0.7.0 | 7 | fixture e2e green, sideload docs written; the live-site check is open | no: the owner tries it on the live sites |
 
+The tags could not be pushed from the build session, because its git access allows
+only the working branch (HTTP 403). To publish them from a clone:
+
+```bash
+git fetch origin claude/github-push-config-w3r1jp
+for t in v0.0.0 v0.1.0 v0.2.0 v0.3.0; do
+  git tag -a "$t" 1855771 -m "$t, verified by CI run 42765143614"
+done
+git push origin v0.0.0 v0.1.0 v0.2.0 v0.3.0
+```
+
 All four tags point at one commit, because every phase was verified together
-there. They were pushed in a single push of four tags, so GitHub created no tag
-workflow runs (it skips them for more than three tags at once). The commit was
+there. Push all four in one push: GitHub then creates no tag
+workflow runs (it skips them for more than three tags at once). The commit is
 already verified by the run above.
 
 ## 2026-11-10, branch head 70a48f4 (candidate for v0.1.0 to v0.7.0)
