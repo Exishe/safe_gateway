@@ -96,10 +96,10 @@ document would take over 12 minutes. `gliner="all"` is therefore not a default.
 | License | CC-BY-4.0 (card: `license: other`, `license_name: cc-by-4.0`). Attribution: "Open PII Masking 500k", Ai4Privacy, https://huggingface.co/datasets/ai4privacy/open-pii-masking-500k-ai4privacy |
 | Sample | 10,000 English records of 30,160 in the shard, seed 20261109 (`random.Random(seed).sample`) |
 | Command | `uv run python -m tools.benchmark_openpii --sample 10000 --seed 20261109 --json docs/benchmarks/openpii-500k.json --markdown docs/benchmarks/openpii-500k.md` (the committed `.md` adds a header to the tables the command writes) |
-| Commit | 077f54580a57d9369a229bb11f000103bfc4049a (tree clean; engine as in cbdca9a, the leak hunt 1c fixes). Previous run, for the deltas: 050ff8c5dd7d3ccd4369a2fe56e658411adf114d, measured the same day from an unmodified `git archive` export of that commit with the same command |
-| Date | 2026-11-09 |
-| Engine | `detect(text, "auto", EngineConfig(ner="auto"))`: structured recognizers (the date recognizer of ADR 0016 included), the shape and keyword recognizers of ADR 0023 as amended for leak hunt 1c, spaCy `en_core_web_lg` 3.8.0 through Presidio, and GLiNER `gliner_multi_pii-v1` only on lines holding letters of a script without a spaCy model (ADR 0016 amended). Default phone regions. |
-| Run time | English 97.9 s (050ff8c: 68.9 s); the other seven languages 42.0 s (050ff8c: 41.8 s); a shared 4-CPU container, single process, so times are rough. The English increase was not broken down; this run loads GLiNER, which 050ff8c never did on English text, for the few lines with letters of another script |
+| Commit | 2721ae41d7518187b0cb0db8d2bcf2b800e87ec2 (tree clean; the leak hunt 1d fixes). Previous run, for the deltas: 077f54580a57d9369a229bb11f000103bfc4049a (engine as in cbdca9a, the leak hunt 1c fixes), the figures committed in fa75c3f, same command, sample and seed |
+| Date | 2026-11-10 (previous run 2026-11-09) |
+| Engine | `detect(text, "auto", EngineConfig(ner="auto"))`: structured recognizers (the date recognizer of ADR 0016 included), the shape and keyword recognizers of ADR 0023 as amended for leak hunts 1c and 1d, spaCy `en_core_web_lg` 3.8.0 through Presidio (and `ru_core_news_lg` 3.8.0 on lines of an English segment with a Cyrillic word), and GLiNER `gliner_multi_pii-v1` only on lines holding letters of a script without a spaCy model or, since 1d, Cyrillic words in an English segment (ADR 0016 amended). Default phone regions. |
+| Run time | English 70.3 s (previous run 97.9 s); the other seven languages 34.5 s (previous 42.0 s); a shared 4-CPU container, single process, so times are rough and the decrease is not attributed to any one change (the clean view and the date recognizer did get faster, ADR 0016 amended for 1d, points 6 and 8) |
 
 Definitions. Masking recall: share of gold spans with at least 90% of their characters
 inside the union of any detected spans (what matters for privacy: the value was masked,
@@ -127,12 +127,12 @@ second table; they are reported, not dropped.
 | DRIVERLICENSENUM | DRIVER_LICENSE |
 | TIME, TITLE, AGE, SEX, GENDER | none: not covered |
 
-English, per dataset label (gold spans in the sample; the last column is the run at 050ff8c):
+English, per dataset label (gold spans in the sample; the last column is the previous run, 077f545):
 
-| Dataset label | Maps to | Gold spans | Masking recall | Typed recall | 050ff8c: masking / typed |
+| Dataset label | Maps to | Gold spans | Masking recall | Typed recall | 077f545: masking / typed |
 |---------------|---------|-----------:|---------------:|-------------:|--------------------------:|
-| GIVENNAME | PERSON | 7977 | 83.6% | 66.3% | 83.6% / 66.2% |
-| SURNAME | PERSON | 3061 | 85.4% | 70.9% | 85.4% / 70.8% |
+| GIVENNAME | PERSON | 7977 | 83.6% | 66.3% | 83.6% / 66.3% |
+| SURNAME | PERSON | 3061 | 85.4% | 70.9% | 85.4% / 70.9% |
 | CITY | LOCATION | 1648 | 86.6% | 46.1% | 86.6% / 46.1% |
 | STREET | ADDRESS/LOCATION | 1183 | 78.2% | 57.7% | 78.2% / 57.7% |
 | BUILDINGNUM | ADDRESS/LOCATION | 1030 | 37.6% | 18.6% | 37.6% / 18.6% |
@@ -143,9 +143,9 @@ English, per dataset label (gold spans in the sample; the last column is the run
 | CREDITCARDNUMBER | CREDIT_CARD | 179 | 84.3% | 65.9% | 84.3% / 65.9% |
 | SOCIALNUM | NATIONAL_ID/SSN | 229 | 81.6% | 22.2% | 81.6% / 22.2% |
 | TAXNUM | NATIONAL_ID | 259 | 83.7% | 11.1% | 83.7% / 11.1% |
-| IDCARDNUM | NATIONAL_ID | 803 | 56.5% | 35.8% | 56.5% / 35.8% |
+| IDCARDNUM | NATIONAL_ID | 803 | 56.6% | 35.9% | 56.5% / 35.8% |
 | PASSPORTNUM | PASSPORT | 367 | 98.3% | 45.2% | 98.3% / 45.2% |
-| DRIVERLICENSENUM | DRIVER_LICENSE | 196 | 29.0% | 4.0% | 28.0% / 3.5% |
+| DRIVERLICENSENUM | DRIVER_LICENSE | 196 | 29.5% | 4.0% | 29.0% / 4.0% |
 
 Not covered (no EntityType; the masking figure is incidental, from spans of other types):
 
@@ -161,15 +161,15 @@ English, precision per detected type:
 
 | Detected type | Detected spans | Precision (lower bound) |
 |---------------|---------------:|------------------------:|
-| PERSON | 6729 | 98.2% |
+| PERSON | 6730 | 98.1% |
 | LOCATION | 2093 | 95.8% |
 | DATE | 2375 | 85.7% |
-| ORG | 2576 | 73.2% |
+| ORG | 2577 | 73.2% |
 | EMAIL | 1149 | 100.0% |
 | PHONE | 1773 | 100.0% |
-| CREDIT_CARD | 121 | 100.0% |
+| CREDIT_CARD | 122 | 100.0% |
 | SSN | 109 | 100.0% |
-| NATIONAL_ID | 400 | 100.0% |
+| NATIONAL_ID | 401 | 100.0% |
 | PASSPORT | 166 | 100.0% |
 | DRIVER_LICENSE | 9 | 100.0% |
 
@@ -206,14 +206,14 @@ te 5,434 (all the shard has for them).
 | Dataset label | de | es | fr | it | nl | hi | te |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | EMAIL | 97.5% / 97.5% (1306) | 99.2% / 99.2% (1116) | 98.8% / 98.8% (1311) | 99.3% / 99.3% (1152) | 98.5% / 98.5% (602) | 99.0% / 99.0% (715) | 98.9% / 98.9% (566) |
-| TELEPHONENUM | 80.4% / 78.7% (1641) | 82.8% / 80.8% (1468) | 83.3% / 81.7% (1695) | 84.5% / 82.7% (1595) | 84.3% / 82.2% (787) | 78.1% / 74.8% (1162) | 78.1% / 75.9% (903) |
-| CREDITCARDNUMBER | 79.4% / 79.0% (253) | 73.3% / 72.9% (218) | 74.5% / 74.0% (216) | 76.9% / 76.1% (260) | 78.6% / 78.6% (136) | 73.5% / 73.5% (136) | 61.2% / 60.0% (165) |
+| TELEPHONENUM | 80.4% / 78.7% (1641) | 82.8% / 80.8% (1468) | 83.3% / 81.7% (1695) | 84.5% / 82.7% (1595) | 84.3% / 82.2% (787) | 78.1% / 74.8% (1162) | 78.1% / 75.8% (903) |
+| CREDITCARDNUMBER | 79.4% / 79.0% (253) | 73.8% / 73.3% (218) | 74.5% / 74.0% (216) | 76.9% / 76.1% (260) | 78.6% / 78.6% (136) | 74.2% / 74.2% (136) | 61.8% / 60.6% (165) |
 | SOCIALNUM | 0.0% / 0.0% (275) | 47.7% / 6.5% (199) | 28.8% / 3.2% (218) | 0.0% / 0.0% (107) | 97.6% / 48.2% (85) | 64.6% / 8.0% (150) | 66.0% / 7.8% (203) |
 | TAXNUM | 11.9% / 0.8% (335) | 34.2% / 4.3% (277) | 31.0% / 4.6% (238) | 0.4% / 0.4% (250) | 95.9% / 0.0% (148) | 67.5% / 8.3% (216) | 66.9% / 9.3% (224) |
 | IDCARDNUM | 30.4% / 5.5% (833) | 3.1% / 3.1% (848) | 13.6% / 6.5% (793) | 7.5% / 7.5% (902) | 96.9% / 6.4% (421) | 1.1% / 1.1% (537) | 1.4% / 1.4% (556) |
 | PASSPORTNUM | 0.4% / 0.0% (432) | 50.8% / 50.8% (393) | 29.7% / 29.4% (363) | 51.3% / 50.7% (333) | 0.0% / 0.0% (192) | 99.5% / 99.1% (238) | 92.2% / 91.1% (259) |
 | DRIVERLICENSENUM | 38.2% / 0.0% (235) | 0.5% / 0.0% (191) | 20.5% / 0.0% (195) | 72.7% / 0.0% (158) | 1.1% / 1.1% (87) | 0.0% / 0.0% (163) | 0.0% / 0.0% (171) |
-| DATE | 34.1% / 34.1% (989) | 31.4% / 31.4% (993) | 31.4% / 31.4% (1112) | 32.1% / 32.1% (1249) | 33.9% / 33.9% (509) | 68.5% / 68.5% (716) | 65.0% / 64.9% (762) |
+| DATE | 50.2% / 50.2% (989) | 31.4% / 31.4% (993) | 32.9% / 32.9% (1112) | 32.1% / 32.1% (1249) | 33.9% / 33.9% (509) | 68.5% / 68.5% (716) | 65.0% / 64.9% (762) |
 
 The high masking figures for nl (SOCIALNUM, TAXNUM, IDCARDNUM) sit next to typed recall
 of 48.2%, 0.0% and 6.4%: the values were covered by spans of other types, which this run
@@ -221,7 +221,46 @@ does not break down. Read typed recall as the figure for the type itself. The do
 keywords are English, Russian and Armenian only, so passports, ID cards and driving
 licences in these languages are found by shape alone.
 
-### Changes since the previous run (leak hunt 1c)
+### Changes since the previous run (leak hunt 1d)
+
+Previous run: commit 077f54580a57d9369a229bb11f000103bfc4049a, 2026-11-09 (the figures committed in fa75c3f). This run:
+commit 2721ae41d7518187b0cb0db8d2bcf2b800e87ec2, 2026-11-10, same command, sample and seed. What changed: the 21 fixes of
+leak hunt 1d (ADR 0014 amendment 2, ADR 0016 and ADR 0023 amended 2026-11-09). Every
+label whose figures moved, masking recall / typed recall (counts in brackets), previous
+-> this run:
+
+| Language | Dataset label | Gold spans | Masking recall | Typed recall |
+|---|---|---:|---:|---:|
+| de | DATE | 989 | 34.1% -> 50.2% (338 -> 497) | 34.1% -> 50.2% (338 -> 497) |
+| fr | DATE | 1112 | 31.4% -> 32.9% (350 -> 366) | 31.4% -> 32.9% (350 -> 366) |
+| en | DRIVERLICENSENUM | 196 | 29.0% -> 29.5% (57 -> 58) | 4.0% -> 4.0% (8 -> 8) |
+| en | IDCARDNUM | 803 | 56.5% -> 56.6% (454 -> 455) | 35.8% -> 35.9% (288 -> 289) |
+| es | CREDITCARDNUMBER | 218 | 73.3% -> 73.8% (160 -> 161) | 72.9% -> 73.3% (159 -> 160) |
+| hi | CREDITCARDNUMBER | 136 | 73.5% -> 74.2% (100 -> 101) | 73.5% -> 74.2% (100 -> 101) |
+| te | CREDITCARDNUMBER | 165 | 61.2% -> 61.8% (101 -> 102) | 60.0% -> 60.6% (99 -> 100) |
+| te | BUILDINGNUM | 598 | 0.8% -> 1.0% (5 -> 6) | 0.0% -> 0.0% (0 -> 0) |
+| te | TELEPHONENUM | 903 | 78.1% -> 78.1% (706 -> 706) | 75.9% -> 75.8% (686 -> 685) |
+
+The German gain is the German month names and the day followed by a dot
+(`12. März 1985`); this run does not break the gains down further. One loss: a Telugu
+phone number is still masked but no longer typed PHONE (te PHONE spans 1044 -> 1043, and
+te CREDIT_CARD 106 -> 108): a span of another type now wins the overlap, most likely a
+card read with the looser separators; the run does not isolate it. Every label not
+listed is unchanged.
+
+Precision (lower bound) stays 100.0% for every structured type in every language, on more
+spans: DATE de 515 -> 674 and fr 546 -> 562; CREDIT_CARD en 121 -> 122, es 163 -> 164,
+hi 106 -> 107, te 106 -> 108; NATIONAL_ID en 400 -> 401. Precision dropped for one NER
+type: English PERSON 98.2% -> 98.1% (6729 -> 6730 spans, 6608 overlapping a gold span both
+times), so the one new PERSON span overlaps no gold span; English ORG gained one span
+(2576 -> 2577) that overlaps none either (73.2% both times). Both are probably the
+mixed-script routing (a line of an English record with a Cyrillic word now also reaches the
+Russian model and GLiNER); the run does not isolate them. As before, this benchmark has no
+Russian or Armenian text, so most 1d fixes (the clean view folds, Russian dates and
+documents, routing) cannot show here; they are asserted by
+`tests/unit/engine/test_leak_hunt_1d.py` and the property tests, not measured.
+
+### Earlier change: leak hunt 1c
 
 Previous run: commit 050ff8c5dd7d3ccd4369a2fe56e658411adf114d, measured on 2026-11-09 from
 an unmodified export of that commit with the same command, sample and seed. The figures
