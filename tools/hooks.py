@@ -490,7 +490,9 @@ def _staged_files(root: Path) -> list[str]:
 
 
 def detect_secrets_binary() -> Path:
-    return Path(sys.executable).with_name("detect-secrets-hook")
+    # Windows installs console scripts as .exe next to python.exe.
+    suffix = ".exe" if sys.platform == "win32" else ""
+    return Path(sys.executable).with_name(f"detect-secrets-hook{suffix}")
 
 
 def _git_invocations(command: str) -> list[list[str]]:

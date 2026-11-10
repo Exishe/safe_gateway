@@ -1,7 +1,6 @@
 import copy
 import hashlib
 import json
-import stat
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -19,6 +18,7 @@ from gateway.audit.store import AuditLog
 from gateway.engine.session_disk import InMemoryKeyProvider
 from gateway.secrets import AUDIT_KEY_ID
 from tests.audit_support import Clock, fill, tamper
+from tests.posix import assert_mode
 
 NOW = datetime(2026, 11, 9, 12, 0, tzinfo=UTC)
 
@@ -139,7 +139,7 @@ def test_write_private_is_0600_and_atomic(tmp_path: Path, monkeypatch: pytest.Mo
     target = tmp_path / "export.json"
     write_private(target, b"{}\n")
     assert target.read_bytes() == b"{}\n"
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert_mode(target, 0o600)
 
     def fail(self: Path, other: Path) -> Path:
         del self, other

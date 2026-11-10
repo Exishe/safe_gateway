@@ -1,7 +1,9 @@
 import importlib.abc
 import importlib.machinery
 import os
+import socket
 import sys
+import threading
 from collections.abc import Sequence
 from types import ModuleType
 
@@ -82,3 +84,23 @@ def _no_models_unless_marked(
     """
     if request.node.get_closest_marker("models") is None:
         monkeypatch.setenv("SAFEGUARD_HOME", str(tmp_path_factory.mktemp("no-models")))
+
+
+if sys.platform == "win32":
+    # asyncio's Windows event loop wires itself up with a loopback TCP socketpair (Unix uses
+    # AF_UNIX, which --allow-unix-socket permits). That pair never leaves the process, so
+    # build it with the real socket class while pytest-socket blocks everything else.
+    _REAL_SOCKET = socket.socket
+    _REAL_SOCKETPAIR = socket.socketpair
+    _PAIR_LOCK = threading.Lock()
+
+    def _internal_socketpair(*args: int, **kwargs: int) -> tuple[socket.socket, socket.socket]:
+        with _PAIR_LOCK:
+            guarded = socket.socket
+            socket.socket = _REAL_SOCKET  # type: ignore[misc]
+            try:
+                return _REAL_SOCKETPAIR(*args, **kwargs)
+            finally:
+                socket.socket = guarded  # type: ignore[misc]
+
+    socket.socketpair = _internal_socketpair

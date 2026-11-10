@@ -39,7 +39,7 @@ def test_scan_prints_a_table_with_position_type_and_context(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     note = tmp_path / "note.txt"
-    note.write_text(NOTE, encoding="utf-8")
+    note.write_text(NOTE, encoding="utf-8", newline="")
 
     assert main(["scan", str(note)]) == 0
     out = capsys.readouterr().out
@@ -65,7 +65,7 @@ def test_scan_json_lists_offsets_and_text(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     note = tmp_path / "note.txt"
-    note.write_text(NOTE, encoding="utf-8")
+    note.write_text(NOTE, encoding="utf-8", newline="")
 
     assert main(["scan", "--json", str(note)]) == 0
     items = json.loads(capsys.readouterr().out)
@@ -341,10 +341,10 @@ def test_scan_no_ner_skips_the_models_without_a_warning(
 # ------------------------------------------------------------------ safeguard mask (Phase 2)
 
 import os  # noqa: E402
-import stat  # noqa: E402
 
 from gateway.engine.mask import Mapping  # noqa: E402
 from gateway.engine.rehydrate import rehydrate  # noqa: E402
+from tests.posix import assert_mode  # noqa: E402
 
 CARD = "4111 1111 1111 1111"  # pragma: allowlist secret
 
@@ -352,7 +352,7 @@ CARD = "4111 1111 1111 1111"  # pragma: allowlist secret
 @pytest.fixture
 def note(tmp_path: Path) -> Path:
     path = tmp_path / "note.txt"
-    path.write_text(NOTE, encoding="utf-8")
+    path.write_text(NOTE, encoding="utf-8", newline="")
     return path
 
 
@@ -384,7 +384,7 @@ def test_mask_json_map_restores_the_original_and_is_private(
 
     mapping = Mapping.from_dict(json.loads(map_path.read_text(encoding="utf-8")))
     assert rehydrate(out.read_text(encoding="utf-8"), mapping) == (NOTE, [])
-    assert stat.S_IMODE(map_path.stat().st_mode) == 0o600
+    assert_mode(map_path, 0o600)
     assert "personal data" in capsys.readouterr().err
 
 
@@ -445,7 +445,7 @@ def test_mask_map_is_0600_even_under_a_permissive_umask(note: Path, tmp_path: Pa
         assert main(["mask", "--no-ner", str(note), "--json-map", str(map_path)]) == 0
     finally:
         os.umask(old)
-    assert stat.S_IMODE(map_path.stat().st_mode) == 0o600
+    assert_mode(map_path, 0o600)
 
 
 def test_a_failed_map_write_leaves_no_partial_map_and_no_output(
@@ -598,7 +598,7 @@ def test_mask_of_other_suffixes_keeps_the_text_path(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = tmp_path / "notes.md"
-    source.write_text(f"# {DOC_EMAIL}\n", encoding="utf-8")
+    source.write_text(f"# {DOC_EMAIL}\n", encoding="utf-8", newline="")
     assert main(["mask", "--no-ner", str(source)]) == 0
     assert capsys.readouterr().out == "# [EMAIL_1]\n"
 

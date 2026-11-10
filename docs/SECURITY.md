@@ -44,6 +44,12 @@ with each phase; the threat model gets its full review before the first pilot.
   type will be published in [BENCHMARKS.md](BENCHMARKS.md). A human review step
   before sending and a customer list of names that are always masked cover part
   of the gap.
+- File modes are a POSIX control. The 0600 and 0700 modes on the map, the audit
+  log and its directories apply on Linux and macOS. Windows has no mode bits:
+  `stat()` reports 0o666 whatever was requested. There those files are protected
+  by the ACL they inherit from the user profile directory, not by mode bits, so
+  keep `SAFEGUARD_HOME` and any map inside the user profile. The suite checks
+  only that the owner can read and write them on Windows.
 - Pseudonymised is not anonymised. Under GDPR Art. 4(5), masked text plus the
   map is still personal data. That is why the map never leaves the device.
 - The cloud model still sees the shape of the problem. A masked contract is

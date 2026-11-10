@@ -1,6 +1,5 @@
 """The file-backed keyring the browser tests give `safeguard serve` (tests only)."""
 
-import stat
 from pathlib import Path
 
 import keyring
@@ -8,6 +7,7 @@ import pytest
 from keyring.errors import PasswordDeleteError
 
 from tests.e2e.web.file_keyring import FileKeyring
+from tests.posix import assert_mode
 
 STORED_VALUE = "e2e-device-key-not-a-real-one"  # pragma: allowlist secret
 
@@ -23,7 +23,7 @@ def test_a_secret_survives_a_new_backend_like_a_restarted_server(store: Path) ->
     FileKeyring().set_password("safeguard-gateway", "audit-device-key", STORED_VALUE)
     assert FileKeyring().get_password("safeguard-gateway", "audit-device-key") == STORED_VALUE
     assert FileKeyring().get_password("safeguard-gateway", "other") is None
-    assert stat.S_IMODE(store.stat().st_mode) == 0o600
+    assert_mode(store, 0o600)
 
 
 def test_delete_removes_it_and_a_missing_one_raises(store: Path) -> None:

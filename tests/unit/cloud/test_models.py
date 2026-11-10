@@ -99,6 +99,7 @@ def test_models_home_defaults_to_dot_safeguard(
 ) -> None:
     monkeypatch.delenv("SAFEGUARD_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.home() reads this on Windows
     assert models_home() == tmp_path / ".safeguard" / "models"
 
 
