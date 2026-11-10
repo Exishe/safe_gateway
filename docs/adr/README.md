@@ -33,3 +33,4 @@ never by editing history.
 | [0025](0025-session-aware-chat.md) | Session-aware chat routes: the model and the audit log keep the real types | Accepted |
 | [0026](0026-browser-extension.md) | Browser extension: mask at the textbox, restore in text nodes | Accepted |
 | [0027](0027-desktop-shell-and-sidecar.md) | Desktop shell (Tauri 2) and the Python sidecar | Accepted |
+| [0028](0028-weekly-scan.md) | Weekly scheduled scan: Semgrep, audits and leak-hunt tests, Ubuntu only | Accepted |
