@@ -104,7 +104,7 @@ below matches the name SafeGuard Gateway.
 - **Windows (SmartScreen).** Run the `.msi`. When "Windows protected your PC" appears,
   choose **More info**, then **Run anyway**. Windows 10 (1809) or later with the
   WebView2 runtime, which Windows 11 and current Windows 10 already have.
-- **Linux (Debian, Ubuntu).** `sudo apt install ./safeguard-gateway_*.deb`. It needs
+- **Linux (Debian, Ubuntu).** `sudo apt install ./SafeGuard*.deb` (the package is `safe-guard-gateway`). It needs
   `libwebkit2gtk-4.1-0` and a system tray (on GNOME, the AppIndicator extension).
   A keyring service (GNOME Keyring or KWallet) must be running: the audit log's key
   lives there.

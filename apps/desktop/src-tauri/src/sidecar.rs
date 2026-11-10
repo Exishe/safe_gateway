@@ -32,7 +32,11 @@ const STOP_GRACE: Duration = Duration::from_secs(5);
 
 /// The program inside the one-folder build.
 pub fn executable_in(resource_dir: &Path) -> PathBuf {
-    let name = if cfg!(windows) { "safeguard-sidecar.exe" } else { "safeguard-sidecar" };
+    let name = if cfg!(windows) {
+        "safeguard-sidecar.exe"
+    } else {
+        "safeguard-sidecar"
+    };
     resource_dir.join("safeguard-sidecar").join(name)
 }
 
@@ -71,7 +75,10 @@ impl Child for SidecarChild {
         // SIGTERM first where it exists, so uvicorn closes the audit log properly.
         #[cfg(unix)]
         {
-            let _ = Command::new("kill").arg("-TERM").arg(process.id().to_string()).status();
+            let _ = Command::new("kill")
+                .arg("-TERM")
+                .arg(process.id().to_string())
+                .status();
             let deadline = Instant::now() + STOP_GRACE;
             while Instant::now() < deadline {
                 if matches!(process.try_wait(), Ok(Some(_))) {
@@ -100,7 +107,13 @@ impl ProcessBackend {
         stop: Arc<AtomicBool>,
         on_state: Box<dyn FnMut(&State) + Send>,
     ) -> Self {
-        Self { exe, log, stop, started: Instant::now(), on_state }
+        Self {
+            exe,
+            log,
+            stop,
+            started: Instant::now(),
+            on_state,
+        }
     }
 
     fn log_file(&self) -> Option<File> {
@@ -114,7 +127,9 @@ impl Backend for ProcessBackend {
 
     fn spawn(&mut self) -> io::Result<SidecarChild> {
         if health::fetch(gateway_addr(), PROBE_TIMEOUT).is_ok() {
-            return Ok(SidecarChild { running: Running::Adopted(Adopted) });
+            return Ok(SidecarChild {
+                running: Running::Adopted(Adopted),
+            });
         }
         let mut command = Command::new(&self.exe);
         command.stdin(Stdio::null());
@@ -132,7 +147,9 @@ impl Backend for ProcessBackend {
             command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
         }
         let process = command.spawn()?;
-        Ok(SidecarChild { running: Running::Spawned(process) })
+        Ok(SidecarChild {
+            running: Running::Spawned(process),
+        })
     }
 
     fn probe(&mut self) -> Option<Health> {
@@ -179,8 +196,12 @@ mod tests {
     #[test]
     fn a_missing_program_is_a_spawn_error_not_a_panic() {
         let stop = Arc::new(AtomicBool::new(false));
-        let mut backend =
-            ProcessBackend::new(PathBuf::from("/nonexistent/sidecar"), None, stop, Box::new(|_| {}));
+        let mut backend = ProcessBackend::new(
+            PathBuf::from("/nonexistent/sidecar"),
+            None,
+            stop,
+            Box::new(|_| {}),
+        );
         // Nothing listens on 8787 in the test run, or the shell would adopt it.
         if health::fetch(gateway_addr(), Duration::from_millis(200)).is_err() {
             assert!(backend.spawn().is_err());

@@ -94,8 +94,15 @@ money, so the installers ship unsigned (hard rule 2).
 
 ## Consequences
 
-- The sidecar is large: PyTorch (for GLiNER, ADR 0015) is most of it. The installers
-  are measured and reported in `docs/BENCHMARKS.md` style: when built, never guessed.
+- The sidecar is large: PyTorch (for GLiNER, ADR 0015) is most of it. Measured on
+  Linux x86-64 on 2026-11-10: the one-folder build is 1.2 GB on disk (executable 78
+  MB, `torch` 680 MB, spaCy 121 MB, transformers 48 MB), and the `.deb` made from it is
+  458 MiB. PyTorch's own test binaries (`torch/bin/test_*`, `torch/test`) ride along;
+  pruning them is a follow-up, not done.
+- Known limits of the shell: a SIGTERM to the app itself (a session logout on Linux)
+  does not stop the sidecar, which the next start then adopts; Quit and Cmd+Q do stop
+  it. Only the sidecar's own SIGTERM and the restart after a SIGKILL were exercised
+  end to end here; the tray Quit path is unit-tested through the fake backend only.
 - Unsigned apps trigger Gatekeeper and SmartScreen warnings on first run. This is
   documented, not hidden, and revisited if the owner approves a signing certificate
   (`docs/APPROVAL_NEEDED.md`).

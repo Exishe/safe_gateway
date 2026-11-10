@@ -28,9 +28,12 @@ pub fn view_for(state: &State) -> View {
     match state {
         State::Ready(_) => View::Gateway,
         State::Starting { .. } | State::Stopped => View::Local("loading".into()),
-        State::Restarting { attempt, reason, .. } => {
-            View::Local(format!("restarting?attempt={attempt}&reason={}", percent_encode(reason)))
-        }
+        State::Restarting {
+            attempt, reason, ..
+        } => View::Local(format!(
+            "restarting?attempt={attempt}&reason={}",
+            percent_encode(reason)
+        )),
         State::Failed { reason } => View::Local(format!("error?reason={}", percent_encode(reason))),
     }
 }
@@ -77,7 +80,10 @@ mod tests {
     #[test]
     fn only_a_ready_gateway_shows_the_gateway_ui() {
         assert_eq!(view_for(&ready()), View::Gateway);
-        assert_eq!(view_for(&State::Starting { attempt: 1 }), View::Local("loading".into()));
+        assert_eq!(
+            view_for(&State::Starting { attempt: 1 }),
+            View::Local("loading".into())
+        );
         assert_eq!(view_for(&State::Stopped), View::Local("loading".into()));
     }
 
@@ -96,8 +102,13 @@ mod tests {
 
     #[test]
     fn a_failure_shows_the_error_view_with_the_reason() {
-        let state = State::Failed { reason: "port in use".into() };
-        assert_eq!(view_for(&state), View::Local("error?reason=port%20in%20use".into()));
+        let state = State::Failed {
+            reason: "port in use".into(),
+        };
+        assert_eq!(
+            view_for(&state),
+            View::Local("error?reason=port%20in%20use".into())
+        );
     }
 
     #[test]
@@ -118,7 +129,11 @@ mod tests {
         assert!(!navigation_allowed("https", Some("127.0.0.1"), Some(8787)));
         assert!(!navigation_allowed("http", Some("localhost"), Some(8787)));
         assert!(!navigation_allowed("https", Some("example.com"), None));
-        assert!(!navigation_allowed("http", Some("tauri.localhost.evil.example"), None));
+        assert!(!navigation_allowed(
+            "http",
+            Some("tauri.localhost.evil.example"),
+            None
+        ));
         assert!(!navigation_allowed("file", None, None));
     }
 
@@ -134,7 +149,10 @@ mod tests {
             }),
             "Restarting (try 3)..."
         );
-        assert_eq!(tray_text(&State::Failed { reason: "x".into() }), "Stopped: could not start");
+        assert_eq!(
+            tray_text(&State::Failed { reason: "x".into() }),
+            "Stopped: could not start"
+        );
         assert_eq!(tray_text(&State::Stopped), "Stopped");
     }
 }
