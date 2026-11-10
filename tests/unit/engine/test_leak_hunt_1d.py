@@ -146,7 +146,6 @@ def test_email_with_a_decomposed_accent_in_the_local_part() -> None:
 # ------------------------------------------------------------------ dates (ADR 0016 amended, 2)
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_russian_day_range_before_one_month_name() -> None:
     """'12-15 <month> 1985' and 'from 12 to 15 <month> 1985' share one month and year.
     The first is refused whole (a hyphen and a digit before '15'); the second masks
@@ -159,7 +158,6 @@ def test_russian_day_range_before_one_month_name() -> None:
     assert leaks(cases) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_numeric_range_sharing_one_year() -> None:
     """'12.03-15.03.1985' writes the year once. '15.03.1985' is refused because a digit
     and a hyphen stand before it and '12.03' is not a date: [] in Russian and English."""
@@ -170,7 +168,6 @@ def test_numeric_range_sharing_one_year() -> None:
     assert leaks(cases) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_two_digit_years_in_russian_text() -> None:
     """Only dd.mm.yy accepts a two-digit year. '12/03/85', '12-MAR-85', the same with a
     Russian month abbreviation, and '12 <month> 85' all return [] in a Russian sentence
@@ -184,7 +181,6 @@ def test_two_digit_years_in_russian_text() -> None:
     assert leaks(cases) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_date_forms_left_out_of_the_named_and_numeric_patterns() -> None:
     """Each returns [] in a Russian sentence: year first with dots, a month name glued to
     its numbers, mixed separators around a month name, spaced guillemets, a full-width
@@ -364,7 +360,6 @@ def test_capitalised_russian_surname_after_an_initial() -> None:
 
 @pytest.mark.models
 @pytest.mark.usefixtures("real_models")
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_english_dates_the_models_do_not_cover() -> None:
     """With every model on: '12-MAR-85' (lab systems) and a full-width slash return [];
     "12 Mar '85" kept only "'85" (ner_en); '12. März 1985' kept 'März 1985' and leaked

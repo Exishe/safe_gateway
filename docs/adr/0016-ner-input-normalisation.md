@@ -178,3 +178,31 @@ Each test failed with `--runxfail` before its fix and passes after it.
    "anything to clean?" test is therefore a BMP class plus a separate test for
    any astral character. On the 1 MB test of `test_detect.py` (Faker text with
    Cyrillic in it) the clean view went from 0.06 s to 0.005 s.
+7. **Dates (point 5, 1c point 2).** Added to `dates.py`, for every language:
+   - Ranges of days before one month and year: `12-15 марта 1985`, `с 12 по 15
+     марта 1985`, `12 to 15 March 1985` (joined by a hyphen, `по`, `до`, `и`, `to`,
+     `and` or `&`), and numeric ranges sharing one year: `12.03-15.03.1985`,
+     `12-15.03.1985`. Both days are checked. A date nested in another one (the
+     `15 марта 1985` of a range) is not reported on its own.
+   - Two-digit years: `dd/mm/yy`, `mm/dd/yy` and `dd-mm-yy` (two digits each, as
+     `dd.mm.yy` already was), after a month name between separators (`12-MAR-85`,
+     `12-мар-85`) or glued to it, after an apostrophe (`12 Mar '85`), and in the
+     Russian spaced form only before the word for year (`12 марта 85 г.`), so a
+     count after a date (`12 марта 85 человек`) is not read as its year.
+   - Year first with dots (`1985.03.12`); a month name glued to its numbers
+     (`12MAR1985`); different separators on each side of a month name
+     (`12-Mar/1985`, a negative case in 1c, now a date); spaced guillemets
+     (`« 12 » марта 1985`); day, month and year split by single spaces
+     (`12 03 1985`: two digits for day and month, and no digit group joined by a
+     space on either side, so phone groups are not read). The full-width slash is
+     folded by the clean view (point 4).
+   - German month names, full and abbreviated (Januar, Jänner, Februar, März,
+     Maerz, Mrz., Mai, Juni, Juli, Oktober, Dezember beside the shared English
+     spellings), and a day followed by a dot (`12. März 1985`).
+   The property tests that no generated IP address or phone number reads as a date
+   still pass; the date strategy gains each new form.
+8. **Dates read digit windows.** Thirteen patterns over every text would have cost
+   about 0.5 s per MB. Every date holds a digit, so the patterns read only from 32
+   characters before each digit run to 8 after it, touching windows joined. On the
+   1 MB test the recognizer went from 0.39 s (before 1d, eight patterns) to 0.01 s.
+   A property test checks that the windows find exactly what the whole text gives.

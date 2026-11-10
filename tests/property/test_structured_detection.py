@@ -102,3 +102,29 @@ def test_no_ip_address_is_read_as_a_date(sample: tuple[str, str]) -> None:
 def test_no_phone_number_is_read_as_a_date(sample: tuple[str, str]) -> None:
     text, _ = sample
     assert DATE.find(text) == []
+
+
+from gateway.engine.recognizers import dates as dates_module  # noqa: E402
+
+
+def _whole_text_dates(text: str) -> list[tuple[int, int]]:
+    """What DATE finds when every pattern reads the whole text, not digit windows."""
+    found = {
+        match.span()
+        for pattern, check in dates_module._CHECKS  # noqa: SLF001
+        for match in pattern.finditer(text)
+        if check(match)
+    }
+    return dates_module._outermost(dates_module._not_in_a_longer_number(text, found))  # noqa: SLF001
+
+
+_DATE_SOUP = st.lists(
+    st.sampled_from([*"0123456789 .-/:'г", "\n", "March ", "марта ", "of ", "12th "]),
+    max_size=40,
+).map("".join)
+
+
+@given(st.one_of(_DATE_SOUP, embedded(dates()).map(lambda sample: sample[0])))
+def test_reading_digit_windows_finds_what_reading_the_whole_text_finds(text: str) -> None:
+    """Leak hunt 1d: the date patterns read windows around digit runs, for speed."""
+    assert [(s.start, s.end) for s in DATE.find(text)] == _whole_text_dates(text)

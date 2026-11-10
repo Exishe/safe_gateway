@@ -142,6 +142,8 @@ def test_russian_day_in_guillemets_or_quotes(text: str, expected: str) -> None:
         ("выписан 12-мар-1985 г.", "12-мар-1985"),
         ("выписан 12-МАЯ-1985 г.", "12-МАЯ-1985"),
         ("drawn 1985-Mar-12 ok", "1985-Mar-12"),
+        # Leak hunt 1d: the two separators need not match (ADR 0016 amended).
+        ("seen 12-Mar/1985 ok", "12-Mar/1985"),
     ],
 )
 def test_hyphenated_and_abbreviated_month_names(text: str, expected: str) -> None:
@@ -150,7 +152,62 @@ def test_hyphenated_and_abbreviated_month_names(text: str, expected: str) -> Non
 
 @pytest.mark.parametrize(
     "text",
-    ["12-Mar-3085", "32-Mar-1985", "12-Mar/1985", "12-Marz-1985", "A12-Mar-1985", "x12-мар-1985"],
+    ["12-Mar-3085", "32-Mar-1985", "12-Marz-1985", "A12-Mar-1985", "x12-мар-1985"],
 )
 def test_hyphenated_month_names_still_need_a_real_date(text: str) -> None:
+    assert found(text) == []
+
+
+# ------------------------------------------------------------------ leak hunt 1d (ADR 0016)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("госпитализирован 12-15 марта 1985 г.", "12-15 марта 1985"),
+        ("госпитализирован с 12 по 15 марта 1985 г.", "12 по 15 марта 1985"),
+        ("stayed 12 to 15 March 1985 here", "12 to 15 March 1985"),
+        ("stayed 12.03-15.03.1985 here", "12.03-15.03.1985"),
+        ("stayed 12-15.03.1985 here", "12-15.03.1985"),
+        ("born 12/03/85, male", "12/03/85"),
+        ("born 03/31/85, male", "03/31/85"),
+        ("born 12-03-85, male", "12-03-85"),
+        ("born 12-MAR-85, male", "12-MAR-85"),
+        ("родился 12-мар-85, пол", "12-мар-85"),
+        ("родился 12 марта 85 г., пол", "12 марта 85"),
+        ("родился 12 марта 85 года", "12 марта 85"),
+        ("born 1985.03.12, male", "1985.03.12"),
+        ("born 12MAR1985, male", "12MAR1985"),
+        ("born 12-Mar/1985, male", "12-Mar/1985"),
+        ("договор от « 12 » марта 1985 г.", "« 12 » марта 1985"),
+        ("born 12 03 1985, male", "12 03 1985"),
+        ("born 12 Mar '85, male", "12 Mar '85"),
+        ("Mar 12 '85 it was", "Mar 12 '85"),
+        ("am 12. März 1985 geboren", "12. März 1985"),
+        ("am 3.Okt.1985 geboren", "3.Okt.1985"),
+        ("am 1. Dezember 1985 geboren", "1. Dezember 1985"),
+        ("am 12. Mai 1985 geboren", "12. Mai 1985"),
+    ],
+)
+def test_more_date_forms(text: str, expected: str) -> None:
+    assert found(text) == [expected]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "12 марта 85 человек пришли",  # a count after a date without a year, not its year
+        "тел. +7 916 12 03 1985",  # phone groups
+        "call 8 12 03 1985 now",
+        "code 12 03 1985 4567",
+        "v10.12.15 released",  # a version
+        "12-15 марта 3085",  # not a year
+        "32-35 марта 1985",  # not days
+        "12.13-15.03.1985",  # a month that does not exist
+        "12/03/8512",
+        "12MAR1985x",
+        "ab12MAR1985",
+    ],
+)
+def test_new_forms_still_need_a_real_date_and_clean_boundaries(text: str) -> None:
     assert found(text) == []

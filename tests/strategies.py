@@ -358,6 +358,8 @@ RU_MONTHS_GENITIVE = ("января", "февраля", "марта", "апре�
 RU_MONTHS_GENITIVE += ("августа", "сентября", "октября", "ноября", "декабря")
 RU_MONTHS_SHORT = ("янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.")
 RU_MONTHS_SHORT += ("авг.", "сент.", "окт.", "нояб.", "дек.")
+DE_MONTH_NAMES = ("Januar", "Februar", "M\u00e4rz", "April", "Mai", "Juni", "Juli")
+DE_MONTH_NAMES += ("August", "September", "Oktober", "November", "Dezember")
 
 
 def _ordinal(day: int) -> str:
@@ -389,6 +391,23 @@ def _date_forms(day: int, month: int, year: int, *, pad: bool) -> list[str]:
         f"{d}/{name[:3]}/{year}",
         f"{year}-{name[:3]}-{d}",
         f"{d}-{RU_MONTHS_SHORT[month - 1].rstrip('.')}-{year}",
+        # Leak hunt 1d (ADR 0016 amended): two-digit years, year first with dots, glued
+        # and mixed separators, spaced guillemets, spaces, German names, ranges.
+        f"{day:02d}/{month:02d}/{year % 100:02d}",
+        f"{day:02d}-{month:02d}-{year % 100:02d}",
+        f"{year}.{month:02d}.{day:02d}",
+        f"{d}{name[:3]}{year}",
+        f"{d}{name[:3]}{year % 100:02d}",
+        f"{d}-{name[:3]}/{year}",
+        f"{d}-{name[:3]}-{year % 100:02d}",
+        f"{chr(0xAB)} {day} {chr(0xBB)} {RU_MONTHS_GENITIVE[month - 1]} {year}",
+        f"{day:02d} {month:02d} {year}",
+        f"{day} {name[:3]} '{year % 100:02d}",
+        f"{day}. {DE_MONTH_NAMES[month - 1]} {year}",
+        f"{max(1, day - 1)}-{day} {RU_MONTHS_GENITIVE[month - 1]} {year}",
+        f"{max(1, day - 1)} to {day} {name} {year}",
+        f"{max(1, day - 1):02d}.{month:02d}-{day:02d}.{month:02d}.{year}",
+        f"{max(1, day - 1)}-{day}.{month:02d}.{year}",
     ]
 
 
