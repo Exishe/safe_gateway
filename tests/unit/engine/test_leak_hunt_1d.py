@@ -83,7 +83,6 @@ def real_models() -> None:
 # ------------------------------------------------------------ clean view (ADR 0016 amended, 1)
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_digit_look_alikes_that_are_not_decimal() -> None:
     """The fold covers str.isdecimal() only. Circled digits and superscripts are
     'numeric' (category No), read as digits by people and by the cloud model, and
@@ -99,7 +98,6 @@ def test_digit_look_alikes_that_are_not_decimal() -> None:
     assert leaks(cases) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_invisible_default_ignorable_characters_that_are_not_format_characters() -> None:
     """The clean view removes category Cf, U+034F and the tags block. The Hangul filler
     (Lo) and the Mongolian free variation selectors (Mn) are Default_Ignorable too and
@@ -116,7 +114,6 @@ def test_invisible_default_ignorable_characters_that_are_not_format_characters()
     assert leaks(cases) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_combining_low_line_under_each_digit() -> None:
     """Text 'underlined' with U+0332 after each character (Unicode text generators,
     some PDF converters) still reads as the number, but combining marks are not removed
@@ -125,7 +122,6 @@ def test_combining_low_line_under_each_digit() -> None:
     assert leaks([(f"Her SSN is {ssn} per the intake form.", ssn)]) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_email_with_a_full_width_at_or_an_ideographic_full_stop() -> None:
     """IDNA reads U+3002 as a label dot and mail clients accept a full-width '@' from a
     CJK keyboard; the clean view folds neither, so _EMAIL never matches. Both: []."""
@@ -139,7 +135,6 @@ def test_email_with_a_full_width_at_or_an_ideographic_full_stop() -> None:
     assert leaks(cases) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_email_with_a_decomposed_accent_in_the_local_part() -> None:
     """macOS writes 'é' as 'e' + U+0301 (NFD). The recognizers read the clean view, which
     is not composed, and \\w does not match a combining mark, so the address starts after

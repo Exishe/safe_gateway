@@ -128,3 +128,53 @@ Consequences.
   (`lang="en"`) is unchanged: it goes to that model alone.
 - The import of `gateway.engine.textview` scans about 200,000 code points
   three times (format characters, digits, capitals): about 40 ms measured.
+
+## Amended 2026-11-09: leak hunt 1d
+
+The fourth leak-hunter round (`tests/unit/engine/test_leak_hunt_1d.py`) found 21
+inputs that leaked; the clean view, date and routing ones are decided here, the
+shape, keyword and separator ones in ADR 0023, the known-value sweep in ADR 0014.
+Each test failed with `--runxfail` before its fix and passes after it.
+
+1. **The clean view folds digit look-alikes** (amends 1c point 1). Every character
+   outside ASCII for which `unicodedata.digit()` is defined becomes that ASCII
+   digit, one for one: decimal digits as before, and the numeric look-alikes
+   that are not decimal (superscripts and subscripts, circled, parenthesised and
+   full-stop digits, an SSN in circled digits). A character with a numeric value but no
+   single digit (circled ten) is left as it is. `m²` now reads as `m2`.
+2. **Every Default_Ignorable_Code_Point character is removed**, not only the
+   format characters: the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0
+   (category Lo), the Mongolian free variation selectors U+180B-180D and
+   U+180F and the Khmer inherent vowels U+17B4-17B5 (Mn), and the code points
+   Unicode reserves as ignorable (U+2065, U+FFF0-FFF8, U+E0080-E0FFF).
+   `unicodedata` does not expose the property, so the non-Cf entries are written
+   out in `textview.py` from DerivedCoreProperties; a test checks that each is a
+   letter, mark, format or unassigned code point.
+3. **Combining marks on a digit or a digit separator are removed.** A run of
+   marks (Mn or Me, invisible characters between them included) whose base, the
+   character before the run, is an ASCII digit after folding or one of `-`, `.`,
+   `/` or a space is dropped and mapped back: underlined text (U+0332 after each
+   character) and keycaps (`1` U+FE0F U+20E3) read as the number. Chosen over
+   "inside a digit run only" because the rule then reads one character of
+   context, so every slice of the view still cleans to itself (the mapping
+   property test) and the rule stays linear. A mark on a letter is kept: it is
+   part of the word and the NER view composes it.
+4. **CJK punctuation is folded one for one, as NFKC would**: full-width and
+   small `@` (U+FF20, U+FE6B) to `@`; the ideographic, full-width, half-width
+   and small full stops (U+3002, U+FF0E, U+FF61, U+FE52) to `.`; the full-width
+   solidus, plus sign and brackets to `/`, `+`, `(` and `)`. Only these: full
+   NFKC changes lengths and would fold letters (`ﬁ`, `ℌ`) the recognizers do not
+   need. A sentence-final `。` after a number now reads as `.`, which no
+   recognizer treats as part of a value.
+5. **E-mail addresses accept combining marks** in the local part and domain
+   labels (`jose` + U+0301 `.quillin@...`). Of the two fixes offered (structured
+   recognizers on the composed view, or marks in the pattern), the pattern is
+   chosen: the composed view changes lengths, so every structured recognizer
+   would need end shifts for one leak in one recognizer. Only BMP marks are
+   listed, for speed (below).
+6. **Speed.** A character class with any member outside the BMP is matched by
+   walking its ranges, about a hundred times slower than the bitmap `re` builds
+   for a BMP-only class (0.2 s against 2 ms on 1 MB of Cyrillic text). The quick
+   "anything to clean?" test is therefore a BMP class plus a separate test for
+   any astral character. On the 1 MB test of `test_detect.py` (Faker text with
+   Cyrillic in it) the clean view went from 0.06 s to 0.005 s.

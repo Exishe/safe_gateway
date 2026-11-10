@@ -45,6 +45,26 @@ def _format_characters() -> str:
 # joiner, BOM, Arabic letter mark, the tag characters U+E0001 and U+E0020-E007F), the
 # combining grapheme joiner (category Mn, but it shows nothing) and the whole tags
 # block U+E0000-E007F, unassigned code points included.
+# Default_Ignorable_Code_Point characters that are not format characters (Unicode
+# DerivedCoreProperties): they render as nothing but are letters (Hangul fillers), marks
+# (Mongolian free variation selectors, Khmer inherent vowels) or unassigned code points
+# reserved as ignorable. Python's unicodedata does not expose the property, so the list
+# is written out; a test checks each entry is still ignorable-shaped (ADR 0016, 1d).
+_IGNORABLE_RANGES = (
+    (0x115F, 0x1160),  # Hangul choseong and jungseong fillers (Lo)
+    (0x17B4, 0x17B5),  # Khmer inherent vowels (Mn)
+    (0x180B, 0x180D),  # Mongolian free variation selectors 1-3 (Mn)
+    (0x180F, 0x180F),  # Mongolian free variation selector 4 (Mn)
+    (0x2065, 0x2065),  # reserved
+    (0x3164, 0x3164),  # Hangul filler (Lo)
+    (0xFFA0, 0xFFA0),  # half-width Hangul filler (Lo)
+    (0xFFF0, 0xFFF8),  # reserved
+    (0xE0080, 0xE00FF),  # reserved
+    (0xE01F0, 0xE0FFF),  # reserved
+)
+DEFAULT_IGNORABLE = "".join(
+    chr(code) for low, high in _IGNORABLE_RANGES for code in range(low, high + 1)
+)
 INVISIBLE = (
     "".join(
         sorted(
@@ -52,20 +72,48 @@ INVISIBLE = (
                 *_format_characters(),
                 chr(0x034F),  # combining grapheme joiner
                 *map(chr, range(0xE0000, 0xE0080)),  # tags block
+                *DEFAULT_IGNORABLE,
             }
         )
     )
     + VARIATION_SELECTORS
 )
-# Decimal digits of every script (Arabic-Indic, full width, Devanagari...): 1:1 to ASCII,
-# so every recognizer reads one kind of digit and offsets do not move.
+# Every digit of every script to its ASCII digit, 1:1, so every recognizer reads one kind
+# of digit and offsets do not move: decimal digits (Arabic-Indic, full width, Devanagari)
+# and the digit look-alikes that are numeric but not decimal (superscripts, subscripts,
+# circled, parenthesised and full-stop digits), which people and models read as digits.
 _DIGIT_FOLD = {
-    code: str(unicodedata.decimal(chr(code)))
+    code: str(unicodedata.digit(chr(code)))
     for plane in _SCANNED_PLANES[:2]
     for code in plane
-    if not chr(code).isascii() and chr(code).isdecimal()
+    if not chr(code).isascii() and unicodedata.digit(chr(code), None) is not None
 }
 NON_ASCII_DIGITS = "".join(map(chr, _DIGIT_FOLD))
+# Punctuation that a CJK keyboard or IME writes in addresses, dates and numbers, folded
+# 1:1 as NFKC would: full-width and small "@", ideographic, full-width, half-width and
+# small full stops, full-width solidus, plus sign and brackets.
+PUNCTUATION_FOLD = {
+    0xFF20: "@",
+    0xFE6B: "@",
+    0x3002: ".",
+    0xFF0E: ".",
+    0xFF61: ".",
+    0xFE52: ".",
+    0xFF0F: "/",
+    0xFF0B: "+",
+    0xFF08: "(",
+    0xFF09: ")",
+}
+_FOLD = {**_DIGIT_FOLD, **PUNCTUATION_FOLD}
+# Combining marks (Mn, Me) of the BMP and plane 1. A mark on a digit or on a separator of
+# a digit run (`-`, `.`, `/`, a space) is dropped: underlined text (U+0332 after each
+# character) or a keycap still reads as the number.
+COMBINING_MARKS = "".join(
+    chr(code)
+    for plane in _SCANNED_PLANES[:2]
+    for code in plane
+    if unicodedata.category(chr(code)) in {"Mn", "Me"}
+)
 REPLACEMENT = chr(0xFFFD)  # what a lone surrogate becomes, 1:1
 
 
@@ -101,10 +149,32 @@ _SPACE = re.compile(_char_class(SPACES))
 _DASH = re.compile(_char_class(DASHES))
 _APOSTROPHE = re.compile(_char_class(APOSTROPHES))
 _SURROGATE = re.compile(f"[{_SURROGATES}]")
-_INVISIBLE_RUN = re.compile(_char_class(INVISIBLE) + "+")
-_ANY_SPECIAL = re.compile(
-    _char_class(SPACES + DASHES + APOSTROPHES + INVISIBLE + NON_ASCII_DIGITS, _SURROGATES)
+_INVISIBLE_CLASS = _char_class(INVISIBLE)
+MARK_CLASS = _char_class(COMBINING_MARKS)
+# A class with any member outside the BMP is matched by walking its ranges, about a
+# hundred times slower than the bitmap `re` builds for a BMP-only class, so searches that
+# run on every text use BMP classes and test for astral characters separately.
+_BMP_LIMIT = 0x10000
+MARK_CLASS_BMP = _char_class("".join(c for c in COMBINING_MARKS if ord(c) < _BMP_LIMIT))
+# What the clean view removes: a run of invisible characters, or the combining marks on a
+# digit or a digit separator (invisible characters between them go too). The base is the
+# character before the run in the folded text, so the rule reads one character of context.
+_REMOVED = re.compile(
+    f"(?<=[0-9./ \\-])(?:{_INVISIBLE_CLASS}*{MARK_CLASS})+{_INVISIBLE_CLASS}*|{_INVISIBLE_CLASS}+"
 )
+_SPECIALS = (
+    SPACES
+    + DASHES
+    + APOSTROPHES
+    + INVISIBLE
+    + NON_ASCII_DIGITS
+    + "".join(map(chr, PUNCTUATION_FOLD))
+    + COMBINING_MARKS
+)
+_ANY_SPECIAL = re.compile(
+    _char_class("".join(c for c in _SPECIALS if ord(c) < _BMP_LIMIT), _SURROGATES)
+)
+_ANY_ASTRAL = re.compile("[\\U00010000-\\U0010ffff]")
 
 
 @dataclass(frozen=True)
@@ -135,16 +205,16 @@ class TextView:
 
 def clean_view(text: str) -> TextView:
     # Every character cleaned here is outside ASCII; isascii() is far quicker than the search.
-    if text.isascii() or _ANY_SPECIAL.search(text) is None:
+    if text.isascii() or (_ANY_SPECIAL.search(text) is None and _ANY_ASTRAL.search(text) is None):
         return TextView(text)  # the common case: nothing to clean, offsets are the same
     replaced = _SPACE.sub(" ", text)
     replaced = _DASH.sub("-", replaced)
     replaced = _APOSTROPHE.sub("'", replaced)
     replaced = _SURROGATE.sub(REPLACEMENT, replaced)
-    replaced = replaced.translate(_DIGIT_FOLD)
+    replaced = replaced.translate(_FOLD)
     pieces, segment_starts, shifts = [], [0], [0]
     cursor = removed = 0
-    for run in _INVISIBLE_RUN.finditer(replaced):
+    for run in _REMOVED.finditer(replaced):
         pieces.append(replaced[cursor : run.start()])
         removed += run.end() - run.start()
         cursor = run.end()

@@ -10,7 +10,9 @@ from hypothesis import strategies as st
 from gateway.engine.textview import (
     APOSTROPHES,
     DASHES,
+    DEFAULT_IGNORABLE,
     INVISIBLE,
+    PUNCTUATION_FOLD,
     REPLACEMENT,
     VARIATION_SELECTORS,
     clean_view,
@@ -97,11 +99,57 @@ def test_every_unicode_decimal_digit_becomes_its_ascii_digit_one_for_one() -> No
     assert view.original_span(4, 14) == (4, 14)
 
 
-def test_digits_that_are_not_decimal_are_left_alone() -> None:
-    superscript_two, circled_one = chr(0x00B2), chr(0x2460)
-    assert (
-        clean_view(f"m{superscript_two} {circled_one}").text == f"m{superscript_two} {circled_one}"
-    )
+def test_every_digit_look_alike_becomes_its_ascii_digit_one_for_one() -> None:
+    """ADR 0016 amended (1d): superscripts, circled and parenthesised digits fold too."""
+    look_alikes = [
+        chr(c)
+        for c in range(sys.maxunicode + 1)
+        if not chr(c).isascii() and unicodedata.digit(chr(c), None) is not None
+    ]
+    view = clean_view("".join(look_alikes))
+    assert view.text == "".join(str(unicodedata.digit(c)) for c in look_alikes)
+    superscript_two, circled_one, full_stop_three = chr(0x00B2), chr(0x2460), chr(0x248A)
+    assert clean_view(f"m{superscript_two} {circled_one}{full_stop_three}").text == "m2 13"
+    ten = chr(0x2469)  # circled ten: numeric, but no single digit
+    assert clean_view(ten).text == ten
+
+
+def test_default_ignorable_letters_and_marks_are_removed() -> None:
+    fillers = [chr(c) for c in (0x115F, 0x1160, 0x3164, 0xFFA0)]
+    selectors = [chr(c) for c in range(0x180B, 0x1810)]
+    assert {*fillers, *selectors} <= set(INVISIBLE)
+    text = "12" + "".join(fillers) + "3" + "".join(selectors) + "4"
+    view = clean_view(text)
+    assert view.text == "1234"
+    assert view.original_span(0, 4) == (0, len(text))
+
+
+def test_every_listed_ignorable_is_not_a_visible_character() -> None:
+    for char in DEFAULT_IGNORABLE:
+        assert unicodedata.category(char) in {"Lo", "Mn", "Cn", "Cf"}, hex(ord(char))
+
+
+def test_combining_marks_on_digits_and_digit_separators_are_removed() -> None:
+    low_line = chr(0x0332)
+    underlined = "".join(c + low_line for c in "123-45 6.7/8")
+    view = clean_view(underlined)
+    assert view.text == "123-45 6.7/8"
+    start, end = view.original_span(0, len(view.text))
+    assert underlined[start:end] == underlined[: len(underlined) - 1]
+    keycap = chr(0xFE0F) + chr(0x20E3)
+    assert clean_view(f"1{keycap}2{keycap}").text == "12"
+
+
+def test_combining_marks_on_letters_stay() -> None:
+    acute = chr(0x0301)
+    assert clean_view(f"jose{acute} x{acute}1").text == f"jose{acute} x{acute}1"
+
+
+def test_cjk_punctuation_in_addresses_folds_one_for_one() -> None:
+    text = "a" + "".join(map(chr, PUNCTUATION_FOLD)) + "b"
+    view = clean_view(text)
+    assert view.text == "a@@..../+()b"
+    assert len(view.text) == len(text)
 
 
 _SPECIALS = [
@@ -117,6 +165,19 @@ _SPECIALS = [
     chr(0xE0020),  # tag space
     chr(0xFF11),  # full-width one
     chr(0x0663),  # Arabic-Indic three
+    # Leak hunt 1d: digit look-alikes, ignorable letters and marks, CJK punctuation,
+    # combining marks (dropped only on a digit or a digit separator).
+    chr(0x00B2),  # superscript two
+    chr(0x2460),  # circled one
+    chr(0x3164),  # Hangul filler
+    chr(0x180B),  # Mongolian free variation selector one
+    chr(0xFF20),  # full-width commercial at
+    chr(0x3002),  # ideographic full stop
+    chr(0x0332),  # combining low line
+    chr(0x0301),  # combining acute accent
+    chr(0x20E3),  # combining enclosing keycap
+    ".",
+    "/",
 ]
 
 
@@ -127,6 +188,23 @@ def test_every_cleaned_slice_maps_to_an_original_slice_that_cleans_to_it(text: s
         for end in range(start + 1, len(view.text) + 1):
             original_start, original_end = view.original_span(start, end)
             assert clean_view(text[original_start:original_end]).text == view.text[start:end]
+
+
+@given(st.text(alphabet=st.sampled_from(["a", "1", " ", "-", *_SPECIALS]), max_size=40))
+def test_every_view_character_maps_in_order_and_only_invisibles_and_marks_are_dropped(
+    text: str,
+) -> None:
+    """Leak hunt 1d: folds are 1:1, and nothing visible but a mark is ever removed."""
+    view = clean_view(text)
+    positions = [view.original_index(i) for i in range(len(view.text))]
+    assert positions == sorted(set(positions))
+    for index, position in enumerate(positions):
+        assert clean_view(text[position]).text in {view.text[index], ""}
+    dropped = set(range(len(text))) - set(positions)
+    assert all(
+        text[i] in INVISIBLE or unicodedata.combining(text[i]) or text[i] == chr(0x20E3)
+        for i in dropped
+    )
 
 
 # ------------------------------------------------------------------ ADR 0016
