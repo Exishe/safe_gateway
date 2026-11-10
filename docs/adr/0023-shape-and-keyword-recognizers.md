@@ -196,3 +196,15 @@ Consequences.
   letters. The OpenPII deltas, precision included, are in `docs/BENCHMARKS.md`.
 - Left out on purpose: a card with commas between its groups, a code further than
   40 characters from its keyword without a colon before it.
+
+## Amended 2026-11-10: IBAN line wrap, `/` in card shapes
+
+- **IBAN wrapped onto an indented line.** `iban._collect` accepts a line break plus
+  spaces or tabs as one separator, only after a whole group of four characters; the
+  mod-97 check still has to pass, so a wrap in the middle of a group, or one that
+  breaks the checksum, is not an IBAN.
+- **Card shapes with `/`.** The Luhn-invalid shape run may now be digit groups joined by
+  `/` in every gap (`4111/1111/1111/1112`). A slash run is never mixed with the other
+  gaps, and the group-size rule (fours, short last group, a card's length and first
+  digit) still applies, so `12/03/1985` is not a card. Costs a few more false positives
+  on slash-grouped 16-digit numbers.

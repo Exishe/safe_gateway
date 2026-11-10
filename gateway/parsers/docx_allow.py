@@ -8,6 +8,8 @@ defaults and help text, table captions, mail-merge settings, style aliases) are 
 them.
 """
 
+import re
+
 from docx.oxml.ns import qn
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -144,3 +146,212 @@ COMPAT_URI = "http://schemas.microsoft.com/office/word"
 STYLE_REFERENCES = _w(
     "pStyle", "rStyle", "tblStyle", "basedOn", "next", "link", "numStyleLink", "styleLink"
 )
+# ---------------------------------------------------------------- attribute values
+# A kept attribute's value is checked against a strict pattern for its kind; a value that
+# does not match is dropped (or, for a font name, replaced), so free text hidden in a typed
+# attribute (`<w:lang w:val="a@b.org"/>`) cannot reach the copy (ADR 0018, 2026-11-10).
+DEFAULT_FONT = "Calibri"
+_NUMBER = re.compile(r"-?\d{1,9}(?:\.\d{1,4})?%?")
+_HEX = re.compile(r"[0-9A-Fa-f]{2,8}")
+_LANGUAGE = re.compile(r"[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*")
+_FONT_NAME = re.compile(r"(?!.*\d{3})[A-Za-z][A-Za-z0-9 \-]{0,31}")
+_ENUMS = frozenset(
+    [
+        "auto",
+        "none",
+        "nil",
+        "true",
+        "false",
+        "on",
+        "off",
+        "default",
+        "preserve",
+        "single",
+        "double",
+        "thick",
+        "dotted",
+        "dash",
+        "dotDash",
+        "dotDotDash",
+        "wave",
+        "dashed",
+        "words",
+        "thin",
+        "thinThickSmallGap",
+        "thickThinSmallGap",
+        "thickThin",
+        "thinThick",
+        "triple",
+        "wavy",
+        "left",
+        "right",
+        "center",
+        "both",
+        "distribute",
+        "justified",
+        "start",
+        "end",
+        "top",
+        "bottom",
+        "baseline",
+        "superscript",
+        "subscript",
+        "char",
+        "line",
+        "lines",
+        "text",
+        "page",
+        "margin",
+        "column",
+        "paragraph",
+        "frame",
+        "portrait",
+        "landscape",
+        "continuous",
+        "nextPage",
+        "evenPage",
+        "oddPage",
+        "nextColumn",
+        "atLeast",
+        "exact",
+        "decimal",
+        "upperRoman",
+        "lowerRoman",
+        "upperLetter",
+        "lowerLetter",
+        "ordinal",
+        "cardinal",
+        "bullet",
+        "hex",
+        "tab",
+        "space",
+        "nothing",
+        "normal",
+        "fixed",
+        "autofit",
+        "dxa",
+        "pct",
+        "pt",
+        "eastAsia",
+        "cs",
+        "ascii",
+        "hAnsi",
+        "hyperlink",
+        "followedHyperlink",
+        "dark1",
+        "light1",
+        "dark2",
+        "light2",
+        "text1",
+        "text2",
+        "background1",
+        "background2",
+        "accent1",
+        "accent2",
+        "accent3",
+        "accent4",
+        "accent5",
+        "accent6",
+        "majorHAnsi",
+        "minorHAnsi",
+        "majorEastAsia",
+        "minorEastAsia",
+        "majorBidi",
+        "minorBidi",
+        "majorAscii",
+        "minorAscii",
+        "begin",
+        "separate",
+        "hybridMultilevel",
+        "multilevel",
+        "singleLevel",
+        "yellow",
+        "green",
+        "cyan",
+        "magenta",
+        "red",
+        "blue",
+        "black",
+        "white",
+        "darkBlue",
+        "darkCyan",
+        "darkGreen",
+        "darkMagenta",
+        "darkRed",
+        "darkYellow",
+        "darkGray",
+        "lightGray",
+        "clear",
+        "solid",
+        "horzStripe",
+        "vertStripe",
+        "diagStripe",
+        "pct5",
+        "pct10",
+        "pct20",
+        "pct25",
+        "pct30",
+        "pct40",
+        "pct50",
+        "pct60",
+        "pct70",
+        "pct75",
+        "pct80",
+        "pct90",
+        "allCaps",
+        "dot",
+        "hyphen",
+        "underscore",
+        "middleDot",
+        "heavy",
+        "mirror",
+        "inside",
+        "outside",
+        "firstPage",
+        "lastPage",
+        "wholePage",
+        "unlocked",
+        "locked",
+        "topLeft",
+        "topRight",
+        "bottomLeft",
+        "bottomRight",
+    ]
+)
+_FONT_ATTRIBUTES = _w("ascii", "hAnsi", "eastAsia", "cs", "font")
+_LANGUAGE_ELEMENTS = _w("lang", "themeFontLang")
+# Judged later in the pipeline instead: style ids and references are replaced by the
+# copy's own ids, a style name is a built-in or `Custom N`, a list label is cut by
+# `_clean_numbering`, author and initials are replaced, and r:id is checked against the
+# kept relationships.
+_DEFERRED_ATTRIBUTES = frozenset({qn("w:styleId"), qn("r:id"), qn("w:author"), qn("w:initials")})
+_DEFERRED_VALUES = STYLE_REFERENCES | _w("name", "lvlText")
+
+
+def _scalar_ok(value: str) -> bool:
+    return bool(_NUMBER.fullmatch(value) or _HEX.fullmatch(value) or value in _ENUMS)
+
+
+def _font_or_default(value: str) -> str:
+    return value if _FONT_NAME.fullmatch(value) else DEFAULT_FONT
+
+
+def keep_attribute(element_tag: str, name: str, value: str, *, extra: bool = False) -> str | None:
+    """The value to keep for this attribute, or None to drop it.
+
+    One central check: a language tag on `w:lang`, a conservative name on a font
+    attribute (any other becomes the default font), and elsewhere only a number, a hex
+    value or a word from the schema's enumerations. `extra` marks a per-element extra
+    (a font's name, a compat setting's name and URI; `_clean_settings` judges the latter).
+    """
+    if extra:
+        return _font_or_default(value) if element_tag == qn("w:font") else value
+    if name in _FONT_ATTRIBUTES:
+        return _font_or_default(value)
+    deferred = name in _DEFERRED_ATTRIBUTES or (
+        name == qn("w:val") and element_tag in _DEFERRED_VALUES
+    )
+    if deferred:
+        return value
+    ok = _LANGUAGE.fullmatch(value) if element_tag in _LANGUAGE_ELEMENTS else _scalar_ok(value)
+    return value if ok else None

@@ -71,9 +71,10 @@ SHAPE_SCORE = 0.55  # above the default threshold 0.5, below a Luhn-valid card's
 # Discover, UnionPay), 15 (Amex), 19 (Visa, Discover, UnionPay, Maestro).
 _SHAPES = {16: "23456", 15: "3", 19: "3456"}
 # A run of digit groups. Each gap is one space, dot or hyphen, or two spaces (justified
-# PDF text); the gaps need not match (a space here, a hyphen there).
+# PDF text); the gaps need not match (a space here, a hyphen there). A run with slashes
+# uses slashes in every gap, so a date like 12/03/1985 or a path never mixes into a card.
 _GAP = r"(?:  ?|[.\-])"
-_SHAPE_RUN = re.compile(rf"(?<!\w)\d+(?:{_GAP}\d+)*(?!\w)")
+_SHAPE_RUN = re.compile(rf"(?<!\w)(?:\d+(?:/\d+)+|\d+(?:{_GAP}\d+)*)(?!\w)")
 _FOUR = 4
 
 

@@ -9,14 +9,24 @@ from gateway.engine.types import EntityType, Span
 # country's exact length and the mod-97 check keep this from matching noise.
 _START = re.compile(r"[A-Za-z]{2}\d{2}")
 _SEPARATORS = ("\r\n", " ", "-", "\n")
+# A wrapped line's indent: a line break then spaces or tabs, only between groups of four.
+_WRAP = re.compile(r"\r?\n[ \t]+")
+_GROUP = 4
 
 
 def _is_iban_char(char: str) -> bool:
     return char.isascii() and char.isalnum()
 
 
-def _separator_at(text: str, index: int) -> int:
-    """Length of the one separator allowed between IBAN characters at `index`, or 0."""
+def _separator_at(text: str, index: int, count: int) -> int:
+    """Length of the one separator allowed between IBAN characters at `index`, or 0.
+
+    `count` characters are collected so far: an indented line wrap counts as a separator
+    only after a whole group of four, and the mod-97 check then has to pass.
+    """
+    wrap = _WRAP.match(text, index)
+    if wrap and count % _GROUP == 0:
+        return wrap.end() - index
     return next((len(s) for s in _SEPARATORS if text.startswith(s, index)), 0)
 
 
@@ -30,7 +40,7 @@ def _collect(text: str, start: int, length: int) -> list[int] | None:
             after_separator = False
             index += 1
             continue
-        separator = _separator_at(text, index)
+        separator = _separator_at(text, index, len(positions))
         if not separator or not positions or after_separator:
             break
         after_separator = True

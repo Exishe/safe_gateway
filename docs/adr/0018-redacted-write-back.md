@@ -170,3 +170,25 @@ directory and renames it into place only on success.
   - Size caps bound what is inflated, not the parser's memory: a document
     just under 200 MB can still need several times that in memory.
 - This reduces exposure; it does not anonymise.
+
+## Amended 2026-11-10: attribute values and list labels
+
+A kept attribute used to be copied as long as its name was on the list, so free text in
+a typed attribute (`<w:lang w:val="a@b.org"/>`) reached the copy and was never read for
+detection.
+
+- **One validator.** `docx_allow.keep_attribute` judges every kept value: a language tag
+  on `w:lang` and `w:themeFontLang` (`^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$`); elsewhere
+  a number, a 2 to 8 digit hex value (colours, ids), or a word from the schema's
+  enumerations. A value that matches none is dropped (fail closed).
+- **Font names** (`rFonts`, `sym`, the font table) stay only if they match
+  `[A-Za-z][A-Za-z0-9 -]{0,31}` with no run of three digits; any other becomes
+  Calibri. A font name of that shape can still be free text, so this is a limit, not a
+  proof.
+- **Judged later, so skipped here:** style ids and style references (rewritten to the
+  copy's own ids), style names (built-in or `Custom N`), author and initials (replaced),
+  `r:id` (checked against the kept relationships), compat settings (`_clean_settings`).
+- **List labels.** `_clean_numbering` keeps a `w:lvlText` only when it is `%1` to `%9`
+  level references plus at most two characters that are not letters or digits (a lone
+  non-digit such as a bullet `o` is kept). Anything else, such as a phone number, becomes
+  `%N.` for its level.

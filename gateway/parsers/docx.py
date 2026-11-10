@@ -87,7 +87,8 @@ _FIXED = {qn("w:tab"): "\t", qn("w:br"): "\n", qn("w:cr"): "\n", qn("w:noBreakHy
 # Elements a paragraph's text is read through; text under anything else is not read,
 # because the copy removes it.
 _READ = allow.STORY | allow.UNWRAPPED
-_LIST_TEXT_WORD = re.compile(r"[^\W\d_]{2,}")  # two letters in a row: words, not "%1."
+_LEVEL_REFERENCE = re.compile(r"%[1-9]")
+_LABEL_FILLER = 2  # characters allowed beside the level references
 _AUTHOR = qn("w:author")
 _INITIALS = qn("w:initials")
 _EXTRA_ATTRIBUTES = {
@@ -238,6 +239,14 @@ def _keep_attributes(root: Any) -> None:  # noqa: ANN401
         for name in list(element.attrib):
             if name not in allow.ATTRIBUTES and name not in extra:
                 del element.attrib[name]
+                continue
+            kept = allow.keep_attribute(
+                element.tag, name, element.get(name, ""), extra=name in extra
+            )
+            if kept is None:
+                del element.attrib[name]
+            elif kept != element.get(name):
+                element.set(name, kept)
         if element.get(_AUTHOR) is not None:
             element.set(_AUTHOR, REDACTED_AUTHOR)
         if element.get(_INITIALS) is not None:
@@ -265,13 +274,23 @@ def _clean_settings(root: Any) -> None:  # noqa: ANN401
             element.getparent().remove(element)
 
 
+def _label_ok(label: str) -> bool:
+    """`%1.`, `(%2)`, a bullet: level references plus at most two non-alphanumeric
+    characters. A lone non-digit is kept (a bullet can be the letter `o`)."""
+    if len(label) <= 1:
+        return not label.isdigit()
+    filler = _LEVEL_REFERENCE.sub("", label)
+    return len(filler) <= _LABEL_FILLER and not any(char.isalnum() for char in filler)
+
+
 def _clean_numbering(root: Any) -> None:  # noqa: ANN401
-    """List label text with words in it (`Exhibit %1 for ...`) becomes `%1.`."""
+    """A list label that is not level references and punctuation (`Exhibit %1 for ...`,
+    a phone number) becomes `%N.`."""
     for element in root.iter(qn("w:lvlText")):
-        if _LIST_TEXT_WORD.search(element.get(qn("w:val"), "")):
+        if not _label_ok(element.get(qn("w:val"), "")):
             level = element.getparent().get(qn("w:ilvl"), "0")
             number = int(level) + 1 if level.isdigit() else 1
-            element.set(qn("w:val"), f"%{number}.")
+            element.set(qn("w:val"), f"%{min(number, 9)}.")
 
 
 @cache

@@ -2,11 +2,8 @@
 
 Each test feeds `detect()` a structured identifier written in a shape the engine should
 fold or group but does not, and asserts the whole value is covered by a span of the
-right type. Every one is a known bypass, marked xfail(strict=True); the engine fix is
-the main session's job. Run with `--runxfail` to watch each one fail for its reason.
+right type. Every one was a known bypass; the fixes landed on 2026-11-10 (ADR 0023).
 """
-
-import pytest
 
 from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.types import EntityType
@@ -23,7 +20,6 @@ def _covers(text: str, value: str, entity_type: EntityType) -> bool:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="engine red-team finding (1e)")
 def test_iban_split_across_line_with_indent() -> None:
     """An IBAN wrapped onto a second, indented line is not detected.
 
@@ -37,7 +33,6 @@ def test_iban_split_across_line_with_indent() -> None:
     assert _covers(text, value, EntityType.IBAN)
 
 
-@pytest.mark.xfail(strict=True, reason="engine red-team finding (1e)")
 def test_credit_card_shape_slash_separators() -> None:
     """A card-shaped number grouped with slashes escapes the shape recognizer.
 
@@ -49,3 +44,19 @@ def test_credit_card_shape_slash_separators() -> None:
     card = "4111/1111/1111/1112"  # pragma: allowlist secret
     text = f"Charged to card {card} today."
     assert _covers(text, card, EntityType.CREDIT_CARD)
+
+
+def test_iban_wrap_only_between_groups_of_four() -> None:
+    """A wrap mid-group, or a wrap that breaks mod-97, is not an IBAN."""
+    mid_group = "DE89 3704 00\n    440532 0130 00"  # pragma: allowlist secret
+    invalid = "DE88 3704 0044\n    0532 0130 00"  # pragma: allowlist secret
+    for value in (mid_group, invalid):
+        assert not _covers(f"wire {value} now", value, EntityType.IBAN)
+
+
+def test_dates_with_slashes_are_not_cards() -> None:
+    """Slash-grouped dates and mixed-separator runs stay out of the card shape."""
+    for text in ("born 12/03/1985 in Ulm", "dated 2026/11/10/2026 and 1111/2222-3333/4444"):
+        assert not any(
+            span.entity_type == EntityType.CREDIT_CARD for span in detect(text, config=_STRUCTURED)
+        )
