@@ -81,6 +81,75 @@ a temporary `SAFEGUARD_HOME` and a test-only file keyring
 (`tests/e2e/web/file_keyring.py`), so it writes and verifies a real audit log
 without touching your keychain or `~/.safeguard`.
 
+### The browser extension (Phase 7)
+
+The extension masks what you send to ChatGPT (chatgpt.com, chat.openai.com), Claude
+(claude.ai) and Gemini (gemini.google.com) through the gateway on this computer, and
+restores the replies on the page (ADR 0026). It is not in any store yet (the Chrome
+Web Store fee is on [APPROVAL_NEEDED.md](APPROVAL_NEEDED.md)), so pilots load it
+unpacked. Build it once with Node 22.12 or later:
+
+```bash
+cd apps/extension && npm ci --ignore-scripts && npm run build && cd ../..
+```
+
+This writes `apps/extension/dist/chrome` (Chrome, Edge, Brave) and
+`apps/extension/dist/firefox`.
+
+**Chrome, Edge or Brave.** Open `chrome://extensions` (Edge: `edge://extensions`,
+Brave: `brave://extensions`), switch on **Developer mode**, choose **Load unpacked**
+and pick `apps/extension/dist/chrome`. The card shows the extension's **ID**, 32
+letters from a to p. The id comes from the folder's path, so it stays the same while
+you load it from the same folder.
+
+**Firefox (128 or later).** Open `about:debugging#/runtime/this-firefox`, choose
+**Load Temporary Add-on…** and pick `apps/extension/dist/firefox/manifest.json`. Copy
+the **Internal UUID** shown for it. Then open `about:addons`, open SafeGuard Gateway,
+and under **Permissions** allow access to `127.0.0.1` and the chat sites; Firefox
+asks for host permissions separately. A temporary add-on is removed when Firefox
+quits. Check the Internal UUID after each load and update `extension_ids` if it
+changed.
+
+**Allow the extension in the gateway.** The gateway refuses every browser origin it
+was not told about. Add the id under `[proxy]` in `~/.safeguard/config.toml` and
+restart the gateway:
+
+```toml
+[proxy]
+extension_ids = [
+  "abcdefghijklmnopabcdefghijklmnop",      # Chrome, Edge, Brave: the ID  # pragma: allowlist secret
+  "0b5e7a4c-1d2f-4e3a-9b8c-7d6e5f4a3b2c",  # Firefox: the Internal UUID  # pragma: allowlist secret
+]
+```
+
+The values above are examples; use your own. Each id allows exactly its own origin
+(`chrome-extension://<id>` or `moz-extension://<uuid>`); the chat sites themselves
+stay refused. If the id is missing, the extension blocks each send and its notice
+shows the line to add.
+
+**Use.** With `uv run safeguard serve` running, write in the site's box and send as
+usual. The extension masks the draft first, puts the masked text in the box, then
+sends it; a short notice says how many values were pseudonymised. If the gateway is
+not running, nothing is sent and the notice says so. Restored values in replies have
+a dotted underline; placeholders it could not restore, or that sit in a link, stay
+visible with a red wavy underline. The toolbar badge counts the values masked in the
+tab; the popup shows the gateway's status, the counts by type, **Clear this tab's
+session**, and a link to the dashboard.
+
+Masking reduces exposure; it is not a guarantee. Read the limits in
+[SECURITY.md](SECURITY.md) before a pilot: the site's own page can read what you type
+before it is masked, and a change to a site's page can stop the extension from
+intercepting a send.
+
+Browser tests (Chromium, local fixture pages, no live site):
+
+```bash
+SAFEGUARD_E2E=1 uv run pytest tests/e2e/test_extension.py -m e2e --no-cov -s
+```
+
+They need port 8787 free (the extension only talks to that port) and write
+screenshots to `tests/e2e/artifacts/extension/`.
+
 ### Claude Code
 
 Open the repository in Claude Code. It reads `CLAUDE.md`, the hooks in

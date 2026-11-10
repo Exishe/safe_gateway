@@ -153,6 +153,23 @@ with each phase; the threat model gets its full review before the first pilot.
 - `/mask` returns the session's placeholder map to the caller, because the
   extension restores answers itself (ADR 0002 point 2). The map is personal
   data; the caller must keep it in memory and drop it with the session.
+- The browser extension (ADR 0026) masks only what goes through the textbox it
+  knows on chatgpt.com, chat.openai.com, claude.ai and gemini.google.com. It finds
+  the box and the send button by selectors; when a site changes its page so that
+  they no longer match, sends there go out unmasked and no notice appears. Its
+  browser tests use local fixture pages, so they cannot catch such a change.
+  Attachments, pasted images and voice input are never masked.
+- The chat site's own scripts can read what is typed in its box before the
+  extension masks it, and the restored reply, because both are in the page. The
+  extension reduces what the site submits; it does not hide anything from the page.
+- The extension keeps each tab's map in `chrome.storage.session` (memory only,
+  extension pages and worker only) and gives a copy to its content script, which
+  runs in an isolated world the page cannot read. Values are never restored inside
+  links (`<a>`, URLs and Markdown written as text) or attributes.
+- The gateway accepts browser requests from the extension only for the ids in
+  `[proxy] extension_ids`. Another extension the user installed, with its own host
+  permission for 127.0.0.1, could also call the gateway if the user listed it; any
+  local program can call it anyway (above).
 - Upstream requests go only to the configured base URL, over HTTPS unless it
   is this machine, without following redirects and ignoring proxy settings in
   the environment (ADR 0020). A corporate HTTPS proxy is not supported yet.

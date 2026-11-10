@@ -67,7 +67,13 @@ is there and finish the remainder yourself or with a new agent.
    0024): the e2e click-through passes, and CI has a `web` job. Next is part 2,
    the Tauri shell with the PyInstaller sidecar, per `phase-6.md`. When
    `GET /audit` is wired, run the e2e again against real rows.
-6. Phase 7, browser extension. Phase 8 is pilot hardening.
+6. Phase 7, browser extension: built (`apps/extension/`, ADR 0026, plan in
+   `phase-7.md`). `[proxy] extension_ids` in the gateway; the rehydrator is
+   pinned to the engine by parity vectors; the e2e (`tests/e2e/test_extension.py`,
+   Chromium on local fixture pages) passes; CI has an `extension` job. Not done:
+   Firefox tested in a browser, a check against the live sites, settings sync with
+   the desktop app, the pre-tag review and tag `v0.7.0`. Phase 8 is pilot
+   hardening.
 
 ## Known open items
 
