@@ -115,8 +115,8 @@ money, so the installers ship unsigned (hard rule 2).
   documented, not hidden, and revisited if the owner approves a signing certificate
   (`docs/APPROVAL_NEEDED.md`).
 - A first run needs a network connection once, for `safeguard models pull`. The
-  shell does not run it; the gateway's UI says what is missing. Wiring a pull button
-  into the UI is a later step.
+  shell does not run it; the gateway's UI says what is missing. The pull button in the web UI's
+  Settings came later (ADR 0029).
 - The shell has no way to change the gateway's configuration: the user edits
   `~/.safeguard/config.toml` (ADR 0020), as with the command-line install.
 - Platform behaviour that a Linux container cannot show (Windows console flag,

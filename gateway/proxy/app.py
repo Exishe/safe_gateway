@@ -25,6 +25,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.types import Receive, Scope, Send
 
 from gateway import __version__
+from gateway.cloud.model_jobs import ModelPuller
 from gateway.cloud.providers import ApiShape
 from gateway.cloud.upstream import Upstream, UpstreamError, UpstreamReply, UpstreamStream
 from gateway.config import ProxyConfig, extension_origins
@@ -630,6 +631,25 @@ def _add_routes(app: FastAPI, gateway: _Gateway, model: str | None) -> None:
         return JSONResponse(body, headers=_NO_STORE)
 
 
+def _add_model_routes(app: FastAPI, puller: ModelPuller) -> None:
+    @app.get("/models")
+    async def model_status() -> Response:
+        # Reads the model folders only; no network (ADR 0029).
+        return JSONResponse(await run_in_threadpool(puller.status), headers=_NO_STORE)
+
+    @app.post("/models/pull")
+    async def model_pull() -> Response:
+        # The LocalOnlyGuard has already checked Host and Origin (ADR 0029).
+        if not puller.start():
+            message = "a model download is already running; poll GET /models"
+            return _native_error(status.HTTP_409_CONFLICT, "conflict", message)
+        return JSONResponse(
+            await run_in_threadpool(puller.status),
+            status_code=status.HTTP_202_ACCEPTED,
+            headers=_NO_STORE,
+        )
+
+
 def _browser_origins(proxy: ProxyConfig) -> tuple[str, ...]:
     origins = (*proxy.cors_allow_origins, *extension_origins(proxy.extension_ids))
     if proxy.allow_dev_ui:
@@ -646,6 +666,7 @@ def create_app(  # noqa: PLR0913  (keyword-only options, each with a safe defaul
     audit: AuditSink | None = None,
     sessions: SessionStore | None = None,
     ui_dir: Path | None = None,
+    models: ModelPuller | None = None,
 ) -> FastAPI:
     proxy = proxy or ProxyConfig()
     gateway = _Gateway(
@@ -671,6 +692,7 @@ def create_app(  # noqa: PLR0913  (keyword-only options, each with a safe defaul
     )
     app.state.gateway = gateway  # for tests that check how requests share it
     _add_routes(app, gateway, model)
+    _add_model_routes(app, models if models is not None else ModelPuller())
     serve_ui = ui_dir is not None and has_ui(ui_dir)
     if serve_ui and ui_dir is not None:
         # Mounted after the routes, so an API path always wins over a file.

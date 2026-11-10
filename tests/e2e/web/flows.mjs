@@ -311,6 +311,43 @@ async function main() {
     await page.getByLabel("an example config.toml", { exact: true }).waitFor();
   });
 
+  await step("settings download the models with one button and poll until done (mocked, no download)", async () => {
+    let state = "idle";
+    const body = () => ({
+      state,
+      current: state === "running" ? "en" : null,
+      error: null,
+      source_note: "This is the one network call the gateway makes by itself, to GitHub and Hugging Face.",
+      models: [
+        {
+          key: "en",
+          name: "en_core_web_lg",
+          version: "3.8.0",
+          status: { idle: "missing", running: "downloading", done: "installed" }[state],
+        },
+      ],
+    });
+    const isStatus = (url) => url.pathname === "/models";
+    const isPull = (url) => url.pathname === "/models/pull";
+    await page.route(isStatus, (route) => route.fulfill({ json: body() }));
+    await page.route(isPull, (route) => {
+      state = "running";
+      return route.fulfill({ status: 202, json: body() });
+    });
+    await openTab(page, "Mask & send");
+    await openTab(page, "Settings");
+    const panel = page.getByRole("tabpanel", { name: "Settings" });
+    await panel.getByText("Not downloaded").waitFor();
+    await panel.getByText("the one network call", { exact: false }).waitFor();
+    await panel.getByRole("button", { name: "Download models" }).click();
+    await panel.getByRole("button", { name: "Downloading" }).waitFor();
+    expect(await panel.getByRole("button", { name: "Downloading" }).isDisabled(), "button not disabled while running");
+    state = "done";
+    await panel.getByText("All models are installed.").waitFor({ timeout: 10000 });
+    await page.unroute(isPull);
+    await page.unroute(isStatus);
+  });
+
   for (const theme of ["light", "dark"]) {
     await step(`${theme}: every screen passes axe (serious and critical) and is captured at 1280 and 390 px`, async () => {
       await setTheme(page, theme);

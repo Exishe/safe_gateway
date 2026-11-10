@@ -107,4 +107,47 @@ describe("GatewayClient", () => {
     const { fetch } = fakeFetch(() => json({ object: "list", data: [{ id: "llama3.2" }] }));
     expect(await new GatewayClient("", fetch).models()).toEqual(["llama3.2"]);
   });
+
+  describe("model download", () => {
+    const status = {
+      state: "idle",
+      current: null,
+      error: null,
+      source_note: "one network call",
+      models: [{ key: "en", name: "en_core_web_lg", version: "3.8.0", status: "missing" }],
+    };
+
+    it("reads the status with a GET", async () => {
+      const { fetch, calls } = fakeFetch(() => json(status));
+      const result = await new GatewayClient("", fetch).modelStatus();
+      expect(calls[0]?.url).toBe("/models");
+      expect(calls[0]?.init?.method).toBeUndefined();
+      expect(result.models[0]?.status).toBe("missing");
+    });
+
+    it("starts a pull with a POST and no body", async () => {
+      const { fetch, calls } = fakeFetch(() => json({ ...status, state: "running" }, 202));
+      const result = await new GatewayClient("", fetch).pullModels();
+      expect(calls[0]?.url).toBe("/models/pull");
+      expect(calls[0]?.init?.method).toBe("POST");
+      expect(calls[0]?.init?.body).toBeUndefined();
+      expect(result.state).toBe("running");
+    });
+
+    it("treats a pull already running as the running status", async () => {
+      const { fetch, calls } = fakeFetch((call) =>
+        call.url === "/models/pull"
+          ? json({ error: { type: "conflict", message: "already running" } }, 409)
+          : json({ ...status, state: "running" }),
+      );
+      const result = await new GatewayClient("", fetch).pullModels();
+      expect(calls.map((c) => c.url)).toEqual(["/models/pull", "/models"]);
+      expect(result.state).toBe("running");
+    });
+
+    it("rejects a status body of the wrong shape", async () => {
+      const { fetch } = fakeFetch(() => json({ state: "weird", models: "no" }));
+      await expect(new GatewayClient("", fetch).modelStatus()).rejects.toBeInstanceOf(GatewayError);
+    });
+  });
 });

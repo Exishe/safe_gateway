@@ -109,12 +109,12 @@ below matches the name SafeGuard Gateway.
   A keyring service (GNOME Keyring or KWallet) must be running: the audit log's key
   lives there.
 
-**First run.** The installer carries the engine but not the language models. Pull
-them once from a terminal: the engine inside the app takes the same commands as the
+**First run.** The installer carries the engine but not the language models. Open
+Settings in the app and press **Download models** (about 900 MB, SHA-256 checked; the
+only step that needs the internet, to GitHub and Hugging Face). The same download is
+available from a terminal: the engine inside the app takes the same commands as the
 CLI (`safeguard-sidecar models pull`, run from the app's `safeguard-sidecar` resource
-folder), and a source checkout uses `uv run safeguard models pull` (about 900 MB,
-SHA-256 checked; the only step that needs the internet). A button for this in the app
-is a later step. Until then names and addresses are not detected; structured
+folder), and a source checkout uses `uv run safeguard models pull`. Until the models are installed, names and addresses are not detected; structured
 identifiers (SSN, card, IBAN, phone) work without models. Settings are the same file
 as before: `~/.safeguard/config.toml`. The sidecar's log is `sidecar.log` in the app's
 log folder (macOS `~/Library/Logs/com.safeguard.gateway`, Windows

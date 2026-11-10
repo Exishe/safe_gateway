@@ -5,6 +5,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ENTITY_TYPES } from "@/lib/entities";
 import { keyringCommand, needsKey, providerName } from "@/lib/providers";
+import { ModelsSection } from "./ModelsSection";
 
 const EXAMPLE = `# ~/.safeguard/config.toml (or $SAFEGUARD_HOME/config.toml)
 # API keys never go in this file; they live in the system keychain.
@@ -99,6 +100,10 @@ export function SettingsScreen({ state, onRefresh }: { state: GatewayState; onRe
             Read again
           </Button>
         </div>
+      </Section>
+
+      <Section title="Language models">
+        <ModelsSection />
       </Section>
 
       <Section title="API key">

@@ -102,6 +102,12 @@ export const Moon = (p: ComponentProps<"svg">) => (
   </Svg>
 );
 
+export const Download = (p: ComponentProps<"svg">) => (
+  <Svg {...p}>
+    <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
+  </Svg>
+);
+
 export const Monitor = (p: ComponentProps<"svg">) => (
   <Svg {...p}>
     <rect x="3" y="4" width="18" height="12" rx="2" />

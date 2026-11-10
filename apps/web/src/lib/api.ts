@@ -34,6 +34,52 @@ export interface Health {
   audit?: boolean; // whether the gateway writes the audit log (false with --no-audit)
 }
 
+export type ModelState = "idle" | "running" | "done" | "failed";
+export type ModelRowStatus = "installed" | "missing" | "downloading" | "failed";
+
+export interface ModelRow {
+  key: string;
+  name: string;
+  version: string;
+  status: ModelRowStatus;
+}
+
+/** What GET /models answers (ADR 0029). */
+export interface ModelStatus {
+  state: ModelState;
+  current: string | null;
+  error: string | null;
+  source_note: string;
+  models: ModelRow[];
+}
+
+const MODEL_STATES = ["idle", "running", "done", "failed"];
+const ROW_STATUSES = ["installed", "missing", "downloading", "failed"];
+
+function parseModelStatus(body: unknown): ModelStatus {
+  if (isRecord(body) && typeof body.state === "string" && MODEL_STATES.includes(body.state) && Array.isArray(body.models)) {
+    const rows = (body.models as unknown[]).filter(
+      (m): m is ModelRow =>
+        isRecord(m) &&
+        typeof m.key === "string" &&
+        typeof m.name === "string" &&
+        typeof m.version === "string" &&
+        typeof m.status === "string" &&
+        ROW_STATUSES.includes(m.status),
+    );
+    if (rows.length === body.models.length) {
+      return {
+        state: body.state as ModelState,
+        current: typeof body.current === "string" ? body.current : null,
+        error: typeof body.error === "string" ? body.error : null,
+        source_note: typeof body.source_note === "string" ? body.source_note : "",
+        models: rows,
+      };
+    }
+  }
+  throw new GatewayError(502, "The gateway sent a model status this page does not understand.");
+}
+
 // "disabled": the gateway was started with --no-audit and answers /audit with 404.
 export type AuditResult = { kind: "ok"; view: AuditView } | { kind: "disabled"; message: string };
 
@@ -127,6 +173,18 @@ export class GatewayClient {
       keepalive,
     });
     if (!response.ok && response.status !== 404) throw await errorFrom(response);
+  }
+
+  async modelStatus(): Promise<ModelStatus> {
+    return parseModelStatus(await this.json("/models"));
+  }
+
+  /** Starts the one-at-a-time model download; a pull already running is not an error. */
+  async pullModels(): Promise<ModelStatus> {
+    const response = await this.send("/models/pull", { method: "POST" });
+    if (response.status === 409) return this.modelStatus();
+    if (!response.ok) throw await errorFrom(response);
+    return parseModelStatus(await response.json());
   }
 
   /** The newest page of the audit log, or the page before entry `beforeId`. */
