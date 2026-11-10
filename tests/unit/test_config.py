@@ -9,6 +9,7 @@ from gateway.config import (
     GatewayConfig,
     ProxyConfig,
     config_path,
+    extension_origins,
     load_config,
     parse_config,
     safeguard_home,
@@ -88,6 +89,40 @@ cors_allow_origins = ["chrome-extension://abcdefghijklmnop"]
 def test_dev_ui_flag_is_off_unless_set() -> None:
     assert parse_config({}).proxy.allow_dev_ui is False
     assert parse_config({"proxy": {"allow_dev_ui": True}}).proxy.allow_dev_ui is True
+
+
+CHROME_ID = "abcdefghijklmnopabcdefghijklmnop"  # pragma: allowlist secret
+FIREFOX_UUID = "0b5e7a4c-1d2f-4e3a-9b8c-7d6e5f4a3b2c"  # pragma: allowlist secret
+
+
+def test_extension_ids_become_their_browser_origins() -> None:
+    # ADR 0026: an id, not an origin, so a typo cannot widen what is allowed.
+    proxy = parse_config({"proxy": {"extension_ids": [CHROME_ID, FIREFOX_UUID]}}).proxy
+    assert proxy.extension_ids == (CHROME_ID, FIREFOX_UUID)
+    assert extension_origins(proxy.extension_ids) == (
+        f"chrome-extension://{CHROME_ID}",
+        f"moz-extension://{FIREFOX_UUID}",
+    )
+    assert parse_config({}).proxy.extension_ids == ()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "*",
+        [CHROME_ID[:-1]],  # 31 letters
+        [CHROME_ID.replace("a", "q")],  # Chrome ids use the letters a to p only
+        [CHROME_ID.upper()],
+        [f"chrome-extension://{CHROME_ID}"],  # an origin: that is cors_allow_origins
+        [FIREFOX_UUID.upper()],  # Firefox shows its internal UUID in lower case
+        ["safeguard@example.invalid"],  # the add-on id is not the origin's host
+        ["*"],
+        [3],
+    ],
+)
+def test_invalid_extension_ids_are_refused(value: object) -> None:
+    with pytest.raises(ConfigError, match="extension_ids"):
+        parse_config({"proxy": {"extension_ids": value}})
 
 
 @pytest.mark.parametrize("value", ["yes", 1, "true", []])

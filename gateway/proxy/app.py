@@ -27,7 +27,7 @@ from starlette.types import Receive, Scope, Send
 from gateway import __version__
 from gateway.cloud.providers import ApiShape
 from gateway.cloud.upstream import Upstream, UpstreamError, UpstreamReply, UpstreamStream
-from gateway.config import ProxyConfig
+from gateway.config import ProxyConfig, extension_origins
 from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.known import KnownValues
 from gateway.engine.mask import Mapping, mask_detected_messages, mask_messages
@@ -616,9 +616,10 @@ def _add_routes(app: FastAPI, gateway: _Gateway, model: str | None) -> None:
 
 
 def _browser_origins(proxy: ProxyConfig) -> tuple[str, ...]:
+    origins = (*proxy.cors_allow_origins, *extension_origins(proxy.extension_ids))
     if proxy.allow_dev_ui:
-        return (*proxy.cors_allow_origins, *DEV_UI_ORIGINS)
-    return proxy.cors_allow_origins
+        return (*origins, *DEV_UI_ORIGINS)
+    return origins
 
 
 def create_app(  # noqa: PLR0913  (keyword-only options, each with a safe default)

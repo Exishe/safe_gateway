@@ -229,6 +229,47 @@ def test_foreign_origin_is_refused_and_listed_origin_gets_cors() -> None:
     assert response.headers["access-control-allow-origin"] == origin
 
 
+EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop"  # pragma: allowlist secret
+FIREFOX_UUID = "0b5e7a4c-1d2f-4e3a-9b8c-7d6e5f4a3b2c"  # pragma: allowlist secret
+
+
+@pytest.mark.parametrize(
+    "origin", [f"chrome-extension://{EXTENSION_ID}", f"moz-extension://{FIREFOX_UUID}"]
+)
+def test_a_listed_extension_may_call_the_gateway(origin: str) -> None:
+    # ADR 0026: the extension's background worker sends its own origin.
+    client = _client(proxy=ProxyConfig(extension_ids=(EXTENSION_ID, FIREFOX_UUID)))
+    response = client.post("/mask", json={"text": "x"}, headers={"origin": origin})
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+    deleted = client.delete(f"/session/{response.json()['session_id']}", headers={"origin": origin})
+    assert deleted.status_code == 204
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",  # another extension
+        f"moz-extension://{EXTENSION_ID}",  # the right id under the wrong scheme
+        f"chrome-extension://{FIREFOX_UUID}",
+        "https://chatgpt.com",  # the page the content script runs in
+        "https://claude.ai",
+        "null",
+    ],
+)
+def test_every_other_origin_is_still_refused(origin: str) -> None:
+    client = _client(proxy=ProxyConfig(extension_ids=(EXTENSION_ID, FIREFOX_UUID)))
+    response = client.post("/mask", json={"text": "x"}, headers={"origin": origin})
+    assert response.status_code == 403
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_a_listed_extension_still_needs_a_local_host_header() -> None:
+    client = _client(proxy=ProxyConfig(extension_ids=(EXTENSION_ID,)))
+    headers = {"origin": f"chrome-extension://{EXTENSION_ID}", "host": "rebind.example"}
+    assert client.post("/mask", json={"text": "x"}, headers=headers).status_code == 400
+
+
 def test_foreign_host_header_is_refused() -> None:
     response = _client().get("/health", headers={"host": "rebind.example"})
     assert response.status_code == 400

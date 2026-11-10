@@ -33,12 +33,22 @@ _TOP_FIELDS = frozenset(
         "proxy",
     }
 )
-_PROXY_FIELDS = frozenset({"max_body_bytes", "cors_allow_origins", "allow_dev_ui"})
+_PROXY_FIELDS = frozenset({"max_body_bytes", "cors_allow_origins", "allow_dev_ui", "extension_ids"})
 _KEY_LIKE_NAME = re.compile(r"key|token|secret|passw|credential|auth|bearer", re.IGNORECASE)
 _KEY_LIKE_VALUE = re.compile(r"\s*sk-", re.IGNORECASE)
 _API_VERSION = re.compile(r"\d{4}-\d{2}-\d{2}(-preview)?")
 # scheme://host[:port], no path, no wildcard: "chrome-extension://<id>", "http://127.0.0.1:5173"
 _ORIGIN = re.compile(r"[a-z][a-z0-9+.-]*://[A-Za-z0-9.-]+(:\d{1,5})?")
+# The browser extension (ADR 0026). Chrome, Edge and Brave derive a 32-letter id from
+# the extension's key, in the letters a to p; Firefox gives each install an internal
+# UUID, shown in lower case in about:debugging. Either names exactly one origin.
+_CHROME_EXTENSION_ID = re.compile(r"[a-p]{32}")
+_FIREFOX_INTERNAL_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_EXTENSION_IDS_HINT = (
+    "'extension_ids' must be a list of extension ids: the 32 letters shown in "
+    "chrome://extensions (Chrome, Edge, Brave) or the Internal UUID shown in "
+    "about:debugging (Firefox)"
+)
 _KEYCHAIN_HINT = (
     "API keys live in the OS keychain, never in config.toml: "
     "uv run keyring set safeguard-gateway api-key:<provider>"
@@ -56,6 +66,16 @@ class ProxyConfig:
     cors_allow_origins: tuple[str, ...] = ()
     # Also allow the Vite dev server's origins, for working on apps/web (ADR 0024).
     allow_dev_ui: bool = False
+    # The browser extension's ids; each allows its own origin only (ADR 0026).
+    extension_ids: tuple[str, ...] = ()
+
+
+def extension_origins(ids: tuple[str, ...]) -> tuple[str, ...]:
+    """The origin a browser gives each extension id: Chrome-family or Firefox."""
+    return tuple(
+        f"chrome-extension://{i}" if _CHROME_EXTENSION_ID.fullmatch(i) else f"moz-extension://{i}"
+        for i in ids
+    )
 
 
 @dataclass(frozen=True)
@@ -237,7 +257,19 @@ def _proxy(data: Mapping[str, object]) -> ProxyConfig:
         max_body_bytes=_positive_int(table, "max_body_bytes", DEFAULT_MAX_BODY_BYTES),
         cors_allow_origins=tuple(origins),
         allow_dev_ui=allow_dev_ui,
+        extension_ids=_extension_ids(table),
     )
+
+
+def _extension_ids(table: Mapping[str, object]) -> tuple[str, ...]:
+    ids = table.get("extension_ids", [])
+    if not isinstance(ids, list) or not all(
+        isinstance(i, str)
+        and (_CHROME_EXTENSION_ID.fullmatch(i) or _FIREFOX_INTERNAL_UUID.fullmatch(i))
+        for i in ids
+    ):
+        raise ConfigError(_EXTENSION_IDS_HINT)
+    return tuple(ids)
 
 
 def parse_config(data: Mapping[str, object]) -> GatewayConfig:
