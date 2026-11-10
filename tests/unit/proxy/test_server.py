@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,7 +11,7 @@ from starlette.testclient import TestClient
 
 from gateway.audit import AuditLog
 from gateway.cloud.providers import Provider
-from gateway.config import ConfigError, GatewayConfig
+from gateway.config import ConfigError, GatewayConfig, ProxyConfig
 from gateway.engine.session_disk import InMemoryKeyProvider
 from gateway.proxy import server
 from gateway.proxy.server import (
@@ -134,6 +135,23 @@ def test_build_app_serves_the_ui_dir_it_is_given(tmp_path: Path) -> None:
     page = TestClient(app, base_url="http://127.0.0.1").get("/")
     assert page.status_code == 200
     assert "<title>ui</title>" in page.text
+
+
+def test_the_dev_ui_flag_warns_at_start_up(caplog: pytest.LogCaptureFixture) -> None:
+    # Security review 2, M-g: any local app on port 5173 can then read session maps.
+    with caplog.at_level(logging.WARNING, logger="gateway.proxy.server"):
+        build_app(GatewayConfig(proxy=ProxyConfig(allow_dev_ui=True)))
+    (record,) = [r for r in caplog.records if "5173" in r.getMessage()]
+    assert record.levelno == logging.WARNING
+    message = record.getMessage()
+    assert "allow_dev_ui" in message
+    assert "session" in message
+
+
+def test_no_dev_ui_warning_by_default(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="gateway.proxy.server"):
+        build_app(GatewayConfig())
+    assert not [r for r in caplog.records if "5173" in r.getMessage()]
 
 
 def test_unreadable_gazetteer_is_a_startup_error(tmp_path: Path) -> None:

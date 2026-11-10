@@ -5,6 +5,7 @@ log is opened, verified and purged under `retention_days` before anything binds;
 when that fails, `serve` does not start unless the user chose `--no-audit`.
 """
 
+import logging
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
@@ -31,6 +32,16 @@ _FIX_OR_SKIP = (
     "Fix that, or start with `safeguard serve --no-audit` to serve without an audit log "
     "(then nothing records what leaves this machine)."
 )
+
+
+DEV_UI_WARNING = (
+    "[proxy] allow_dev_ui is on: any local web app served on port 5173 "
+    "(http://127.0.0.1:5173 or http://localhost:5173) can call this gateway from a browser, "
+    "including POST /mask, whose answers hold session maps of original values. "
+    "Turn it off unless you are developing the web UI."
+)
+
+_log = logging.getLogger(__name__)
 
 
 class NotLoopback(ValueError):  # noqa: N818  (reads as what is wrong)
@@ -135,6 +146,9 @@ def build_app(
             msg = f"cannot read the gazetteer {config.gazetteer}: {error}"
             raise StartupError(msg) from None
     engine = EngineConfig(thresholds=config.thresholds, gazetteer=gazetteer)
+    if config.proxy.allow_dev_ui:
+        # Security review 2, M-g: said once, at start-up, where the user sees it.
+        _log.warning(DEV_UI_WARNING)
     return create_app(
         upstream,
         engine_config=engine,
