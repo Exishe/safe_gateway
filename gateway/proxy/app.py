@@ -47,7 +47,12 @@ from gateway.proxy.detections import Detection, mask_detected_with_detections
 from gateway.proxy.errors import RequestRejected, invalid
 from gateway.proxy.guards import LocalOnlyGuard
 from gateway.proxy.openai_shape import OPENAI
-from gateway.proxy.payload import choose_model, encode_json, parse_json_object
+from gateway.proxy.payload import (
+    choose_model,
+    encode_json,
+    parse_json_object,
+    refuse_identifiers,
+)
 from gateway.proxy.shape import Body, Shape
 from gateway.proxy.sse import SSEDecoder, SSEEvent, SSELineTooLongError, encode
 from gateway.proxy.ui import UiFiles, has_ui
@@ -249,6 +254,9 @@ class _Gateway:
         session_id = _session_header(request)
         body = shape.validate(parse_json_object(await request.body()))
         model = choose_model(self.model, body.get("model"))
+        # Before anything else uses the model id, the audit log included (review 2, M-c).
+        short = [("model", model), *shape.short_fields(body)]
+        await run_in_threadpool(refuse_identifiers, short, self.engine_config)
         texts = shape.collect_texts(body)
         if session_id is None:
             masked, mapping = await run_in_threadpool(_mask_request, texts, self.engine_config)

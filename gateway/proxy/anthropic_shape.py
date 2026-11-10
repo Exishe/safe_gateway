@@ -276,6 +276,14 @@ class AnthropicShape:
     def collect_texts(self, body: Body) -> list[str]:
         return collect(_rewrite, body)
 
+    def short_fields(self, body: Body) -> list[tuple[str, str]]:
+        thinking = body.get("thinking")
+        fields = [
+            ("service_tier", body.get("service_tier")),
+            ("thinking.type", thinking.get("type") if isinstance(thinking, dict) else None),
+        ]
+        return [(name, value) for name, value in fields if isinstance(value, str)]
+
     def with_texts(self, body: Body, texts: Sequence[str]) -> Body:
         return replace(_rewrite, body, texts)
 

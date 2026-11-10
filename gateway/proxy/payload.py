@@ -1,11 +1,14 @@
 """Reading request bodies and choosing what goes upstream (ADR 0019)."""
 
+import dataclasses
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from gateway.cloud.providers import MODEL_NAME, MODEL_NAME_CHARS
+from gateway.engine.detect import EngineConfig, detect
+from gateway.engine.types import EntityType
 from gateway.proxy.errors import RequestRejected, invalid
 
 PLACEHOLDER_INSTRUCTION = (
@@ -104,6 +107,33 @@ def check_fields(body: Mapping[str, object], checks: Mapping[str, Check]) -> Non
     for name, check in checks.items():
         if body.get(name) is not None:
             check(name, body[name])
+
+
+# A calendar date alone is no identifier, and model snapshots carry one
+# (`gpt-4o-2024-08-06`); every other kind the structured recognizers find is.
+_HARMLESS_IN_TOKENS = frozenset({EntityType.DATE})
+
+
+def refuse_identifiers(fields: Sequence[tuple[str, str]], config: EngineConfig) -> None:
+    """A 400 if a short field, sent upstream as written, holds a structured identifier.
+
+    A model id or a token such as `service_tier` passes its character check with an
+    SSN-shaped number inside (security review 2, M-c). The structured recognizers and
+    the gazetteer read each one; no model runs on a few characters.
+    """
+    structured = dataclasses.replace(config, ner="off", gliner="off")
+    for name, value in fields:
+        found = {
+            span.entity_type.value
+            for span in detect(value, config=structured)
+            if span.entity_type not in _HARMLESS_IN_TOKENS
+        }
+        if found:
+            msg = (
+                f"{name!r} looks like it holds personal data ({', '.join(sorted(found))}); "
+                "it would be sent upstream unmasked, so the request is refused"
+            )
+            raise invalid(msg)
 
 
 def choose_model(configured: str | None, requested: object) -> str:

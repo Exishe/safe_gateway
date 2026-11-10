@@ -311,6 +311,17 @@ class OpenAIShape:
     def collect_texts(self, body: Body) -> list[str]:
         return collect(_rewrite, body)
 
+    def short_fields(self, body: Body) -> list[tuple[str, str]]:
+        response_format = body.get("response_format")
+        schema = response_format.get("json_schema") if isinstance(response_format, dict) else None
+        fields = [
+            (name, body.get(name)) for name in ("reasoning_effort", "service_tier", "verbosity")
+        ]
+        fields.append(
+            ("json_schema.name", schema.get("name") if isinstance(schema, dict) else None)
+        )
+        return [(name, value) for name, value in fields if isinstance(value, str)]
+
     def with_texts(self, body: Body, texts: Sequence[str]) -> Body:
         return replace(_rewrite, body, texts)
 
