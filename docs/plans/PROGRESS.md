@@ -43,12 +43,9 @@ running.
 
 ## Needs the owner
 
-- **macOS CI job:** cancelled before it starts, twice (runs 42757604331 and
-  42760447775). The likely cause is the private repository's Actions minutes or
-  spending limit for macOS runners, which are billed at 10x. Check GitHub, Settings,
-  Billing and plans, then Actions. The session does not retry it.
-- **Tags:** push v0.0.0 to v0.3.0 (commands in `docs/RELEASE_CHECKS.md`).
-- **Merge:** merge this branch to the default branch so the weekly scan runs.
+- **macOS:** paused by the owner on 2026-11-10 (ADR 0007 amendment). Restore
+  it before a Mac firm joins the pilot.
+- **Done 2026-11-10:** PR #1 merged into `main`; release `v0.3.0` published.
 - **Live checks:** run against a local Ollama model; try the extension on the live
   chat sites; test on Firefox. These unlock tags v0.4.0 to v0.7.0.
 - **Pilot:** collect firms' feedback in `docs/pilot-feedback.md`, then tag v0.8.0.

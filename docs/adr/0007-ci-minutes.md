@@ -32,3 +32,14 @@ CI now triggers on `push` (all branches and `v*` tags) and `workflow_dispatch`,
 not on `pull_request`. Every PR here comes from a branch in this repository, so
 `push` already runs the same job; keeping both ran it twice per update. A PR
 from a fork would not be covered; revisit if outside contributors appear.
+
+## Amended 2026-11-10: macOS paused
+
+The macOS jobs were cancelled before they started on every manual run
+(42757604331, 42760447775, 42765143614), and the pilot firms use Windows for now.
+The owner decided to pause macOS: the `platforms` and `desktop` matrices run
+Windows (and Ubuntu for the `.deb`) only. Nothing in the code is macOS-specific
+that the other jobs do not cover, but Keychain, Gatekeeper, the tray and
+autostart on macOS are untested. Before a Mac firm joins the pilot, restore
+`macos-14` in both matrices (the lines are left in `ci.yml` as comments) and fix
+what it finds, as was done for Windows.

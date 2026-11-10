@@ -165,7 +165,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-latest] # macos-14 is arm64
+        # macOS paused 2026-11-10 by the owner (ADR 0007 amendment): restore
+        # `macos-14` here and in `desktop` before a Mac firm joins the pilot.
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -197,9 +199,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14 # arm64
-            bundle: dmg
-            pattern: "*.dmg"
+          # macOS paused (ADR 0007 amendment); to restore, add back:
+          # - os: macos-14 # arm64
+          #   bundle: dmg
+          #   pattern: "*.dmg"
           - os: windows-latest
             bundle: msi
             pattern: "*.msi"
