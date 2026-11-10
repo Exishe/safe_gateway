@@ -8,6 +8,8 @@ export interface StorageArea {
   remove(key: string): Promise<void>;
 }
 
+import { type Protection, PROTECTION_STATES } from "./messages";
+
 export interface TabSession {
   sessionId: string;
   mapping: Record<string, string>;
@@ -47,5 +49,27 @@ export class TabSessions {
 
   async drop(tabId: number): Promise<void> {
     await this.area.remove(TabSessions.key(tabId));
+  }
+
+  private static guardKey(tabId: number): string {
+    return `guard:${tabId}`;
+  }
+
+  /** What the tab's content script last reported about protection, or null. */
+  async getProtection(tabId: number): Promise<Protection | null> {
+    const key = TabSessions.guardKey(tabId);
+    const value = (await this.area.get(key))[key];
+    if (typeof value !== "object" || value === null) return null;
+    const v = value as Record<string, unknown>;
+    if (typeof v.state !== "string" || !PROTECTION_STATES.includes(v.state) || typeof v.reason !== "string") return null;
+    return value as Protection;
+  }
+
+  async putProtection(tabId: number, report: Protection): Promise<void> {
+    await this.area.set({ [TabSessions.guardKey(tabId)]: report });
+  }
+
+  async dropProtection(tabId: number): Promise<void> {
+    await this.area.remove(TabSessions.guardKey(tabId));
   }
 }

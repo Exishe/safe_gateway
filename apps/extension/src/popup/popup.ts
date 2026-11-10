@@ -1,5 +1,6 @@
 import { ext } from "../lib/browser";
 import { familyOf, labelOf } from "../lib/entities";
+import { NOT_PROTECTING } from "../content/banner";
 import type { ClearReply, Request, StatusReply } from "../lib/messages";
 
 function byId(id: string): HTMLElement {
@@ -69,6 +70,31 @@ function showGateway(status: StatusReply | undefined): void {
   }
 }
 
+/** The page's own report: whether SafeGuard is protecting it (ADR 0026 amendment). */
+function showProtection(status: StatusReply | undefined): void {
+  const card = byId("protection");
+  const text = byId("protection-text");
+  const detail = byId("protection-detail");
+  const report = status?.protection ?? null;
+  card.dataset.state = report?.state ?? "unknown";
+  detail.textContent = report?.reason ?? "";
+  switch (report?.state) {
+    case "ok":
+      text.textContent = "Protecting this page";
+      break;
+    case "not_ready":
+    case "unmasked":
+      text.textContent = NOT_PROTECTING;
+      break;
+    case "checking":
+      text.textContent = "Looking for the message box…";
+      break;
+    case undefined:
+      text.textContent = "No chat page reported for this tab.";
+      break;
+  }
+}
+
 function showTab(status: StatusReply | undefined): void {
   const session = status?.session ?? null;
   const count = session?.count ?? 0;
@@ -94,6 +120,7 @@ function showTab(status: StatusReply | undefined): void {
 
 async function refresh(tabId: number | null): Promise<void> {
   const status = tabId === null ? undefined : await ask<StatusReply>({ type: "status", tabId });
+  showProtection(status);
   showGateway(status);
   showTab(status);
 }

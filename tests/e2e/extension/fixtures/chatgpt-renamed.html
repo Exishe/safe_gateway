@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- Fixture: chatgpt.com after a redesign: the textbox no longer matches any selector the extension knows. -->
+<html lang="en">
+  <head><meta charset="utf-8" /><style>[contenteditable], textarea { display: block; min-height: 3em; min-width: 20em; border: 1px solid #888; padding: 4px; }</style><title>ChatGPT (fixture)</title></head>
+  <body
+    data-editor="[data-composer]"
+    data-send="button[data-testid='send-button']"
+    data-user-tag="div"
+    data-user-attrs='{"data-message-author-role":"user"}'
+    data-bot-tag="div"
+    data-bot-attrs='{"data-message-author-role":"assistant"}'
+    data-bot-inner="div.markdown.prose"
+    data-rerender="true"
+  >
+    <main>
+      <div id="thread"></div>
+      <form id="composer" onsubmit="return false">
+        <div data-composer class="composer-v9" role="textbox" contenteditable="true" aria-label="Message ChatGPT"><p></p></div>
+        <button type="button" data-testid="send-button" aria-label="Send prompt">Send</button>
+      </form>
+    </main>
+    <script src="/__fixture/chat.js"></script>
+  </body>
+</html>

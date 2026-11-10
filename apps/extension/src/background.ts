@@ -39,6 +39,9 @@ ext.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     case "session":
       if (fromContent) work = background.mapping(tabId).then((mapping) => ({ mapping }));
       break;
+    case "protection":
+      if (fromContent) work = background.protection(tabId, { state: message.state, reason: message.reason });
+      break;
     case "status":
       if (fromOwnPage) work = background.status(message.tabId);
       break;
@@ -61,5 +64,5 @@ ext.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 });
 
 ext.tabs.onRemoved.addListener((tabId) => {
-  void background.clear(tabId);
+  void background.clear(tabId).then(() => sessions.dropProtection(tabId));
 });

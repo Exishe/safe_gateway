@@ -1,8 +1,10 @@
 import { ext } from "../lib/browser";
 import { DomRehydrator, isEditable, type Mark } from "../lib/dom";
 import type { MaskReply, Request, SessionReply } from "../lib/messages";
-import type { SessionMap } from "../lib/rehydrate";
-import { type Editor, readDraft, replaceDraft, sameDraft } from "./editor";
+import { rehydrateExplained, type SessionMap } from "../lib/rehydrate";
+import { type Editor, isVisible, readDraft, replaceDraft, resolveEditor, sameDraft } from "./editor";
+import { Banner } from "./banner";
+import { Guard, REASON_RACE, SentWatcher } from "./guard";
 import { Notice } from "./notice";
 import { type Site, siteFor } from "./sites";
 
@@ -26,15 +28,57 @@ function send<T>(request: Request): Promise<T | undefined> {
 
 // ------------------------------------------------------------------ the send path
 
-function editorFrom(target: EventTarget | null, s: Site): Editor | null {
-  if (!(target instanceof Element)) return null;
-  const editor = target.closest(s.editor);
-  return editor instanceof HTMLElement ? editor : null;
+// What a send looks like to the page is not one event but a gesture: a key goes down,
+// is typed, comes up; a button gets a pointer press, a release and a click. A site may
+// send on any of them, and clear its box a moment later, so a script that waits for
+// "click" or "keydown" and then awaits the gateway can find the message already gone.
+// So every event of the gesture is stopped, synchronously, in the capture phase on
+// window, before any await; the masking runs afterwards (ADR 0026 amendment).
+
+const SETTLE_AFTER_SEND_MS = 300;
+const produced: string[] = []; // the masked texts this script wrote into the box
+let guard: Guard | undefined;
+let shiftDown = false;
+let swallowUntil = 0; // the rest of a gesture we stopped, until then
+
+function remember(masked: string): void {
+  produced.push(masked);
+  if (produced.length > 20) produced.shift();
 }
 
-function findEditor(s: Site): Editor | null {
-  const editor = document.querySelector(s.editor);
-  return editor instanceof HTMLElement ? editor : null;
+/** What a user message of ours may read as on the page: as written, or restored. */
+function producedTexts(): string[] {
+  return produced.flatMap((text) => [text, rehydrateExplained(text, map).text]);
+}
+
+function isField(editor: Editor): boolean {
+  return editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement;
+}
+
+function stop(event: Event): void {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}
+
+/** The textbox an event came from, found through the event's own path. */
+function editorFromEvent(event: Event, s: Site): Editor | null {
+  for (const node of event.composedPath()) {
+    if (node instanceof HTMLElement && node.matches(s.editor) && isVisible(node)) return node;
+  }
+  return null;
+}
+
+/** The send button an event is about: the site's, or any submit button of the box's form. */
+function sendTarget(event: Event, s: Site): HTMLElement | null {
+  for (const node of event.composedPath()) {
+    if (!(node instanceof HTMLElement)) continue;
+    if (node.matches(s.send)) return node;
+    if (node.matches('button[type="submit"], input[type="submit"]')) {
+      const form = node.closest("form");
+      if (form !== null && resolveEditor(s.editor, form) !== null) return node;
+    }
+  }
+  return null;
 }
 
 function sendButton(s: Site, near: Editor | null): HTMLButtonElement | null {
@@ -90,7 +134,14 @@ async function maskAndSend(s: Site, editor: Editor, draft: string): Promise<void
       return;
     }
     if (!sameDraft(readDraft(editor), draft)) {
-      blocked("The message changed while it was being masked. Press send again.", editor);
+      if (readDraft(editor).trim() === "") {
+        // The box was emptied while the gateway worked: the site sent the real text
+        // anyway. Fail-closed cannot undo that; say so, loudly.
+        guard?.alarm(REASON_RACE);
+        blocked("The site sent this message before it could be masked. Assume it went out as written.", editor);
+      } else {
+        blocked("The message changed while it was being masked. Press send again.", editor);
+      }
       return;
     }
     map = reply.mapping;
@@ -102,6 +153,7 @@ async function maskAndSend(s: Site, editor: Editor, draft: string): Promise<void
       );
       return;
     }
+    remember(reply.masked);
     await resend(s, editor);
     const what = reply.count === 1 ? "1 value" : `${reply.count} values`;
     const body =
@@ -112,50 +164,108 @@ async function maskAndSend(s: Site, editor: Editor, draft: string): Promise<void
     schedule(document.body);
   } finally {
     busy = false;
+    swallowUntil = Date.now() + SETTLE_AFTER_SEND_MS;
   }
 }
 
+/**
+ * Stop a send event, synchronously, and start masking its draft. An event of a gesture
+ * we are already handling is only stopped. An empty box is left alone: nothing to mask.
+ */
 function intercept(event: Event, s: Site, editor: Editor): void {
+  if (busy || Date.now() < swallowUntil) {
+    stop(event);
+    return;
+  }
   const draft = readDraft(editor);
-  if (draft.trim() === "") return; // nothing to mask: the site does what it does
-  // Stop the send before any of the site's own listeners see it.
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  if (busy) return;
+  if (draft.trim() === "") return;
+  stop(event);
   void maskAndSend(s, editor, draft);
 }
 
 function listen(s: Site): void {
+  const onKey = (event: Event): void => {
+    if (!(event instanceof KeyboardEvent)) return;
+    shiftDown = event.shiftKey;
+    // An Enter that confirms an IME composition is not a send; some browsers flag it
+    // only with the legacy keyCode 229.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    const composing = event.isComposing || event.keyCode === 229;
+    if (bypass || event.key !== "Enter" || event.shiftKey || composing) return;
+    const editor = editorFromEvent(event, s);
+    if (editor !== null) intercept(event, s, editor);
+  };
+  // Enter is a send on keydown, keypress or keyup, depending on the site.
+  for (const type of ["keydown", "keypress", "keyup"]) window.addEventListener(type, onKey, true);
   window.addEventListener(
-    "keydown",
+    "beforeinput",
     (event) => {
-      // An Enter that confirms an IME composition is not a send; some browsers flag it
-      // only with the legacy keyCode 229.
-      // eslint-disable-next-line @typescript-eslint/no-deprecated
-      const composing = event.isComposing || event.keyCode === 229;
-      if (bypass || event.key !== "Enter" || event.shiftKey || composing) return;
-      const editor = editorFrom(event.target, s);
-      if (editor !== null) intercept(event, s, editor);
+      if (bypass || !(event instanceof InputEvent) || event.isComposing || shiftDown) return;
+      const editor = editorFromEvent(event, s);
+      if (editor === null) return;
+      // Enter in a contenteditable is insertParagraph; in a textarea, insertLineBreak.
+      const enter = event.inputType === "insertParagraph" || (event.inputType === "insertLineBreak" && isField(editor));
+      if (enter) intercept(event, s, editor);
     },
     true,
   );
-  const onClick = (event: Event): void => {
-    if (bypass || !(event.target instanceof Element)) return;
-    const button = event.target.closest(s.send);
+  const onPress = (event: Event): void => {
+    if (bypass) return;
+    const button = sendTarget(event, s);
     if (button === null) return;
-    const editor = findEditor(s);
+    const editor = resolveEditor(s.editor, button.closest("form") ?? document) ?? resolveEditor(s.editor);
     if (editor !== null) intercept(event, s, editor);
   };
-  window.addEventListener("click", onClick, true);
+  // A press, a release and a click: a site may send on any of them.
+  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+    window.addEventListener(type, onPress, true);
+  }
   window.addEventListener(
     "submit",
     (event) => {
       if (bypass || !(event.target instanceof HTMLFormElement)) return;
-      const editor = event.target.querySelector(s.editor);
-      if (editor instanceof HTMLElement) intercept(event, s, editor);
+      const editor = resolveEditor(s.editor, event.target);
+      if (editor !== null) intercept(event, s, editor);
     },
     true,
   );
+}
+
+// -------------------------------------------------------------- the fail-safe
+
+const CHECK_DEBOUNCE_MS = 250;
+
+function startGuard(s: Site): void {
+  const banner = new Banner();
+  const g = new Guard({
+    hasEditor: () => resolveEditor(s.editor) !== null,
+    changed: (state, reason) => {
+      if (state === "not_ready" || state === "unmasked") banner.show(reason);
+      else banner.hide();
+      void send({ type: "protection", state, reason });
+    },
+  });
+  guard = g;
+  void send({ type: "protection", state: "checking", reason: "" });
+  g.check();
+  const sent = new SentWatcher();
+  let lastUrl = location.href;
+  let checking: ReturnType<typeof setTimeout> | undefined;
+  const look = (): void => {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      g.navigated();
+    }
+    // Before the rehydrator (40 ms) can change the bubble's text.
+    const reason = sent.scan(document, s.user, g.settling, producedTexts());
+    if (reason !== null) g.alarm(reason);
+    clearTimeout(checking);
+    checking = setTimeout(() => {
+      g.check();
+    }, CHECK_DEBOUNCE_MS);
+  };
+  new MutationObserver(look).observe(document.documentElement, { childList: true, characterData: true, subtree: true });
+  window.addEventListener("popstate", look);
 }
 
 // -------------------------------------------------------------- the reply path
@@ -244,6 +354,7 @@ function addHighlightStyle(): void {
 
 function start(s: Site): void {
   listen(s);
+  startGuard(s);
   ext.runtime.onMessage.addListener((message: unknown) => {
     if (typeof message === "object" && message !== null && (message as { type?: unknown }).type === "cleared") {
       map = {};

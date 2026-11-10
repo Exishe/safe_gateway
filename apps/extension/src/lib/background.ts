@@ -1,5 +1,5 @@
 import { type GatewayClient, GatewayFailure } from "./gateway";
-import type { ClearReply, GatewayState, MaskReply, StatusReply } from "./messages";
+import type { ClearReply, GatewayState, MaskReply, Protection, ProtectionState, StatusReply } from "./messages";
 import { countOf, type TabSessions } from "./sessions";
 
 // What the background worker does, without the browser APIs, so it can be tested.
@@ -17,6 +17,13 @@ function messageFor(failure: GatewayFailure, extensionId: string): string {
     case "rejected":
       return `The gateway could not mask this message. ${failure.message}`.trim();
   }
+}
+
+/** The badge when the page is not protected: "!" wins over the count. */
+export const ALARM_BADGE = "!";
+
+function unprotected(state: ProtectionState | undefined): boolean {
+  return state === "not_ready" || state === "unmasked";
 }
 
 export class Background {
@@ -39,7 +46,7 @@ export class Background {
       const masked = result.masked[0] ?? "";
       await this.sessions.put(tabId, { sessionId: result.session_id, mapping: result.mapping, entities: result.entities });
       const count = countOf(result.entities);
-      await this.badge(tabId, count > 0 ? String(count) : "");
+      await this.showBadge(tabId, count);
       return { ok: true, masked, mapping: result.mapping, count };
     } catch (error) {
       const failure =
@@ -48,7 +55,7 @@ export class Background {
         // Never start a fresh session under the old map: [PERSON_1] would then mean
         // someone else. The next send starts clean (ADR 0026).
         await this.sessions.drop(tabId);
-        await this.badge(tabId, "");
+        await this.showBadge(tabId, 0);
       }
       return { ok: false, kind: failure.kind, message: messageFor(failure, this.extensionId) };
     }
@@ -57,8 +64,22 @@ export class Background {
   async mapping(tabId: number): Promise<Record<string, string>> {
     const session = await this.sessions.get(tabId);
     const count = session === null ? 0 : countOf(session.entities);
-    await this.badge(tabId, count > 0 ? String(count) : ""); // a reload resets the badge
+    await this.showBadge(tabId, count); // a reload resets the badge
     return session?.mapping ?? {};
+  }
+
+  /** The count of masked values, or "!" while the page is not protected. */
+  private async showBadge(tabId: number, count: number): Promise<void> {
+    const report = await this.sessions.getProtection(tabId);
+    if (unprotected(report?.state)) await this.badge(tabId, ALARM_BADGE);
+    else await this.badge(tabId, count > 0 ? String(count) : "");
+  }
+
+  /** The content script's report on its page (ADR 0026 amendment 2026-11-10). */
+  async protection(tabId: number, report: Protection): Promise<void> {
+    await this.sessions.putProtection(tabId, report);
+    const session = await this.sessions.get(tabId);
+    await this.showBadge(tabId, session === null ? 0 : countOf(session.entities));
   }
 
   async status(tabId: number): Promise<StatusReply> {
@@ -78,13 +99,14 @@ export class Background {
     return {
       gateway,
       session: session === null ? null : { count: countOf(session.entities), entities: session.entities },
+      protection: await this.sessions.getProtection(tabId),
     };
   }
 
   async clear(tabId: number): Promise<ClearReply> {
     const session = await this.sessions.get(tabId);
     await this.sessions.drop(tabId);
-    await this.badge(tabId, "");
+    await this.showBadge(tabId, 0);
     const told = session === null ? true : await this.client.deleteSession(session.sessionId);
     return { cleared: true, gateway: told };
   }

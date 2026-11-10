@@ -10,6 +10,31 @@ function isField(editor: Editor): editor is HTMLTextAreaElement | HTMLInputEleme
   return editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement;
 }
 
+/** Whether the element can be seen: no `hidden`, `display: none` or `visibility: hidden` up the tree. */
+export function isVisible(element: Element): boolean {
+  for (let node: Element | null = element; node !== null; node = node.parentElement) {
+    if (node instanceof HTMLElement && node.hidden) return false;
+    const style = node.ownerDocument.defaultView?.getComputedStyle(node);
+    if (style?.display === "none") return false;
+    if (node === element && style?.visibility === "hidden") return false;
+  }
+  return true;
+}
+
+/**
+ * The textbox the user is typing in, found afresh each time (the site may replace it
+ * at any moment). A selector list matches in document order, so the first match can be
+ * a hidden fallback textarea; the visible ones are taken, the focused one first, then
+ * one that holds a draft.
+ */
+export function resolveEditor(selector: string, scope: ParentNode = document): Editor | null {
+  const visible = [...scope.querySelectorAll(selector)].filter(
+    (node): node is HTMLElement => node instanceof HTMLElement && isVisible(node),
+  );
+  const focused = visible.find((node) => node.contains(node.ownerDocument.activeElement));
+  return focused ?? visible.find((node) => readDraft(node).trim() !== "") ?? visible[0] ?? null;
+}
+
 /** The draft as text: one line per paragraph, `<br>` as a line break. */
 export function readDraft(editor: Editor): string {
   if (isField(editor)) return editor.value;

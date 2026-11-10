@@ -5,8 +5,19 @@ import type { FailureKind, Health } from "./gateway";
 export type Request =
   | { type: "mask"; text: string } // content script: mask this tab's draft
   | { type: "session" } // content script: this tab's map, after a reload
+  | { type: "protection"; state: ProtectionState; reason: string } // content script: is this page protected?
   | { type: "status"; tabId: number } // popup
   | { type: "clear"; tabId: number }; // popup
+
+/** What the content script knows about its page; "ok" is the only state that protects. */
+export type ProtectionState = "checking" | "ok" | "not_ready" | "unmasked";
+
+export interface Protection {
+  state: ProtectionState;
+  reason: string;
+}
+
+export const PROTECTION_STATES: readonly string[] = ["checking", "ok", "not_ready", "unmasked"];
 
 export type MaskReply =
   | { ok: true; masked: string; mapping: Record<string, string>; count: number }
@@ -25,6 +36,8 @@ export type GatewayState =
 export interface StatusReply {
   gateway: GatewayState;
   session: { count: number; entities: Record<string, number> } | null;
+  /** The page's own report; null when no content script has reported (not a chat page). */
+  protection: Protection | null;
 }
 
 export interface ClearReply {
@@ -46,6 +59,8 @@ export function isRequest(value: unknown): value is Request {
       return typeof v.text === "string";
     case "session":
       return true;
+    case "protection":
+      return typeof v.state === "string" && PROTECTION_STATES.includes(v.state) && typeof v.reason === "string";
     case "status":
     case "clear":
       return typeof v.tabId === "number" && Number.isInteger(v.tabId);

@@ -11,6 +11,8 @@ export interface Site {
   send: string;
   /** A message, user or assistant, to rehydrate as one unit. */
   message: string;
+  /** A message the user sent: a new one that SafeGuard did not mask raises the alarm. */
+  user: string;
 }
 
 const CHATGPT: Site = {
@@ -18,6 +20,7 @@ const CHATGPT: Site = {
   editor: '#prompt-textarea, div.ProseMirror[contenteditable="true"], form textarea',
   send: 'button[data-testid="send-button"], button#composer-submit-button, button[aria-label="Send prompt"]',
   message: "[data-message-author-role]",
+  user: '[data-message-author-role="user"]',
 };
 
 const CLAUDE: Site = {
@@ -25,6 +28,7 @@ const CLAUDE: Site = {
   editor: 'div.ProseMirror[contenteditable="true"], [contenteditable="true"][role="textbox"], fieldset textarea',
   send: 'button[aria-label="Send message"], button[aria-label="Send Message"], button[type="submit"]',
   message: '[data-testid="user-message"], .font-claude-response, .font-claude-message, [data-is-streaming]',
+  user: '[data-testid="user-message"]',
 };
 
 const GEMINI: Site = {
@@ -32,6 +36,7 @@ const GEMINI: Site = {
   editor: 'rich-textarea .ql-editor[contenteditable="true"], div.ql-editor[contenteditable="true"]',
   send: 'button.send-button, button[aria-label="Send message"]',
   message: "user-query, model-response, message-content",
+  user: "user-query",
 };
 
 const SITES: Record<string, Site> = {

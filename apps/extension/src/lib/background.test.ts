@@ -155,6 +155,7 @@ describe("sessions", () => {
     expect(await bg.status(5)).toEqual({
       gateway: { state: "ok", status: "ok", version: "0.7.0", provider: "openai", local: false, audit: true },
       session: { count: 2, entities: { PERSON: 1, EMAIL: 1 } },
+      protection: null,
     });
     expect((await bg.status(6)).session).toBeNull();
   });
@@ -163,5 +164,49 @@ describe("sessions", () => {
     const { client } = fakeGateway(() => "down");
     const bg = new Background(client, new TabSessions(memoryArea()), badge);
     expect((await bg.status(1)).gateway).toEqual({ state: "down" });
+  });
+});
+
+describe("protection reports (ADR 0026 amendment 2026-11-10)", () => {
+  const NOT_READY = { state: "not_ready", reason: "no textbox" } as const;
+
+  it("shows ! on the badge and in the status while a page is not protected", async () => {
+    const { client } = fakeGateway(() => json(MASKED));
+    const bg = new Background(client, new TabSessions(memoryArea()), badge);
+    await bg.protection(3, NOT_READY);
+    expect(badges.get(3)).toBe("!");
+    expect((await bg.status(3)).protection).toEqual(NOT_READY);
+  });
+
+  it("keeps ! after masking and after the content script re-reads its map", async () => {
+    const { client } = fakeGateway(() => json(MASKED));
+    const bg = new Background(client, new TabSessions(memoryArea()), badge);
+    await bg.protection(3, { state: "unmasked", reason: "x" });
+    await bg.mask(3, "x");
+    expect(badges.get(3)).toBe("!");
+    await bg.mapping(3);
+    expect(badges.get(3)).toBe("!");
+  });
+
+  it("goes back to the count when the page reports ok, and clears on checking", async () => {
+    const { client } = fakeGateway(() => json(MASKED));
+    const bg = new Background(client, new TabSessions(memoryArea()), badge);
+    await bg.mask(3, "x");
+    await bg.protection(3, NOT_READY);
+    expect(badges.get(3)).toBe("!");
+    await bg.protection(3, { state: "ok", reason: "" });
+    expect(badges.get(3)).toBe("2");
+    await bg.protection(3, NOT_READY);
+    await bg.protection(3, { state: "checking", reason: "" });
+    expect(badges.get(3)).toBe("2");
+  });
+
+  it("is not erased by clearing the session: the page is still unprotected", async () => {
+    const { client } = fakeGateway(() => json(MASKED));
+    const bg = new Background(client, new TabSessions(memoryArea()), badge);
+    await bg.mask(3, "x");
+    await bg.protection(3, { state: "unmasked", reason: "x" });
+    await bg.clear(3);
+    expect(badges.get(3)).toBe("!");
   });
 });

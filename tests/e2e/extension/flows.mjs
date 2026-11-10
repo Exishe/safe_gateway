@@ -107,6 +107,19 @@ async function replyState(page, botSelector) {
   }, botSelector);
 }
 
+// The gateway needs a few seconds to load its models; the first send must not race it.
+await until(
+  async () => {
+    try {
+      return (await fetch(`${GATEWAY}/health`)).ok;
+    } catch {
+      return false;
+    }
+  },
+  "the gateway to answer /health",
+  60000,
+);
+
 const userDir = mkdtempSync(join(tmpdir(), "sg-ext-"));
 const context = await chromium.launchPersistentContext(userDir, {
   channel: "chromium", // the new headless mode, which loads extensions
@@ -127,7 +140,10 @@ await context.route(/^https:\/\/(chatgpt\.com|chat\.openai\.com|claude\.ai|gemin
     return route.fulfill({ contentType: "text/javascript", body: readFileSync(join(FIXTURES, "chat.js")) });
   }
   if (url.pathname === "/favicon.ico") return route.fulfill({ status: 204 });
-  return route.fulfill({ contentType: "text/html", body: readFileSync(join(FIXTURES, PAGES[url.hostname])) });
+  // `?fixture=name` picks a variant of the chatgpt.com page (a different mechanism).
+  const variant = url.searchParams.get("fixture");
+  const file = variant === null ? PAGES[url.hostname] : `chatgpt-${variant}.html`;
+  return route.fulfill({ contentType: "text/html", body: readFileSync(join(FIXTURES, file)) });
 });
 
 let worker = context.serviceWorkers()[0];
@@ -142,6 +158,15 @@ async function tabIdOf(host) {
 
 async function badgeOf(host) {
   const tabId = await tabIdOf(host);
+  return worker.evaluate((id) => chrome.action.getBadgeText({ tabId: id }), tabId);
+}
+
+async function tabIdOfUrl(url) {
+  return worker.evaluate(async (u) => (await chrome.tabs.query({ url: u }))[0]?.id, url);
+}
+
+async function badgeOfUrl(url) {
+  const tabId = await tabIdOfUrl(url);
   return worker.evaluate((id) => chrome.action.getBadgeText({ tabId: id }), tabId);
 }
 
@@ -270,6 +295,81 @@ await step("popup: clear session deletes it and the page shows placeholders agai
     return s.paragraphs[0].includes("[PERSON_1]") && !s.paragraphs[0].includes(DATA.name);
   }, "placeholders back on the page");
   expect((await badgeOf("gemini.google.com")) === "", "badge after clear");
+});
+
+// ------------------------------------------- how a site sends (ADR 0026 amendment)
+// Each fixture sends by a different mechanism; the first thing the page "sends" must be
+// masked and nothing may be sent twice. These are the races the first live test hit.
+
+const MECHANISMS = [
+  { fixture: "hidden-fallback", how: "click", label: "a hidden fallback textarea precedes the box (click)" },
+  { fixture: "hidden-fallback", how: "Enter", label: "a hidden fallback textarea precedes the box (Enter)" },
+  { fixture: "send-on-pointerdown", how: "click", label: "the site sends on pointerdown and clears later" },
+  { fixture: "send-on-keyup", how: "Enter", label: "the site sends on keyup and clears later" },
+  { fixture: "window-capture", how: "Enter", label: "the site sends from its own capture listener on window" },
+];
+
+for (const mechanism of MECHANISMS) {
+  await step(`chatgpt.com: ${mechanism.label} is sent masked, once`, async () => {
+    const page = await context.newPage();
+    watch(page, `chatgpt.com ${mechanism.fixture}`);
+    await page.goto(`https://chatgpt.com/?fixture=${mechanism.fixture}`);
+    await typeDraft(page, "#prompt-textarea", draft());
+    if (mechanism.how === "Enter") await page.keyboard.press("Enter");
+    else await page.locator("button[data-testid='send-button']").click();
+    const sent = await until(() => page.evaluate(() => window.__sent[0]), "the fixture to send");
+    expect(leaks(sent).length === 0, `sent in clear: ${leaks(sent).length} value(s)`);
+    expect(/\[PERSON_1\]/.test(sent) && /\[EMAIL_1\]/.test(sent), `no placeholders in: ${sent}`);
+    await sleep(1500);
+    expect((await page.evaluate(() => window.__sent.length)) === 1, "sent more than once, or not at all");
+    expect((await page.locator("[data-safeguard=banner]").count()) === 0, "a banner on a protected send");
+    await page.close();
+  });
+}
+
+// ------------------------------------------------------------ the fail-safe
+
+const BANNER = "SafeGuard is NOT protecting this page \u2014 do not send personal data";
+
+await step("fail-safe: no textbox the extension knows -> red banner, badge ! and popup say so", async () => {
+  const url = "https://chatgpt.com/?fixture=renamed";
+  const page = await context.newPage();
+  watch(page, "chatgpt.com renamed");
+  await page.goto(url);
+  const banner = page.locator("[data-safeguard=banner] [role=alert]");
+  await banner.waitFor({ timeout: 10000 });
+  expect((await banner.textContent()).includes(BANNER), `banner: ${await banner.textContent()}`);
+  expect((await until(() => badgeOfUrl(url), "a badge")) === "!", "badge is not !");
+  await page.screenshot({ path: join(SHOTS, "banner-not-ready.png") });
+  const tab = await tabIdOfUrl(url);
+  await popup.goto(`chrome-extension://${EXT_ID}/popup/popup.html?tab=${tab}`);
+  await until(async () => (await popup.locator("#protection-text").textContent()).includes("NOT protecting"), "popup protection state");
+  expect((await popup.locator("#protection").getAttribute("data-state")) === "not_ready", "popup state");
+  await sleep(400);
+  await popup.screenshot({ path: join(SHOTS, "popup-not-protecting.png"), fullPage: true });
+  await page.close();
+});
+
+await step("fail-safe: a normal page shows no banner; an unmasked message appears -> banner and badge !", async () => {
+  const url = "https://chatgpt.com/?fixture=bypass";
+  const page = await context.newPage();
+  watch(page, "chatgpt.com bypass");
+  await page.goto(url);
+  await typeDraft(page, "#prompt-textarea", draft());
+  await page.keyboard.press("Enter");
+  await until(async () => (await page.evaluate(() => window.__replies)) === 1, "the reply");
+  await sleep(1500);
+  const banner = page.locator("[data-safeguard=banner] [role=alert]");
+  expect((await banner.count()) === 0, "a banner after a masked send");
+  expect(Number(await until(() => badgeOfUrl(url), "a count badge")) >= 3, "the count badge");
+  await sleep(3500); // past the page's settling time, when messages that appear are history
+  // The page now shows a message that did not go through the masking step.
+  await page.evaluate((text) => window.__bypass(text), `Also note the card ${DATA.card} for ${DATA.name}.`);
+  await banner.waitFor({ timeout: 10000 });
+  expect((await banner.textContent()).includes(BANNER), `banner: ${await banner.textContent()}`);
+  expect((await until(async () => ((await badgeOfUrl(url)) === "!" ? "!" : ""), "badge !")) === "!", "badge is not !");
+  await page.screenshot({ path: join(SHOTS, "banner-unmasked.png") });
+  await page.close();
 });
 
 // --------------------------------------------------------- the gateway stops

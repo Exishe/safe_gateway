@@ -138,3 +138,11 @@ code { font: 12.5px var(--font-mono); background: var(--sunken); color: var(--in
 @media (prefers-reduced-motion: no-preference) {
   .button, .dot { transition: background-color 120ms ease, box-shadow 120ms ease; }
 }
+
+/* The page-protection card: red and unmistakable while the page is not protected. */
+.protection-text { margin: 0; font-weight: 650; }
+.protection[data-state="ok"] .protection-text { color: var(--ok); }
+.protection[data-state="not_ready"],
+.protection[data-state="unmasked"] { background: var(--seal-wash); border-color: var(--seal); }
+.protection[data-state="not_ready"] .protection-text,
+.protection[data-state="unmasked"] .protection-text { color: var(--seal); }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { readDraft, replaceDraft, sameDraft } from "./editor";
+import { isVisible, readDraft, replaceDraft, resolveEditor, sameDraft } from "./editor";
 import { siteFor } from "./sites";
 
 beforeEach(() => {
@@ -55,5 +55,45 @@ describe("siteFor", () => {
     expect(siteFor("claude.ai")?.name).toBe("Claude");
     expect(siteFor("gemini.google.com")?.name).toBe("Gemini");
     expect(siteFor("evil-chatgpt.com")).toBeNull();
+  });
+});
+
+describe("resolveEditor", () => {
+  const SELECTOR = '#prompt-textarea, div.ProseMirror[contenteditable="true"], form textarea';
+
+  it("skips a hidden fallback textarea that comes first in the form", () => {
+    document.body.innerHTML =
+      '<form><textarea style="display:none"></textarea><div id="prompt-textarea" class="ProseMirror" contenteditable="true"><p>hi</p></div></form>';
+    const editor = resolveEditor(SELECTOR);
+    expect(editor?.id).toBe("prompt-textarea");
+  });
+
+  it("finds the box again after the page replaced it", () => {
+    document.body.innerHTML = '<form><div id="prompt-textarea" contenteditable="true"><p>one</p></div></form>';
+    expect(readDraft(resolveEditor(SELECTOR) as HTMLElement)).toBe("one");
+    document.body.innerHTML = '<form><div id="prompt-textarea" contenteditable="true"><p>two</p></div></form>';
+    expect(readDraft(resolveEditor(SELECTOR) as HTMLElement)).toBe("two");
+  });
+
+  it("prefers the visible box that holds a draft, and gives null when none is visible", () => {
+    document.body.innerHTML =
+      '<div id="a" contenteditable="true"></div><div id="b" contenteditable="true"><p>draft</p></div>';
+    expect(resolveEditor('[contenteditable="true"]')?.id).toBe("b");
+    document.body.innerHTML = '<div hidden><div id="prompt-textarea" contenteditable="true"></div></div>';
+    expect(resolveEditor(SELECTOR)).toBeNull();
+  });
+
+  it("looks inside a given scope only", () => {
+    document.body.innerHTML =
+      '<form id="f"><div id="in" contenteditable="true"></div></form><div id="out" contenteditable="true"><p>x</p></div>';
+    expect(resolveEditor('[contenteditable="true"]', document.getElementById("f") as HTMLElement)?.id).toBe("in");
+  });
+});
+
+describe("isVisible", () => {
+  it("is false under display:none or hidden, true otherwise", () => {
+    document.body.innerHTML = '<div style="display:none"><span id="a"></span></div><span id="b"></span>';
+    expect(isVisible(document.getElementById("a") as HTMLElement)).toBe(false);
+    expect(isVisible(document.getElementById("b") as HTMLElement)).toBe(true);
   });
 });

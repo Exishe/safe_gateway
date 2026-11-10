@@ -92,20 +92,71 @@
     window.__replies += 1;
   }
 
+  // Real sites clear the box and render the bubble a moment after they send (state
+  // updates, network); `data-defer` is that delay in ms. The text is "sent" at once.
+  const defer = Number(config.defer ?? 0);
+
   function send() {
     const text = read();
     if (!text) return;
     window.__sent.push(text);
-    clear();
-    message("user", text);
-    void reply(text);
+    const finish = () => {
+      clear();
+      message("user", text);
+      void reply(text);
+    };
+    if (defer > 0) setTimeout(finish, defer);
+    else finish();
   }
 
-  editor.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
+  // The mechanisms the fixtures vary (ADR 0026 amendment 2026-11-10): which event a
+  // site sends on. Default: Enter on keydown at the textbox, and a click.
+  const plainEnter = (event) => event.key === "Enter" && !event.shiftKey;
+  const enterOn = config.enterOn ?? "keydown";
+  if (enterOn === "keydown") {
+    editor.addEventListener("keydown", (event) => {
+      if (plainEnter(event)) {
+        event.preventDefault();
+        send();
+      }
+    });
+  } else if (enterOn === "keyup") {
+    // Sends when the key is released; the keydown only types a newline.
+    editor.addEventListener("keyup", (event) => {
+      if (plainEnter(event)) send();
+    });
+  } else if (enterOn === "window-capture") {
+    // A site's own capture-phase listener on window, sending synchronously.
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (plainEnter(event) && event.target instanceof Element && event.target.closest(config.editor)) {
+          event.preventDefault();
+          send();
+        }
+      },
+      true,
+    );
+  }
+
+  if (config.sendOn === "pointerdown") {
+    // Sends on the press, not the release; the click that follows is ignored.
+    let pressed = false;
+    button.addEventListener("pointerdown", () => {
+      pressed = true;
       send();
-    }
-  });
-  button.addEventListener("click", send);
+    });
+    button.addEventListener("click", () => {
+      if (pressed) pressed = false;
+      else send();
+    });
+  } else {
+    button.addEventListener("click", send);
+  }
+
+  // A send path no listener can see: the page puts a user message in the thread
+  // itself (dictation, an "edit message" box, a script). Only for the fail-safe tests.
+  window.__bypass = (text) => {
+    message("user", text);
+  };
 })();
