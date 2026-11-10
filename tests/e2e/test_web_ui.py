@@ -9,7 +9,6 @@ the servers.
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -17,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.e2e.helpers import program, server_env
 from tests.proxy_fakes import PersonalData
 
 pytestmark = pytest.mark.e2e
@@ -38,30 +38,6 @@ if not (DIST / "index.html").is_file():
     pytest.skip("build the UI first: npm run build in apps/web", allow_module_level=True)
 
 
-def _program(name: str) -> str:
-    path = shutil.which(name)
-    if path is None:
-        pytest.skip(f"{name} is not installed")
-    return path
-
-
-def _server_env(tmp_path: Path, home: Path) -> dict[str, str]:
-    """A temporary SAFEGUARD_HOME and a test-only keyring in a file.
-
-    `safeguard serve` refuses to start without a keychain for the audit log's device
-    key (ADR 0021 point 12). The test machine has none, so the server gets the file
-    keyring in tests/e2e/web, selected by name. No `--no-audit`: the real audit
-    path, device key included, is what the test covers.
-    """
-    return {
-        **os.environ,
-        "SAFEGUARD_HOME": str(home),
-        "PYTHON_KEYRING_BACKEND": "tests.e2e.web.file_keyring.FileKeyring",
-        "SAFEGUARD_E2E_KEYRING": str(tmp_path / "keyring.json"),
-        "PYTHONPATH": str(ROOT),  # so keyring can import the backend from tests/
-    }
-
-
 @pytest.fixture
 def servers(tmp_path: Path) -> Iterator[tuple[Path, dict[str, str]]]:
     """The stub upstream and the gateway; yields the stub's request log and their env."""
@@ -78,13 +54,13 @@ def servers(tmp_path: Path) -> Iterator[tuple[Path, dict[str, str]]]:
     )
     log = tmp_path / "upstream.log"
     log.touch()
-    env = _server_env(tmp_path, home)
+    env = server_env(tmp_path, home)
     stub = subprocess.Popen(
         [sys.executable, "-m", "tests.e2e.stub_upstream", str(STUB_PORT), str(log)],
         cwd=ROOT,
         env=env,
     )
-    serve = [_program("uv"), "run", "--frozen", "safeguard", "serve", "--port", str(GATEWAY_PORT)]
+    serve = [program("uv"), "run", "--frozen", "safeguard", "serve", "--port", str(GATEWAY_PORT)]
     gateway = subprocess.Popen(serve, cwd=ROOT, env=env)
     try:
         yield log, env
@@ -111,7 +87,7 @@ def test_every_flow_in_the_browser(servers: tuple[Path, dict[str, str]], tmp_pat
         "SCREENSHOTS": str(SCREENSHOTS),
     }
     result = subprocess.run(  # noqa: PLW1510  (the return code is asserted below, with the output)
-        [_program("node"), str(FLOWS)],
+        [program("node"), str(FLOWS)],
         cwd=ROOT,
         env=env,
         capture_output=True,
@@ -140,7 +116,7 @@ def test_every_flow_in_the_browser(servers: tuple[Path, dict[str, str]], tmp_pat
 
     # The log the browser read is the real one: the command line verifies it too.
     verify = subprocess.run(  # noqa: PLW1510  (asserted below)
-        [_program("uv"), "run", "--frozen", "safeguard", "audit", "verify"],
+        [program("uv"), "run", "--frozen", "safeguard", "audit", "verify"],
         cwd=ROOT,
         env=server_env,
         capture_output=True,
