@@ -154,7 +154,84 @@ DEFAULT_FONT = "Calibri"
 _NUMBER = re.compile(r"-?\d{1,9}(?:\.\d{1,4})?%?")
 _HEX = re.compile(r"[0-9A-Fa-f]{2,8}")
 _LANGUAGE = re.compile(r"[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*")
-_FONT_NAME = re.compile(r"(?!.*\d{3})[A-Za-z][A-Za-z0-9 \-]{0,31}")
+# Font names are free text, so a pattern cannot tell a person's name from a family. Only
+# these common families pass; any other name becomes DEFAULT_FONT (ADR 0018, 2026-11-10).
+_FONT_FAMILIES = (
+    "Calibri",
+    "Calibri Light",
+    "Cambria",
+    "Cambria Math",
+    "Aptos",
+    "Aptos Display",
+    "Aptos Narrow",
+    "Aptos Serif",
+    "Arial",
+    "Arial Black",
+    "Arial Narrow",
+    "Arial Unicode MS",
+    "Helvetica",
+    "Helvetica Neue",
+    "Times New Roman",
+    "Times",
+    "Courier New",
+    "Courier",
+    "Georgia",
+    "Verdana",
+    "Tahoma",
+    "Trebuchet MS",
+    "Segoe UI",
+    "Segoe UI Light",
+    "Segoe UI Semibold",
+    "Segoe UI Symbol",
+    "Consolas",
+    "Garamond",
+    "Book Antiqua",
+    "Palatino Linotype",
+    "Century Gothic",
+    "Comic Sans MS",
+    "Lucida Console",
+    "Candara",
+    "Constantia",
+    "Corbel",
+    "Symbol",
+    "Wingdings",
+    "Wingdings 2",
+    "Wingdings 3",
+    "Webdings",
+    "Liberation Sans",
+    "Liberation Sans Narrow",
+    "Liberation Serif",
+    "Liberation Mono",
+    "DejaVu Sans",
+    "DejaVu Sans Condensed",
+    "DejaVu Sans Mono",
+    "DejaVu Serif",
+    "DejaVu Serif Condensed",
+    "Noto Sans",
+    "Noto Serif",
+    "Noto Sans Mono",
+    "Noto Sans Armenian",
+    "Noto Serif Armenian",
+    "Noto Sans Cyrillic",
+    "Noto Serif Cyrillic",
+    "PT Sans",
+    "PT Sans Narrow",
+    "PT Serif",
+    "PT Mono",
+    "Open Sans",
+    "Roboto",
+    "Lato",
+    "Ubuntu",
+    "Cantarell",
+    "Menlo",
+    "Monaco",
+    "Geneva",
+    "Lucida Grande",
+    "MS Gothic",
+    "MS Mincho",
+)
+# Looked up with case and spacing normalised; the copy gets the listed spelling.
+_FONT_LOOKUP = {" ".join(name.split()).casefold(): name for name in _FONT_FAMILIES}
 _ENUMS = frozenset(
     [
         "auto",
@@ -333,14 +410,14 @@ def _scalar_ok(value: str) -> bool:
 
 
 def _font_or_default(value: str) -> str:
-    return value if _FONT_NAME.fullmatch(value) else DEFAULT_FONT
+    return _FONT_LOOKUP.get(" ".join(value.split()).casefold(), DEFAULT_FONT)
 
 
 def keep_attribute(element_tag: str, name: str, value: str, *, extra: bool = False) -> str | None:
     """The value to keep for this attribute, or None to drop it.
 
-    One central check: a language tag on `w:lang`, a conservative name on a font
-    attribute (any other becomes the default font), and elsewhere only a number, a hex
+    One central check: a language tag on `w:lang`, a listed font family on a font
+    attribute (any other name becomes the default font), and elsewhere only a number, a hex
     value or a word from the schema's enumerations. `extra` marks a per-element extra
     (a font's name, a compat setting's name and URI; `_clean_settings` judges the latter).
     """

@@ -181,10 +181,17 @@ detection.
   on `w:lang` and `w:themeFontLang` (`^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$`); elsewhere
   a number, a 2 to 8 digit hex value (colours, ids), or a word from the schema's
   enumerations. A value that matches none is dropped (fail closed).
-- **Font names** (`rFonts`, `sym`, the font table) stay only if they match
-  `[A-Za-z][A-Za-z0-9 -]{0,31}` with no run of three digits; any other becomes
-  Calibri. A font name of that shape can still be free text, so this is a limit, not a
-  proof.
+- **Font names** (`rFonts`, `sym`, the font table) stay only if they are on a list of
+  common families in `docx_allow._FONT_FAMILIES` (Calibri, Cambria, Arial, Times New
+  Roman, Aptos, Helvetica, Courier New, Georgia, Verdana, Tahoma, Segoe UI, the
+  Liberation, DejaVu, Noto (including the Armenian and Cyrillic variants) and PT
+  families, and similar); any other becomes Calibri. Case and spacing are normalised and
+  the listed spelling is written. An earlier version kept any name of the shape
+  `[A-Za-z][A-Za-z0-9 -]{0,31}`, which let a person's name used as a font name through;
+  the list closes that. The cost is that a less common font in a copy is shown as
+  Calibri, which changes the look and not the text. A person whose name equals a listed
+  family (a Georgia, say) is not distinguishable, and the family name is not personal
+  data in that spot.
 - **Judged later, so skipped here:** style ids and style references (rewritten to the
   copy's own ids), style names (built-in or `Custom N`), author and initials (replaced),
   `r:id` (checked against the kept relationships), compat settings (`_clean_settings`).
