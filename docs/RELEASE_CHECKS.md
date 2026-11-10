@@ -2,6 +2,26 @@
 
 What was checked before a tag, when, and what it found. Newest first.
 
+## 2026-11-10, manual Ollama check (Phase 4 exit criterion)
+
+Run by the owner on a Windows 11 PC (Acer). Ollama, model `qwen2.5:3b`, and
+`uv run safeguard serve` were run from `main` with the audit log on and the key in
+Windows Credential Manager.
+
+- **Request:** one chat request to `/v1/chat/completions` with a fake name and
+  email.
+- **Answer:** the client got the answer with both real values restored.
+- **Audit row 1:** `upstream_host 127.0.0.1`, `model qwen2.5:3b`, `status 200`,
+  `local true`, `entity_counts {EMAIL: 1, PERSON: 1}`, chained (`row_hash`), and
+  no text in the row.
+- **First attempt:** it failed with HTTP 500 because the PC had no Visual C++
+  Redistributable, so PyTorch's `c10.dll` could not load. The gateway sent nothing
+  upstream. Installing the redistributable fixed it. The requirement is now in
+  `docs/INSTALL.md`.
+
+This meets the Phase 4 exit criterion. v0.4.0 (Phase 4) and v0.5.0 (Phase 5,
+which builds on it) can be tagged.
+
 ## 2026-11-10, tags v0.0.0 to v0.3.0 on 1855771
 
 CI run 42765143614 on 1855771 was green for the Ubuntu checks, the Windows tests,

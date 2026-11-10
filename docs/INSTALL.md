@@ -30,6 +30,15 @@ uv run pytest
 On Windows the same steps work with `winget install astral-sh.uv` and the
 Tesseract and Ollama Windows installers. The git hooks need Git Bash.
 
+On Windows, also install Microsoft's free **Visual C++ Redistributable (x64)**
+from https://aka.ms/vs/17/release/vc_redist.x64.exe. PyTorch, which GLiNER and the
+spaCy stack load, needs it. Without it the gateway refuses every request with an
+error naming `torch\lib\c10.dll` (WinError 126) and sends nothing upstream. To
+check: `uv run python -c "import torch; print(torch.__version__)"`.
+
+The project pins uv (`required-version` in `pyproject.toml`). If uv reports a
+version mismatch, run `uv self update 0.11.32`.
+
 ### Running the local proxy (Phase 4)
 
 `uv run safeguard serve` listens on `http://127.0.0.1:8787` (`--port` changes
