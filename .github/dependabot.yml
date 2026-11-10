@@ -24,6 +24,17 @@ updates:
         patterns: ["*"]
     open-pull-requests-limit: 1
 
+  - package-ecosystem: npm
+    directory: /apps/extension
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      extension:
+        patterns: ["*"]
+    open-pull-requests-limit: 1
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -122,6 +122,41 @@ jobs:
       - name: Build
         run: npm run build
 
+  # The browser extension (ADR 0026): licenses, lint with typecheck, unit tests (the
+  # rehydrator against the engine's parity vectors included), build for Chrome and
+  # Firefox. Same rules as the web job: no dependency cache, install scripts off.
+  extension:
+    name: browser extension (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/extension
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Licenses of shipped and direct packages (hard rule 1)
+        run: npm run licenses
+
+      - name: Lint and typecheck
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build (dist/chrome and dist/firefox)
+        run: npm run build
+
   platforms:
     name: tests (${{ matrix.os }})
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
