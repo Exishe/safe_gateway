@@ -1,8 +1,14 @@
 # 0024. Web UI: mask first, send through the gateway, restore in the browser
 
-- Status: Accepted
+- Status: Accepted; points 2 and 3 and the first three consequences amended by ADR 0025
 - Date: 2026-11-09
 - Builds on: ADR 0002 point 2, ADR 0019, ADR 0021, ADR 0022
+
+> **Amended by [ADR 0025](0025-session-aware-chat.md), 2026-11-10.** The UI now
+> sends its chat requests in the `/mask` session (`x-safeguard-session`). The
+> gateway keeps the session's placeholders, so the model and the audit row see their
+> real types, and it restores the answer itself; the browser restores nothing and
+> only flags what is left. The text below records the decision as first made.
 
 ## Context
 

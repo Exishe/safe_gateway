@@ -30,3 +30,4 @@ never by editing history.
 | [0022](0022-audit-export-format.md) | Audit export: signed JSON and a text PDF summary | Accepted |
 | [0023](0023-shape-and-keyword-recognizers.md) | Shape and keyword recognizers for values that fail validation | Accepted |
 | [0024](0024-web-ui.md) | Web UI: mask first, send through the gateway, restore in the browser | Accepted |
+| [0025](0025-session-aware-chat.md) | Session-aware chat routes: the model and the audit log keep the real types | Accepted |
