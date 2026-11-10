@@ -142,7 +142,12 @@ def test_redacted_copy_reparses_to_the_masked_text_and_restores(tmp_path: Path) 
     document, masks, mapping, out, _ = _redact(tmp_path)
     again = docx_parser.parse(out)
     assert again.text == masked_text(document, masks)
-    assert rehydrate(again.text, mapping) == (document.text, [])
+    restored, kept = rehydrate(again.text, mapping)
+    # The field code's `mailto:` value is a link target, so its placeholder stays as
+    # written (ADR 0003 amendment 1, widened by security review 2, I-1).
+    (placeholder,) = kept
+    assert restored == document.text.replace(FIELD, placeholder)
+    assert mapping.original(placeholder) == FIELD
 
 
 FOOTNOTE = "footnote.mail@example.org"

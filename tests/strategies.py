@@ -280,6 +280,25 @@ LINK_FRAGMENTS = (
     "\n[1]:",
     " ",
     "?d=",
+    # security review 2 (I-1, M-a, M-b): schemes, definitions anywhere, CSS
+    "https:",
+    "HtTpS:",
+    "mailto:",
+    ":",
+    "Note: ",
+    "]:",
+    "> [r]: ",
+    "- [r]: ",
+    "[a\nb]: ",
+    "url(",
+    "URL( '",
+    "@import ",
+    "@IMPORT '",
+    ";",
+    "Www.",
+    "\t",
+    " ",
+    "\x1f",
 )
 
 
@@ -309,6 +328,20 @@ LINK_OPENERS = (
     '<a title="t" href = "',
     "[1]: ",
     "[1]:\n<",
+    # security review 2 (I-1, M-a, M-b)
+    "https:attacker.example/",
+    "HTTPS:\\\\attacker.example/",
+    "javascript:fetch('/",
+    "mailto:",
+    "> [r]: ",
+    "- [r]: ",
+    "[r\nx]: ",
+    "<style>body{background:url(",
+    "<style>body{background:url('/a b",
+    "<style>@import '/a b",
+    "<style>@import ",
+    "Www.attacker.example/",
+    "https://attacker.example/?a ",
 )
 
 

