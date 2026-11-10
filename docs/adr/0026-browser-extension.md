@@ -96,3 +96,67 @@ Web Store costs a fee (`docs/APPROVAL_NEEDED.md`), so pilots sideload.
 - Firefox is built but not tested in a browser here (no Firefox on the build
   machine); Chrome-family behaviour is what the e2e verifies.
 - Settings sync with the desktop app waits for the Tauri shell (Phase 6 part 2).
+
+## Amendment 1, 2026-11-10: stop the whole send gesture, and never fail silently
+
+**What happened.** The first live test on chatgpt.com (Windows 11, Chrome, fake data)
+sent the message unmasked. The popup still said "Connected" and "3 values
+pseudonymised", the badge read 3, and the page showed "Not sent: the message changed
+while it was being masked". So the content script was injected, intercepted a send and
+masked it through the gateway, but the site had already sent the original text and
+cleared its box; the read-back check (point 2) then failed, correctly, after the leak.
+The check was fail-closed for the next step and too late for the site's.
+
+**Root cause.** Reasoned, not observed on the live site (chatgpt.com answers this
+build machine's browser with a bot check, so it could not be loaded here). Point 1
+stopped `keydown` for Enter and `click` for the button. A send is a gesture of several
+events, and a site may send on one we did not stop: the press (`pointerdown` or
+`mousedown`) of the button, or the release (`keyup`) of Enter, and clear its box a
+moment later. Our handler, running on the click or the key press, then saw a draft
+still in the box, started masking, and found it gone afterwards. Fixtures that
+reproduce exactly that (`tests/e2e/extension/fixtures/chatgpt-send-on-pointerdown.html`,
+`chatgpt-send-on-keyup.html`) sent the real values in the old build and are masked in
+this one. A second defect was found on the way and also reproduced: the box was
+found with `document.querySelector` on a selector list, whose first match in document
+order can be the hidden fallback textarea that chatgpt.com keeps in the form before its
+ProseMirror box. On the click and submit paths that gave an empty draft, which the
+code treats as "nothing to mask", so the send passed with no notice at all
+(`chatgpt-hidden-fallback.html`). Whether either is what the live page does is not
+confirmed; the owner's evidence fits the first.
+
+**Decision.**
+1. Every event of a send gesture is stopped synchronously, in the capture phase on
+   `window`, before any await and before the site's listeners: `keydown`, `keypress`
+   and `keyup` for Enter without Shift (Ctrl or Cmd with Enter included),
+   `beforeinput` for `insertParagraph` (and `insertLineBreak` in a textarea),
+   `pointerdown`, `mousedown`, `pointerup`, `mouseup` and `click` on the send button
+   or on any submit button of the box's form, and `submit`. The first of them starts
+   the masking; the others are only stopped, while it runs and for 300 ms after.
+   Masked text is sent by clicking the button with a pass-through flag set, as before.
+2. The box is resolved afresh on every event, never cached, among the visible matches:
+   the focused one, then one holding a draft. Nothing is attached to an element, so a
+   single-page app that replaces the box needs no re-attaching.
+3. If the box is empty when the masking returns, the site sent the real text first:
+   the extension raises the alarm below instead of "Not sent".
+4. **Not ready.** If no visible box matches the site's selectors within 4 seconds of
+   a page load or a navigation, a persistent red banner reads "SafeGuard is NOT
+   protecting this page - do not send personal data", the badge shows "!", and the
+   popup shows the same. It clears if the box appears later.
+5. **Unmasked send detected.** A new user message in the thread (selector `user` in
+   `sites.ts`) that is not the text we wrote into the box (as written or restored),
+   or that holds a value the tripwire recognises, or that carries none of our
+   placeholders, raises the same banner and badge, and the state stays until the page
+   is reloaded. History is not judged: messages present at load, arriving within 3
+   seconds of a load or navigation, arriving as a batch, or not the last in the
+   thread. The tripwire (`sensitiveIn` in `guard.ts`) finds e-mail addresses, Luhn
+   card numbers, SSN-shaped numbers and IBANs. It does not call the gateway.
+6. The content script reports its state to the worker (`protection` message); the
+   worker keeps it per tab in `chrome.storage.session`, "!" wins over the count on the
+   badge, and the status reply carries it to the popup.
+
+**Consequences.** A bypass is now noisy, not silent, but it can still happen: a
+listener registered before the content script, or a send that raises no event, goes
+out first, and the alarm comes after. The tripwire misses names and addresses. A page
+of a supported site without a message box (settings, login) shows the banner. The
+live site was not tested; the fixtures model mechanisms, not the real page.
+

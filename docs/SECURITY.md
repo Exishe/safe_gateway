@@ -193,8 +193,24 @@ with each phase; the threat model gets its full review before the first pilot.
 - The browser extension (ADR 0026) masks only what goes through the textbox it
   knows on chatgpt.com, chat.openai.com, claude.ai and gemini.google.com. It finds
   the box and the send button by selectors; when a site changes its page so that
-  they no longer match, sends there go out unmasked and no notice appears. Its
-  browser tests use local fixture pages, so they cannot catch such a change.
+  they no longer match, sends there go out unmasked. Since the amendment of
+  2026-11-10 the extension says so instead of staying silent: if no box matches
+  within four seconds of a page load or navigation it shows a red banner ("SafeGuard
+  is NOT protecting this page") and a "!" badge, and the popup shows the same. The
+  message that tripped this first, on a live chatgpt.com test, was sent unmasked
+  while the extension also reported it as blocked: the site sent on an event the
+  extension did not yet stop. The extension now stops every event of a send
+  gesture synchronously, but it cannot be certain that no site or script sends
+  first (a listener registered before the content script, or a send path that
+  raises no event). As a second line it watches for a new message of yours in the
+  thread that it did not produce, and raises the same banner and badge. That check
+  is a tripwire, not a guarantee: it recognises e-mail addresses, card numbers,
+  US SSN-shaped numbers and IBANs by pattern, not names or addresses; it ignores
+  messages that appear within three seconds of a page load or in a batch (history);
+  and it fires after the message has gone, so it tells you, it does not undo. The
+  banner is also shown on a page of a supported site that has no message box at
+  all (a settings page, a login screen). The browser tests use local fixture
+  pages, not the live sites; a live check is still needed after a site changes.
   Attachments, pasted images and voice input are never masked.
 - The chat site's own scripts can read what is typed in its box before the
   extension masks it, and the restored reply, because both are in the page. The
