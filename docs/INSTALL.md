@@ -128,7 +128,8 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
 ```
 
 Then, from the repository root (the sidecar step takes several minutes and about
-1 GB of disk, mostly PyTorch):
+1 GB of disk, mostly PyTorch; 1008 MiB measured on Linux x86-64 after the build prunes
+PyTorch's test files):
 
 ```bash
 (cd apps/web && npm ci --ignore-scripts && npm run build)        # the UI the sidecar carries

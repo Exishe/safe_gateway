@@ -46,3 +46,49 @@ def test_the_distribution_metadata_is_copied_for_the_version_lookup(tmp_path: Pa
     command = pyinstaller_command(_tree(tmp_path))
     copied = [command[i + 1] for i, word in enumerate(command) if word == "--copy-metadata"]
     assert "safeguard-gateway" in copied
+
+
+def _touch(base: Path, *names: str) -> None:
+    for name in names:
+        path = base / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x" * 10)
+
+
+def test_prune_removes_build_only_files_and_keeps_what_runs(tmp_path: Path) -> None:
+    bundle = tmp_path / "safeguard-sidecar"
+    internal = bundle / "_internal"
+    gone = (
+        "torch/test/test_nn.py",
+        "torch/bin/test_api",
+        "torch/include/ATen/ATen.h",
+        "torch/lib/libtorchbind_test.so",
+        "torch/lib/libjitbackend_test.so",
+        "torch/lib/libcudart.so.12",
+        "nvidia/cudnn/lib/libcudnn.so",
+        "triton/__init__.py",
+        "spacy/tests/test_x.py",
+        "somepkg/libstatic.a",
+    )
+    kept = (
+        "torch/__init__.py",
+        "torch/lib/libtorch_cpu.so",
+        "torch/lib/libc10.so",
+        "torch/testing/_comparison.py",
+        "spacy/lang/ru/__init__.py",
+        "ui/index.html",
+    )
+    _touch(internal, *gone, *kept)
+    _touch(bundle, "safeguard-sidecar")
+    removed = build_sidecar.prune_bundle(bundle)
+    for name in gone:
+        assert not (internal / name).exists(), name
+    for name in kept:
+        assert (internal / name).is_file(), name
+    assert (bundle / "safeguard-sidecar").is_file()
+    assert removed >= 10 * len(gone)
+
+
+def test_prune_without_an_internal_folder_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(BuildError, match="_internal"):
+        build_sidecar.prune_bundle(tmp_path)

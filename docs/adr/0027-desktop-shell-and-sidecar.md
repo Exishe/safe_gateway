@@ -95,10 +95,18 @@ money, so the installers ship unsigned (hard rule 2).
 ## Consequences
 
 - The sidecar is large: PyTorch (for GLiNER, ADR 0015) is most of it. Measured on
-  Linux x86-64 on 2026-11-10: the one-folder build is 1.2 GB on disk (executable 78
-  MB, `torch` 680 MB, spaCy 121 MB, transformers 48 MB), and the `.deb` made from it is
-  458 MiB. PyTorch's own test binaries (`torch/bin/test_*`, `torch/test`) ride along;
-  pruning them is a follow-up, not done.
+  Linux x86-64 on 2026-11-10 (`du -sm`, MiB): the first one-folder build was 1173 MiB
+  (`torch` 680, spaCy 121, transformers 48). `tools.build_sidecar` now prunes the
+  finished folder (`prune_bundle`): PyTorch's C++ test binaries (`torch/bin`), its
+  `torch/test` tree and `*_test.so` libraries, headers, GPU runtime libraries, `triton`,
+  `*.a` archives and packages' `tests` folders. The same build after pruning is 1008
+  MiB (`torch` 518, 172 MB freed). A frozen `serve --no-audit` answered `/health` and
+  `POST /mask` masked an email and a card. The NER models were not pulled in that
+  check, so GLiNER inference through the pruned build is not exercised here. This
+  Linux build is the CPU-only PyTorch wheel, so it had no CUDA libraries, no
+  `torch/include` and no `*.a` files; those patterns only matter for other builds.
+  spaCy's language data is 3 MB, so it was kept (a document can be in any language).
+  The `.deb` size was measured before pruning only (458 MiB).
 - Known limits of the shell: a SIGTERM to the app itself (a session logout on Linux)
   does not stop the sidecar, which the next start then adopts; Quit and Cmd+Q do stop
   it. Only the sidecar's own SIGTERM and the restart after a SIGKILL were exercised
