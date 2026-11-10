@@ -38,6 +38,15 @@ Phase 6 web UI, the security review fixes (I1-I4 and the minors), leak-hunt
 If an agent's worktree branch has commits but the agent is gone, merge what
 is there and finish the remainder yourself or with a new agent.
 
+## Needs the owner
+
+- **macOS CI job:** cancelled before it starts, twice (runs 42757604331 and
+  42760447775). The likely cause is the private repository's Actions minutes or
+  spending limit for macOS runners, which are billed at 10x. Check GitHub, Settings,
+  Billing and plans, then Actions. The session does not retry it.
+- **Live checks:** run against a local Ollama model; try the extension on the live
+  chat sites; test on Firefox.
+
 ## Merge procedure
 
 1. `git cherry-pick` the agent's commits onto the branch.
