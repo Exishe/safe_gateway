@@ -23,7 +23,6 @@ const TEXT =
 const log = [];
 let failed = false;
 let allowNetworkErrors = false;
-let expected501 = 0;
 const consoleErrors = [];
 const foreignRequests = [];
 
@@ -58,12 +57,6 @@ function watch(page) {
     if (message.type() !== "error") return;
     const text = message.text();
     if (allowNetworkErrors && /Failed to load resource|ERR_FAILED/.test(text)) return;
-    // Chrome logs every HTTP error status. GET /audit answers 501 until the audit route is
-    // wired (ADR 0019); the UI expects that and shows it as a state, so only that one passes.
-    if (message.location().url.endsWith("/audit") && text.includes("status of 501")) {
-      expected501 += 1;
-      return;
-    }
     consoleErrors.push(text);
   });
   page.on("pageerror", (error) => consoleErrors.push(`pageerror: ${error.message}`));
@@ -100,29 +93,36 @@ async function openTab(page, name) {
   await page.getByRole("tab", { name }).click();
 }
 
-const AUDIT_ROWS = {
-  rows: [
-    {
-      id: 1, kind: "request", ts_utc: "2026-11-09T09:14:03.120000Z", session_id: "", upstream_host: "127.0.0.1:11434",
-      model: "llama3.2", entity_counts_json: '{"EMAIL":1,"PERSON":2}', masked_payload_sha256: "a".repeat(64),
-      bytes_out: 640, status: 200, local: 1,
-    },
-    {
-      id: 2, kind: "request", ts_utc: "2026-11-09T10:02:41.500000Z", session_id: "", upstream_host: "api.openai.com",
-      model: "gpt-4o-mini", entity_counts_json: '{"CREDIT_CARD":1,"IBAN":1}', masked_payload_sha256: "b".repeat(64),
-      bytes_out: 1210, status: 200, local: 0,
-    },
-    {
-      id: 3, kind: "request", ts_utc: "2026-11-09T10:05:12.000000Z", session_id: "", upstream_host: "api.openai.com",
-      model: "gpt-4o-mini", entity_counts_json: "{}", masked_payload_sha256: "c".repeat(64),
-      bytes_out: 300, status: 0, local: 0,
-    },
-  ],
-};
-const VERIFY_OK = { ok: true, rows_checked: 3, first_bad_id: null, reason: null, detail: "the log is intact", head_id: 3 };
-const VERIFY_BROKEN = {
-  ok: false, rows_checked: 1, first_bad_id: 2, reason: "edited", detail: "its stored values do not match its row hash", head_id: 3,
-};
+// Mocked pages in the shape GET /audit serves (gateway/proxy/app.py, `audit` route):
+// rows newest first, null columns left out, then next_before_id and verification.
+function row(id, ts, host, model, counts, status, local) {
+  return {
+    id, kind: "request", ts_utc: ts, upstream_host: host, model, masked_payload_sha256: "a".repeat(64),
+    bytes_out: 600 + id, status, row_hash: "b".repeat(64), local, entity_counts: counts,
+  };
+}
+const NEWER_ROWS = [
+  row(3, "2026-11-09T10:05:12.000000Z", "api.openai.com", "gpt-4o-mini", {}, 0, false),
+  row(2, "2026-11-09T10:02:41.500000Z", "api.openai.com", "gpt-4o-mini", { CREDIT_CARD: 1, IBAN: 1 }, 200, false),
+];
+const OLDER_ROWS = [row(1, "2026-11-09T09:14:03.120000Z", "127.0.0.1:11434", "llama3.2", { EMAIL: 1, PERSON: 2 }, 200, true)];
+function verification(ok) {
+  return ok
+    ? { ok: true, rows_checked: 3, first_bad_id: null, reason: null, detail: "3 rows verified", head_id: 3, head_hash: "b".repeat(64), purged_through_id: 0 }
+    : { ok: false, rows_checked: 1, first_bad_id: 2, reason: "edited", detail: "its stored values do not match its row hash", head_id: 3, head_hash: "b".repeat(64), purged_through_id: 0 };
+}
+function auditPage(url, ok) {
+  const older = new URL(url).searchParams.get("before_id") !== null;
+  return older
+    ? { rows: OLDER_ROWS, next_before_id: null, verification: verification(ok) }
+    : { rows: NEWER_ROWS, next_before_id: 2, verification: verification(ok) };
+}
+
+async function auditRows(page) {
+  const table = page.getByRole("table");
+  await table.waitFor();
+  return table.getByRole("row").filter({ has: page.getByRole("cell") });
+}
 
 async function main() {
   await waitFor(`${STUB}/`, "the stub upstream");
@@ -210,6 +210,25 @@ async function main() {
     await shot(page, "02-answer-1280-light");
   });
 
+  await step("after a send, the audit tab shows the new entry with its counts and an intact chain", async () => {
+    await openTab(page, "Audit log");
+    await page.getByText("Chain intact").waitFor();
+    await page.getByText("1 entry checked, newest entry 1").waitFor();
+    const rows = await auditRows(page);
+    expect((await rows.count()) === 1, `expected 1 entry, found ${await rows.count()}`);
+    const cells = await rows.first().getByRole("cell").allTextContents();
+    log.push(`INFO real audit entry: ${cells.join(" | ")}`);
+    expect(cells[1] === "127.0.0.1", `upstream ${cells[1]}`); // the log keeps the host, not the port
+    expect(cells[2] === MODEL, `model ${cells[2]}`);
+    // The UI sends its session's placeholders, which the chat route wraps as [LITERAL_n]
+    // (ADR 0024): the gateway's own counts see 4 placeholder-shaped values, not their types.
+    expect(cells[3] === "Placeholder-shaped text 4", `counts ${cells[3]}`);
+    expect(cells[4] === "200", `status ${cells[4]}`);
+    expect(cells[5] === "This computer", `where ${cells[5]}`);
+    await shot(page, "03-audit-real-1280-light");
+    await openTab(page, "Mask & send");
+  });
+
   await step("Show placeholders swaps restored values for their placeholders", async () => {
     await page.getByRole("switch", { name: "Show placeholders" }).click();
     let answer = await page.getByRole("region", { name: "Answer" }).textContent();
@@ -233,26 +252,48 @@ async function main() {
     await emailSwitch.click();
   });
 
-  await step("the audit tab shows the gateway's 501 calmly", async () => {
+  await step("both sends are in the real audit log, newest first, and the chain is intact", async () => {
     await openTab(page, "Audit log");
-    await page.getByText("This gateway does not serve the audit log yet").waitFor();
+    await page.getByText("2 entries checked, newest entry 2").waitFor();
+    const rows = await auditRows(page);
+    expect((await rows.count()) === 2, `expected 2 entries, found ${await rows.count()}`);
+    const newest = await rows.first().getByRole("cell").allTextContents();
+    log.push(`INFO newest real audit entry: ${newest.join(" | ")}`);
+    // The second send held the email in clear: the gateway detected and counted it itself.
+    expect(newest[3] === "Email 1Placeholder-shaped text 3", `counts ${newest[3]}`);
   });
 
-  await step("the audit tab shows rows and an intact chain", async () => {
-    await page.route("**/audit", (route) => route.fulfill({ json: { ...AUDIT_ROWS, verify: VERIFY_OK } }));
+  await step("older entries load by before_id, from a mocked log", async () => {
+    await page.route("**/audit*", (route) => route.fulfill({ json: auditPage(route.request().url(), true) }));
     await page.getByRole("button", { name: "Check again" }).click();
-    await page.getByText("Chain intact").waitFor();
-    const table = page.getByRole("table");
-    expect((await table.getByRole("row").count()) === 4, "table rows");
-    await table.getByText("api.openai.com").first().waitFor();
-    await table.getByText("No answer").waitFor();
-    await table.getByText("Cloud").first().waitFor();
-    await shot(page, "03-audit-intact-1280-light");
+    await page.getByText("3 entries checked, newest entry 3").waitFor();
+    const older = page.waitForRequest((r) => r.url().endsWith("/audit?before_id=2"));
+    await page.getByRole("button", { name: "Show older entries" }).click();
+    await older;
+    await page.getByRole("table").getByText("llama3.2").waitFor();
+    const rows = await auditRows(page);
+    expect((await rows.count()) === 3, "older page not appended");
+    expect((await page.getByRole("button", { name: "Show older entries" }).count()) === 0, "no more pages");
+    await page.getByRole("table").getByText("No answer").waitFor();
   });
 
-  await step("the audit tab shows a broken chain with the first bad entry", async () => {
-    await page.unroute("**/audit");
-    await page.route("**/audit", (route) => route.fulfill({ json: { ...AUDIT_ROWS, verification: VERIFY_BROKEN } }));
+  await step("a gateway started with --no-audit is shown as keeping no log (mocked 404)", async () => {
+    await page.unroute("**/audit*");
+    allowNetworkErrors = true; // Chrome logs the 404 itself
+    await page.route("**/audit*", (route) =>
+      route.fulfill({
+        status: 404,
+        json: { error: { type: "not_found", message: "no audit log: the gateway was started with --no-audit" } },
+      }),
+    );
+    await page.getByRole("button", { name: "Check again" }).click();
+    await page.getByText("This gateway is not keeping an audit log").waitFor();
+    allowNetworkErrors = false;
+  });
+
+  await step("the audit tab shows a broken chain with the first bad entry (mocked)", async () => {
+    await page.unroute("**/audit*");
+    await page.route("**/audit*", (route) => route.fulfill({ json: auditPage(route.request().url(), false) }));
     await page.getByRole("button", { name: "Check again" }).click();
     await page.getByRole("alert").filter({ hasText: "Chain broken at entry 2" }).waitFor();
     await page.getByText("an entry was changed after it was written").waitFor();
@@ -262,6 +303,7 @@ async function main() {
     await openTab(page, "Settings");
     await page.getByText("Ollama runs on this computer and needs no key.").waitFor();
     await page.getByRole("tabpanel", { name: "Settings" }).getByText(MODEL, { exact: true }).waitFor();
+    await page.getByText("One tamper-evident entry for each request sent to a model").waitFor();
     expect((await page.locator('input[type="password"]').count()) === 0, "a key field exists");
     await page.getByLabel("an example config.toml", { exact: true }).waitFor();
   });
@@ -326,7 +368,6 @@ async function main() {
     expect(foreignRequests.length === 0, foreignRequests.join(" "));
   });
 
-  log.push(`NOTE GET /audit answered 501 ${expected501} time(s); Chrome logged each as a console error, expected`);
   console.log(log.join("\n"));
   process.exit(failed ? 1 : 0);
 }

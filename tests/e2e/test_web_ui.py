@@ -45,9 +45,26 @@ def _program(name: str) -> str:
     return path
 
 
+def _server_env(tmp_path: Path, home: Path) -> dict[str, str]:
+    """A temporary SAFEGUARD_HOME and a test-only keyring in a file.
+
+    `safeguard serve` refuses to start without a keychain for the audit log's device
+    key (ADR 0021 point 12). The test machine has none, so the server gets the file
+    keyring in tests/e2e/web, selected by name. No `--no-audit`: the real audit
+    path, device key included, is what the test covers.
+    """
+    return {
+        **os.environ,
+        "SAFEGUARD_HOME": str(home),
+        "PYTHON_KEYRING_BACKEND": "tests.e2e.web.file_keyring.FileKeyring",
+        "SAFEGUARD_E2E_KEYRING": str(tmp_path / "keyring.json"),
+        "PYTHONPATH": str(ROOT),  # so keyring can import the backend from tests/
+    }
+
+
 @pytest.fixture
-def servers(tmp_path: Path) -> Iterator[Path]:
-    """The stub upstream and the gateway; yields the stub's request log."""
+def servers(tmp_path: Path) -> Iterator[tuple[Path, dict[str, str]]]:
+    """The stub upstream and the gateway; yields the stub's request log and their env."""
     home = tmp_path / "home"
     home.mkdir()
     gazetteer = home / "clients.csv"
@@ -61,7 +78,7 @@ def servers(tmp_path: Path) -> Iterator[Path]:
     )
     log = tmp_path / "upstream.log"
     log.touch()
-    env = {**os.environ, "SAFEGUARD_HOME": str(home)}
+    env = _server_env(tmp_path, home)
     stub = subprocess.Popen(
         [sys.executable, "-m", "tests.e2e.stub_upstream", str(STUB_PORT), str(log)],
         cwd=ROOT,
@@ -70,14 +87,15 @@ def servers(tmp_path: Path) -> Iterator[Path]:
     serve = [_program("uv"), "run", "--frozen", "safeguard", "serve", "--port", str(GATEWAY_PORT)]
     gateway = subprocess.Popen(serve, cwd=ROOT, env=env)
     try:
-        yield log
+        yield log, env
     finally:
         for process in (gateway, stub):
             process.terminate()
             process.wait(timeout=20)
 
 
-def test_every_flow_in_the_browser(servers: Path, tmp_path: Path) -> None:
+def test_every_flow_in_the_browser(servers: tuple[Path, dict[str, str]], tmp_path: Path) -> None:
+    upstream_log, server_env = servers
     data = tmp_path / "data.json"
     data.write_text(
         json.dumps({"name": DATA.name, "email": DATA.email, "card": DATA.card, "iban": DATA.iban}),
@@ -103,7 +121,7 @@ def test_every_flow_in_the_browser(servers: Path, tmp_path: Path) -> None:
     print(result.stdout)  # noqa: T201  (the step log, shown with -s)
     assert result.returncode == 0, result.stdout + result.stderr
 
-    sent = servers.read_text(encoding="utf-8")
+    sent = upstream_log.read_text(encoding="utf-8")
     bodies = [json.loads(line) for line in sent.splitlines() if line]
     # Two sends: all masked, then with the email switched off in the UI.
     assert len(bodies) == 2
@@ -111,3 +129,14 @@ def test_every_flow_in_the_browser(servers: Path, tmp_path: Path) -> None:
     # The second send held the email in clear; the gateway masked it again on the way out.
     for value in [DATA.name, DATA.email, DATA.card, DATA.iban]:
         assert value not in sent, "a value reached the upstream unmasked"
+
+    # The log the browser read is the real one: the command line verifies it too.
+    verify = subprocess.run(  # noqa: PLW1510  (asserted below)
+        [_program("uv"), "run", "--frozen", "safeguard", "audit", "verify"],
+        cwd=ROOT,
+        env=server_env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert verify.returncode == 0, verify.stdout + verify.stderr

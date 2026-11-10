@@ -76,6 +76,13 @@ export function SettingsScreen({ state, onRefresh }: { state: GatewayState; onRe
             <Fact term="Address">
               <span className="token">127.0.0.1:8787</span>, reachable from this computer only
             </Fact>
+            <Fact term="Audit log">
+              {state.health.audit === false ? (
+                <span className="text-seal">Off: started with --no-audit, so requests leave no record</span>
+              ) : (
+                "One tamper-evident entry for each request sent to a model"
+              )}
+            </Fact>
             <Fact term="Version">
               <span className="token">{state.health.version}</span>
             </Fact>

@@ -76,7 +76,10 @@ Browser tests (Node Playwright with an installed Chromium):
 SAFEGUARD_E2E=1 uv run pytest tests/e2e -m e2e --no-cov -s
 ```
 
-Screenshots go to `tests/e2e/artifacts/web/`.
+Screenshots go to `tests/e2e/artifacts/web/`. The test starts `safeguard serve` with
+a temporary `SAFEGUARD_HOME` and a test-only file keyring
+(`tests/e2e/web/file_keyring.py`), so it writes and verifies a real audit log
+without touching your keychain or `~/.safeguard`.
 
 ### Claude Code
 

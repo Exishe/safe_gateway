@@ -28,9 +28,11 @@ export interface Health {
   version: string;
   provider: string;
   local: boolean;
+  audit?: boolean; // whether the gateway writes the audit log (false with --no-audit)
 }
 
-export type AuditResult = { kind: "ok"; view: AuditView } | { kind: "unavailable"; message: string };
+// "disabled": the gateway was started with --no-audit and answers /audit with 404.
+export type AuditResult = { kind: "ok"; view: AuditView } | { kind: "disabled"; message: string };
 
 export class GatewayError extends Error {
   readonly status: number;
@@ -124,11 +126,12 @@ export class GatewayClient {
     if (!response.ok && response.status !== 404) throw await errorFrom(response);
   }
 
-  async audit(): Promise<AuditResult> {
-    const response = await this.send("/audit");
-    if (response.status === 501) {
+  /** The newest page of the audit log, or the page before entry `beforeId`. */
+  async audit(beforeId?: number): Promise<AuditResult> {
+    const response = await this.send(beforeId === undefined ? "/audit" : `/audit?before_id=${beforeId}`);
+    if (response.status === 404) {
       const error = await errorFrom(response);
-      return { kind: "unavailable", message: error.message };
+      return { kind: "disabled", message: error.message };
     }
     if (!response.ok) throw await errorFrom(response);
     return { kind: "ok", view: parseAudit(await response.json()) };

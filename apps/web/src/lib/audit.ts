@@ -1,6 +1,8 @@
-// GET /audit, read tolerantly. Written against ADR 0021 (row columns, VerifyResult)
-// and ADR 0022 (the export document) while the route itself is being wired, so it
-// accepts either's field names and never drops a row it cannot fully read.
+// GET /audit as the gateway serves it (gateway/proxy/app.py, `audit` route, and
+// gateway/audit/sink.py): rows newest first with null columns left out, the id to
+// ask for the next older page, and the VerifyResult of ADR 0021 point 10.
+// A cell that does not have its expected type (a tampered row is served as repr
+// text) is shown as unknown; the row is never dropped.
 
 export interface AuditRow {
   id: number | null;
@@ -8,7 +10,7 @@ export interface AuditRow {
   time: string | null;
   upstream: string | null;
   model: string | null;
-  entities: [string, number][];
+  entities: [string, number][] | null; // null: the stored counts could not be read
   status: number | null;
   local: boolean | null;
   bytesOut: number | null;
@@ -26,7 +28,8 @@ export interface VerifyView {
 
 export interface AuditView {
   rows: AuditRow[];
-  verify: VerifyView | null;
+  nextBeforeId: number | null;
+  verify: VerifyView;
 }
 
 type Json = Record<string, unknown>;
@@ -43,47 +46,32 @@ function str(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
-function bool(value: unknown): boolean | null {
-  if (typeof value === "boolean") return value;
-  if (value === 0 || value === 1) return value === 1;
-  return null;
-}
-
-function counts(row: Json): [string, number][] {
-  let raw: unknown = row.entity_counts;
-  if (raw === undefined && typeof row.entity_counts_json === "string") {
-    try {
-      raw = JSON.parse(row.entity_counts_json);
-    } catch {
-      raw = undefined;
-    }
-  }
-  if (!isRecord(raw)) return [];
-  return Object.entries(raw)
+function counts(value: unknown): [string, number][] | null {
+  if (!isRecord(value)) return null;
+  return Object.entries(value)
     .filter((entry): entry is [string, number] => typeof entry[1] === "number")
     .sort(([a], [b]) => a.localeCompare(b));
 }
 
 function parseRow(row: Json): AuditRow {
-  const kind = row.kind === "checkpoint" || row.kind === "request" ? row.kind : row.kind === undefined ? "request" : "other";
+  const kind = row.kind === "request" || row.kind === "checkpoint" ? row.kind : "other";
   return {
     id: int(row.id),
     kind,
-    time: str(row.ts_utc) ?? str(row.time),
+    time: str(row.ts_utc),
     upstream: str(row.upstream_host),
     model: str(row.model),
-    entities: counts(row),
+    entities: counts(row.entity_counts),
     status: int(row.status),
-    local: bool(row.local),
+    local: typeof row.local === "boolean" ? row.local : null,
     bytesOut: int(row.bytes_out),
     purgedCount: int(row.purged_count),
   };
 }
 
-function parseVerify(value: unknown): VerifyView | null {
-  if (!isRecord(value) || typeof value.ok !== "boolean") return null;
+function parseVerification(value: Json): VerifyView {
   return {
-    state: value.ok ? "intact" : "broken",
+    state: value.ok === true ? "intact" : "broken",
     rowsChecked: int(value.rows_checked),
     firstBadId: int(value.first_bad_id),
     reason: str(value.reason),
@@ -92,22 +80,13 @@ function parseVerify(value: unknown): VerifyView | null {
   };
 }
 
-function rowsOf(body: unknown): unknown[] | null {
-  if (Array.isArray(body)) return body as unknown[];
-  if (!isRecord(body)) return null;
-  for (const key of ["rows", "items", "entries"]) {
-    const value = body[key];
-    if (Array.isArray(value)) return value as unknown[];
-  }
-  return null;
-}
-
 export function parseAudit(body: unknown): AuditView {
-  const rows = rowsOf(body);
-  if (rows === null) throw new Error("The gateway's /audit answer is not an audit log.");
-  const parsed = rows.filter(isRecord).map(parseRow);
-  // Newest first: the question is usually "what left this machine just now".
-  parsed.sort((a, b) => (b.id ?? 0) - (a.id ?? 0));
-  const verify = isRecord(body) ? parseVerify(body.verify ?? body.verification ?? body.verify_result) : null;
-  return { rows: parsed, verify };
+  if (!isRecord(body) || !Array.isArray(body.rows) || !isRecord(body.verification)) {
+    throw new Error("The gateway's /audit answer is not an audit log.");
+  }
+  return {
+    rows: (body.rows as unknown[]).filter(isRecord).map(parseRow),
+    nextBeforeId: int(body.next_before_id),
+    verify: parseVerification(body.verification),
+  };
 }

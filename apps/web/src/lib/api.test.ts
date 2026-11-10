@@ -53,9 +53,25 @@ describe("GatewayClient", () => {
     expect((error as GatewayError).message).toMatch(/safeguard serve/);
   });
 
-  it("treats a 501 from /audit as 'not available', not as a failure", async () => {
-    const { fetch } = fakeFetch(() => json({ error: { type: "not_implemented", message: "later" } }, 501));
-    expect(await new GatewayClient("", fetch).audit()).toEqual({ kind: "unavailable", message: "later" });
+  it("treats a 404 from /audit (started with --no-audit) as 'no audit log', not as a failure", async () => {
+    const message = "no audit log: the gateway was started with --no-audit";
+    const { fetch } = fakeFetch(() => json({ error: { type: "not_found", message } }, 404));
+    expect(await new GatewayClient("", fetch).audit()).toEqual({ kind: "disabled", message });
+  });
+
+  it("asks for an older page of the audit log with before_id", async () => {
+    const verification = { ok: true, rows_checked: 0, first_bad_id: null, reason: null, detail: "", head_id: 0 };
+    const { fetch, calls } = fakeFetch(() => json({ rows: [], next_before_id: null, verification }));
+    const client = new GatewayClient("", fetch);
+    await client.audit();
+    await client.audit(41);
+    expect(calls.map((c) => c.url)).toEqual(["/audit", "/audit?before_id=41"]);
+  });
+
+  it("fails on another audit error", async () => {
+    const { fetch } = fakeFetch(() => json({ error: { type: "x", message: "disk full" } }, 500));
+    const error = await new GatewayClient("", fetch).audit().catch((e: unknown) => e);
+    expect((error as GatewayError).message).toBe("disk full");
   });
 
   it("deletes a session and accepts 404 as already gone", async () => {

@@ -80,11 +80,19 @@ find; nothing a client sends can turn that off.
    cloud provider it shows the `keyring set` command; there is no key field. A web
    page therefore cannot change where data goes.
 
-9. **Audit.** The client reads `GET /audit` tolerantly: rows as stored (ADR 0021
-   columns, `entity_counts_json` or `entity_counts`, `local` as 0/1 or boolean),
-   and a `VerifyResult` under `verify`, `verification` or `verify_result`. A 501
-   is a state ("not served yet", plus the CLI commands), not an error. A broken
-   chain names the first bad entry and the reason, and says to keep the file.
+9. **Audit.** The client reads `GET /audit` exactly as the gateway serves it
+   (the `audit` route in `gateway/proxy/app.py`, rows shaped by
+   `gateway/audit/sink.py`). That is `rows` newest first, with null columns left
+   out, `local` a boolean and `entity_counts` an object (null when an edited entry
+   made it unreadable). Then `next_before_id`, and `verification` holding the
+   `VerifyResult` of ADR 0021 point 10. The rows keep the gateway's order. "Show
+   older entries" asks for `?before_id=` and appends the page. A cell without its
+   expected type (a tampered row is served as repr text) shows as unknown; the row
+   is never dropped. An answer without `rows` and `verification` is refused. A 404
+   means the gateway was started with `--no-audit`, and the screen says plainly
+   that nothing is being recorded. Settings shows the same from `/health`'s
+   `audit` flag. A broken chain names the first bad entry and the reason, and says
+   to keep the file.
 
 10. **Stack and licenses.** React 19, Vite 8, TypeScript 6.0, Tailwind 4,
     shadcn/ui components copied in over Radix primitives, ESLint 9 with
@@ -110,10 +118,30 @@ find; nothing a client sends can turn that off.
     and `uv run safeguard serve` with a temporary `SAFEGUARD_HOME`, then runs Node
     Playwright (`tests/e2e/web/flows.mjs`) against the Chromium already installed.
     It fails on any console error or CSP violation, and on any request to another
-    origin. Afterwards it checks that none of the Faker values reached the stub.
-    One console message is allowed: Chrome logs the expected 501 from `GET /audit`.
+    origin. Afterwards it checks that none of the Faker values reached the stub,
+    and runs `safeguard audit verify` on the log the browser read.
+
+    The server runs the real audit path, device key included; it is never started
+    with `--no-audit`. The test machine has no OS keychain, and `safeguard serve`
+    rightly refuses to start without one (ADR 0021 point 12). So the subprocess gets
+    a test-only file keyring, `tests/e2e/web/file_keyring.py`, selected with
+    `PYTHON_KEYRING_BACKEND` and writing to a file in the test's temporary
+    directory. After each send the Audit screen must show the new entry and an
+    intact chain. Paging, the `--no-audit` 404 and a broken chain are driven by
+    request interception, with responses in the served shape. The one console
+    message allowed is the 404 Chrome logs in that mocked step.
 
 ## Consequences
+
+- **The audit log does not record which kinds of value a UI request masked.**
+  The UI sends its session's placeholders, the chat route counts them as
+  `LITERAL`, and the browser test sees an entry of "Placeholder-shaped text 4"
+  for a text with a name, an email, a card and an IBAN. A value switched off and
+  re-detected by the gateway is counted under its own type ("Email 1"). The entry
+  still shows that something was masked, and that only placeholders left the
+  machine. As evidence of what kinds of data were involved, it is weaker than an
+  entry for an API client's request. The session-aware chat route below would fix
+  this too; until then this is a known gap, not a leak.
 
 - The model sees the session's placeholders as `[LITERAL_n]`, so it loses the
   type: it cannot tell that `[LITERAL_1]` is a person. Answers still restore

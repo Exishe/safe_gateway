@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { CopyCommand } from "@/components/CopyCommand";
-import { Info, Refresh, ShieldBroken, ShieldCheck, Warning } from "@/components/icons";
+import { Refresh, ShieldBroken, ShieldCheck, Warning } from "@/components/icons";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,6 +9,12 @@ import type { AuditRow, VerifyView } from "@/lib/audit";
 import { familyOf, labelOf } from "@/lib/entities";
 
 type Load = { kind: "loading" } | { kind: "failed"; message: string } | AuditResult;
+
+function mergePage(current: Load, next: AuditResult): Load {
+  if (current.kind !== "ok" || next.kind !== "ok") return next;
+  // The older page's verification is newer; the rows are appended, oldest last.
+  return { kind: "ok", view: { ...next.view, rows: [...current.view.rows, ...next.view.rows] } };
+}
 
 const TIME = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
 
@@ -24,18 +30,9 @@ const REASONS: Record<string, string> = {
   reordered: "entries were moved",
   inserted: "an entry was added that the chain does not account for",
   "bad HMAC": "an entry was not written with this computer's key",
-  bad_hmac: "an entry was not written with this computer's key",
 };
 
-function VerifyBanner({ verify }: { verify: VerifyView | null }) {
-  if (verify === null) {
-    return (
-      <Alert tone="neutral">
-        <Info />
-        <p>The gateway did not report whether the chain verifies. Run the check on the command line to be sure.</p>
-      </Alert>
-    );
-  }
+function VerifyBanner({ verify }: { verify: VerifyView }) {
   if (verify.state === "intact") {
     return (
       <Alert tone="ok" role="status">
@@ -72,7 +69,8 @@ function VerifyBanner({ verify }: { verify: VerifyView | null }) {
   );
 }
 
-function Entities({ entities }: { entities: [string, number][] }) {
+function Entities({ entities }: { entities: [string, number][] | null }) {
+  if (entities === null) return <span className="text-seal">Unreadable</span>;
   if (entities.length === 0) return <span className="text-ink-muted">None</span>;
   return (
     <ul className="flex flex-wrap gap-1.5">
@@ -180,9 +178,9 @@ function Rows({ rows }: { rows: AuditRow[] }) {
   );
 }
 
-async function readAudit(): Promise<Load> {
+async function readAudit(beforeId?: number): Promise<Load> {
   try {
-    return await gateway.audit();
+    return await gateway.audit(beforeId);
   } catch (error) {
     return { kind: "failed", message: error instanceof Error ? error.message : String(error) };
   }
@@ -199,6 +197,15 @@ export function AuditScreen() {
   const refresh = useCallback(() => {
     setLoad({ kind: "loading" });
     void readAudit().then(setLoad);
+  }, []);
+
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const older = useCallback((beforeId: number) => {
+    setLoadingOlder(true);
+    void readAudit(beforeId).then((next) => {
+      setLoad((current) => (next.kind === "ok" ? mergePage(current, next) : next));
+      setLoadingOlder(false);
+    });
   }, []);
 
   return (
@@ -226,16 +233,20 @@ export function AuditScreen() {
         </Alert>
       )}
 
-      {load.kind === "unavailable" && (
+      {load.kind === "disabled" && (
         <div className="flex flex-col gap-4">
-          <Alert tone="neutral" role="status">
-            <Info />
+          <Alert tone="seal" role="status">
+            <Warning />
             <div>
-              <p className="font-semibold">This gateway does not serve the audit log yet</p>
-              <p className="text-sm">The gateway said: {load.message}</p>
+              <p className="font-semibold">This gateway is not keeping an audit log</p>
+              <p className="text-sm">
+                It was started with <span className="token">--no-audit</span>, so requests it sends leave no record.
+                Restart it without that option to keep evidence of what left this computer.
+              </p>
+              <p className="mt-1 text-sm text-ink-muted">The gateway said: {load.message}</p>
             </div>
           </Alert>
-          <p className="text-[0.9375rem]">Check the chain and export it on the command line:</p>
+          <p className="text-[0.9375rem]">An existing log can still be checked and exported on the command line:</p>
           <CopyCommand label="the verify command" text="uv run safeguard audit verify" />
           <CopyCommand label="the export command" text="uv run safeguard audit export -o audit.json --pdf" />
         </div>
@@ -245,6 +256,19 @@ export function AuditScreen() {
         <>
           <VerifyBanner verify={load.view.verify} />
           <Rows rows={load.view.rows} />
+          {load.view.nextBeforeId !== null && (
+            <div>
+              <Button
+                variant="outline"
+                disabled={loadingOlder}
+                onClick={() => {
+                  if (load.view.nextBeforeId !== null) older(load.view.nextBeforeId);
+                }}
+              >
+                {loadingOlder ? "Reading older entries" : "Show older entries"}
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>
