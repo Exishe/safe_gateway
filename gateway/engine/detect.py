@@ -5,9 +5,20 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
-from gateway.engine.gliner_ner import DEFAULT_THRESHOLD, GlinerRecognizer, gliner_model_dir
+from gateway.engine.gliner_ner import (
+    DEFAULT_THRESHOLD,
+    GlinerRecognizer,
+    gliner_model_dir,
+    import_gliner,
+)
 from gateway.engine.merge import defer, merge
-from gateway.engine.ner import SPACY_MODEL_DIRS, ModelMissing, SpacyNerRecognizer, model_dir
+from gateway.engine.ner import (
+    SPACY_MODEL_DIRS,
+    ModelMissing,
+    SpacyNerRecognizer,
+    import_spacy_stack,
+    model_dir,
+)
 from gateway.engine.recognizers.credit_card import CREDIT_CARD, CREDIT_CARD_SHAPE
 from gateway.engine.recognizers.dates import DATE
 from gateway.engine.recognizers.email import EMAIL
@@ -222,6 +233,17 @@ def _other_script_spans(text: str, start: int, end: int, config: EngineConfig) -
     if gliner is None:
         return []
     return [span for s, e in lines for span in _model_spans([gliner], text, s, e)]
+
+
+def check_ner_stack() -> None:
+    """Import the NER libraries once; ModelLoadError names what is broken.
+
+    `safeguard serve` calls it at start-up and only warns: structured recognizers work
+    without torch, so the gateway still starts and each request that needs a model
+    fails closed with the same message.
+    """
+    import_spacy_stack()
+    import_gliner()
 
 
 def detect(text: str, lang: str = "auto", config: EngineConfig | None = None) -> list[Span]:

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Protocol
 
 from gateway.engine.model_marker import Pin, is_installed
-from gateway.engine.ner import ModelMissing, models_home
+from gateway.engine.ner import ModelMissing, models_home, stack_error
 from gateway.engine.types import EntityType, Span
 
 # Where `safeguard models pull` (gateway/cloud/hub.py) installs the model, and the digest
@@ -41,6 +41,7 @@ GLINER_LABELS = {
     "date of birth": EntityType.DATE_OF_BIRTH,
 }
 DEFAULT_THRESHOLD = 0.5
+GLINER_STACK = "GLiNER"
 
 # GLiNER's own word splitter: its window (`max_len`, 384 in this model) counts these.
 WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
@@ -108,9 +109,18 @@ def load_gliner(path: Path) -> GlinerModel:
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["HF_DATASETS_OFFLINE"] = "1"
-    from gliner import GLiNER  # noqa: PLC0415  (seconds to import; only once a model exists)
+    import_gliner()  # seconds to import; only once a model exists
+    from gliner import GLiNER  # noqa: PLC0415
 
     return GLiNER.from_pretrained(str(path), local_files_only=True, map_location="cpu")
+
+
+def import_gliner() -> None:
+    """Import GLiNER; ModelLoadError if the import fails."""
+    try:
+        import gliner  # noqa: F401, PLC0415
+    except (OSError, ImportError) as error:
+        raise stack_error(GLINER_STACK, error) from None
 
 
 def word_windows(text: str, max_words: int, overlap: int) -> list[tuple[int, int]]:

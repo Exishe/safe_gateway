@@ -10,6 +10,7 @@ load(), which holds the download branch, never runs at all.
 
 import os
 import re
+import sys
 from collections.abc import Callable, Sequence
 from functools import cache
 from pathlib import Path
@@ -79,6 +80,53 @@ class ModelMissing(Exception):  # noqa: N818  (name fixed by the Phase 1b plan)
     """The model directory is not installed; `safeguard models pull` installs it."""
 
 
+class ModelLoadError(RuntimeError):
+    """The NER libraries cannot be imported (a broken torch install, say); fail closed."""
+
+
+SPACY_STACK = "spaCy"
+VC_REDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+_NATIVE_LIBRARIES = ("torch", "onnxruntime", "thinc", "spacy", "gliner")
+
+
+def stack_error(stack: str, error: OSError | ImportError) -> ModelLoadError:
+    """The message for a failed import of `stack`: names the library, never any request text.
+
+    On Windows a torch DLL that will not load almost always means the Microsoft Visual C++
+    Redistributable is missing, so the fix is named there. The text comes from the import
+    error alone; detection has not read the request by then.
+    """
+    text = str(error)
+    library = (getattr(error, "name", None) or "").split(".")[0]
+    library = library or next((n for n in _NATIVE_LIBRARIES if n in text.lower()), stack)
+    message = (
+        f"cannot load {library}, which name detection needs "
+        f"({type(error).__name__}: {text}). Nothing was sent upstream."
+    )
+    if sys.platform == "win32":
+        message += (
+            " On Windows this is usually the missing Microsoft Visual C++ Redistributable: "
+            f"install the x64 version from {VC_REDIST_URL}, then restart `safeguard serve`."
+        )
+    return ModelLoadError(message)
+
+
+def import_spacy_stack() -> None:
+    """Import spaCy, then Presidio; ModelLoadError if either import fails.
+
+    spaCy first and on its own: it is what pulls in torch, and Presidio would hide the
+    original error behind an ImportError of its own.
+    """
+    try:
+        import spacy  # noqa: F401, PLC0415
+    except (OSError, ImportError) as error:
+        raise stack_error(SPACY_STACK, error) from None
+    try:
+        import presidio_analyzer  # noqa: F401, PLC0415
+    except (OSError, ImportError) as error:
+        raise stack_error(SPACY_STACK, error) from None
+
+
 def models_home() -> Path:
     """`$SAFEGUARD_HOME/models`, or `~/.safeguard/models`."""
     base = os.environ.get("SAFEGUARD_HOME")
@@ -139,6 +187,7 @@ AnalyzerFactory = Callable[[str, Path], Analyzer]
 def build_analyzer(lang: str, path: Path) -> Analyzer:
     """Presidio holding only its spaCy recognizer, over the model in `path`; once per process."""
     # Imported here: they take seconds to load and matter only once a model is installed.
+    import_spacy_stack()
     import spacy  # noqa: PLC0415
     from presidio_analyzer import AnalyzerEngine, RecognizerRegistry  # noqa: PLC0415
     from presidio_analyzer.nlp_engine import NerModelConfiguration, SpacyNlpEngine  # noqa: PLC0415

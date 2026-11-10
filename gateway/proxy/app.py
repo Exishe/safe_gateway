@@ -10,8 +10,8 @@ import json
 import logging
 import re
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Generator, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,6 +32,7 @@ from gateway.config import ProxyConfig, extension_origins
 from gateway.engine.detect import EngineConfig, detect
 from gateway.engine.known import KnownValues
 from gateway.engine.mask import Mapping, mask_detected_messages, mask_messages
+from gateway.engine.ner import ModelLoadError
 from gateway.engine.placeholders import TOKEN
 from gateway.engine.session import SessionNotFound, SessionStore
 from gateway.engine.types import Span
@@ -159,8 +160,20 @@ def _require_json(request: Request) -> None:
         raise RequestRejected(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "invalid_request_error", msg)
 
 
+@contextmanager
+def _models_available() -> Generator[None]:
+    """A broken NER stack becomes a 503; nothing has been masked, so nothing goes upstream."""
+    try:
+        yield
+    except ModelLoadError as error:
+        # The message comes from the failed import and holds no request text.
+        _log.error("name detection is unavailable: %s", error)
+        raise RequestRejected(503, "model_unavailable", str(error)) from None
+
+
 def _detect_texts(texts: Sequence[str], config: EngineConfig) -> list[list[Span]]:
-    return [detect(text, config=config) for text in texts]
+    with _models_available():
+        return [detect(text, config=config) for text in texts]
 
 
 def new_entries_at_most(texts: Sequence[str], spans: Sequence[list[Span]], mapping: Mapping) -> int:
@@ -187,7 +200,8 @@ def new_entries_at_most(texts: Sequence[str], spans: Sequence[list[Span]], mappi
 
 
 def _mask_request(texts: list[str], config: EngineConfig) -> tuple[list[str], Mapping]:
-    return mask_messages(texts, "auto", config)
+    with _models_available():
+        return mask_messages(texts, "auto", config)
 
 
 class _Gateway:

@@ -19,8 +19,9 @@ from gateway.cloud.models import (
     open_client,
     pull,
 )
-from gateway.engine.detect import EngineConfig, detect
+from gateway.engine.detect import EngineConfig, check_ner_stack, detect
 from gateway.engine.mask import Mapping, mask
+from gateway.engine.ner import ModelLoadError
 from gateway.engine.recognizers.gazetteer import load_gazetteer
 from gateway.engine.types import Span
 from gateway.offline import force_offline
@@ -152,7 +153,11 @@ def _scan(args: argparse.Namespace) -> int:
         config = EngineConfig(gazetteer=gazetteer, ner="off", gliner="off")
     else:
         config = EngineConfig(gazetteer=gazetteer)
-    spans = detect(text, config=config)
+    try:
+        spans = detect(text, config=config)
+    except ModelLoadError as error:
+        print(f"safeguard: {error}", file=sys.stderr)
+        return 2
     if args.json:
         _print_json(text, spans)
     else:
@@ -239,6 +244,9 @@ def _mask(args: argparse.Namespace) -> int:
             masked, mapping = mask(text, detect(text, config=config))
             if args.output is not None:
                 args.output.write_text(masked, encoding="utf-8", newline="")
+    except ModelLoadError as error:
+        print(f"safeguard: {error}", file=sys.stderr)
+        return 2
     except (OSError, ValueError) as error:  # DocumentError is a ValueError
         print(f"safeguard: cannot read input: {error}", file=sys.stderr)
         return 2
@@ -330,6 +338,10 @@ def _serve(args: argparse.Namespace) -> int:
             "what this gateway sends upstream.",
             file=sys.stderr,
         )
+    try:
+        check_ner_stack()
+    except ModelLoadError as error:
+        print(f"safeguard: warning: {error}", file=sys.stderr)
     try:
         return server.run(host=args.host, port=args.port, audit=not args.no_audit)
     except (ValueError, server.StartupError) as error:  # ConfigError and NotLoopback included

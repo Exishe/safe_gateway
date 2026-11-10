@@ -34,7 +34,9 @@ On Windows, also install Microsoft's free **Visual C++ Redistributable (x64)**
 from https://aka.ms/vs/17/release/vc_redist.x64.exe. PyTorch, which GLiNER and the
 spaCy stack load, needs it. Without it the gateway refuses every request with an
 error naming `torch\lib\c10.dll` (WinError 126) and sends nothing upstream. To
-check: `uv run python -c "import torch; print(torch.__version__)"`.
+check: `uv run python -c "import torch; print(torch.__version__)"`. The gateway now
+reports this itself: the proxy answers HTTP 503 with the fix, `scan` and `mask` print it and exit 2,
+and `safeguard serve` warns at start-up.
 
 The project pins uv (`required-version` in `pyproject.toml`). If uv reports a
 version mismatch, run `uv self update 0.11.32`.
