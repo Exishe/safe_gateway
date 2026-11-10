@@ -7,7 +7,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from gateway.engine.script import lines_in_other_scripts, segments
+from gateway.engine.script import lines_in_other_scripts, lines_with_words_of, segments
 
 EN = "Zorvath Quillin joined Brightwater Analytics in Portland."
 RU = "Договор подписал Зорват Квиллин в Новосибирске."
@@ -201,3 +201,30 @@ def test_only_lines_inside_the_range_are_listed() -> None:
     text = f"{HY}\n{EN}\n{HY}"
     start = len(HY) + 1
     assert lines_in_other_scripts(text, start, len(text)) == [(start + len(EN) + 1, len(text))]
+
+
+# ------------------------------------------------------------------ leak hunt 1d
+
+
+@pytest.mark.parametrize(
+    ("text", "lang", "expected"),
+    [
+        (
+            "Our client Зорват Квиллин signed.\nNo name.",
+            "ru",
+            ["Our client Зорват Квиллин signed."],
+        ),
+        (
+            "Договор подписал Selene Quillin.\nДругая строка.",
+            "en",
+            ["Договор подписал Selene Quillin."],
+        ),
+        ("Паспорт серия 4599 N 012345", "en", []),  # one Latin letter is not a word
+        ("Пишите на anna@example.com сегодня", "en", []),  # an address is not prose
+        ("Plain English only.", "ru", []),
+    ],
+)
+def test_lines_with_words_of_the_other_model_script(
+    text: str, lang: str, expected: list[str]
+) -> None:
+    assert [text[s:e] for s, e in lines_with_words_of(text, 0, len(text), lang)] == expected

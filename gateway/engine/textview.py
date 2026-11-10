@@ -325,10 +325,17 @@ MIN_CASED_LETTERS = 3
 # Capital letters of the BMP (every script the models read), as a class of ranges.
 _CAPITAL = _char_class("".join(chr(code) for code in range(0x10000) if chr(code).isupper()))
 _CAPS_WORD = f"(?<!\\w){_CAPITAL}{{3,}}(?!\\w)"
+_INLINE_SPACES = "[^\\S\\n\\r\\x0b\\x0c\\x85\\u2028\\u2029]+"
+# An initial: one capital and a dot ("Z.", or a Cyrillic one).
+_INITIAL = f"(?<![\\w.]){_CAPITAL}\\."
 # Two or more words in capitals of three or more letters, joined by inline spaces or a
-# hyphen: "SELENE MARCHETTI-QUILLIN", or a Russian name. Never across a line break.
+# hyphen: "SELENE MARCHETTI-QUILLIN", or a Russian name; or one such word with initials
+# before or after it, as Russian writes a name: "Z. KVILLIN", "KVILLIN Z. V." (ADR 0016
+# amended, 1d). Never across a line break.
 _CAPS_RUN = re.compile(
-    f"{_CAPS_WORD}(?:(?:[^\\S\\n\\r\\x0b\\x0c\\x85\\u2028\\u2029]+|-){_CAPS_WORD})+"
+    f"{_CAPS_WORD}(?:(?:{_INLINE_SPACES}|-){_CAPS_WORD})+"
+    f"|(?:{_INITIAL}{_INLINE_SPACES}?)+{_CAPS_WORD}(?:(?:{_INLINE_SPACES}|-){_CAPS_WORD})*"
+    f"|{_CAPS_WORD}(?:{_INLINE_SPACES}{_INITIAL})+"
 )
 
 

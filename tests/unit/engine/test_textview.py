@@ -301,6 +301,12 @@ def test_composed_view_maps_a_character_that_composition_lengthens() -> None:
         ("IBM", "Ibm"),
         ("OK", "OK"),  # fewer than three cased letters
         ("4111 1111 1111 1111", "4111 1111 1111 1111"),  # pragma: allowlist secret
+        # Initials before or after one word in capitals (1d): a Russian-style name.
+        ("договор подписал З. КВИЛЛИН в офисе", "договор подписал З. Квиллин в офисе"),
+        ("signed by S. M. QUILLIN today", "signed by S. M. Quillin today"),
+        ("signed by QUILLIN S. today", "signed by Quillin S. today"),
+        ("see section A. below", "see section A. below"),  # an initial alone: left alone
+        ("the U.S. ARMY base", "the U.S. ARMY base"),  # "S." glued to "U.": not an initial
     ],
 )
 def test_lines_in_capitals_are_title_cased(text: str, expected: str) -> None:

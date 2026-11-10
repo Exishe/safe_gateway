@@ -176,6 +176,39 @@ def _language(text: str, start: int, end: int) -> str | None:
     return lang if count > 0 and count >= others else "und"
 
 
+# A word of at least two letters of one model script: what makes a line worth sending to
+# that script's model as well (ADR 0016 amended, 1d). One letter ("N" in a Russian
+# number) is not enough.
+_SCRIPT_WORD = {
+    "ru": re.compile("(?<![^\\W\\d_])[" + _ranges(*_CYRILLIC) + "]{2,}"),
+    "en": re.compile("(?<![^\\W\\d_])[" + _ranges(*_LATIN) + "]{2,}"),
+}
+
+
+def lines_with_words_of(text: str, start: int, end: int, lang: str) -> list[tuple[int, int]]:
+    """The lines of text[start:end] holding a word in the script of `lang` ("en" or "ru").
+
+    A line goes to the model of its dominant script, so a Russian name inside an English
+    sentence reaches only the English model, which does not read Cyrillic, and a Latin
+    name inside a Russian line only the Russian one. detect() sends these lines to the
+    other model as well. E-mail addresses and links are not counted, as in routing.
+    """
+    word = _SCRIPT_WORD[lang]
+    if word.search(text, start, end) is None:
+        return []
+    found = []
+    line_start = start
+    for line_break in [*_ANY_BREAK.finditer(text, start, end), None]:
+        line_end = end if line_break is None else line_break.start()
+        for s, e in _stripped(text, line_start, line_end):
+            prose = (w for w in text[s:e].split() if not any(m in w for m in _ADDRESS_MARKS))
+            if any(word.search(w) for w in prose):
+                found.append((s, e))
+        if line_break is not None:
+            line_start = line_break.end()
+    return found
+
+
 def lines_in_other_scripts(text: str, start: int, end: int) -> list[tuple[int, int]]:
     """The lines of text[start:end] holding a letter of a script with no spaCy model.
 

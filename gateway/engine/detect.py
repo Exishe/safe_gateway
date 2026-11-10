@@ -25,7 +25,7 @@ from gateway.engine.recognizers.ru_inn import RU_INN
 from gateway.engine.recognizers.ru_snils import RU_SNILS
 from gateway.engine.recognizers.url_token import URL_WITH_TOKEN
 from gateway.engine.recognizers.us_ssn import US_SSN
-from gateway.engine.script import lines_in_other_scripts, segments
+from gateway.engine.script import lines_in_other_scripts, lines_with_words_of, segments
 from gateway.engine.textview import TextView, clean_view, ner_view
 from gateway.engine.types import EntityType, Recognizer, Span
 
@@ -181,7 +181,37 @@ def _ner_spans(text: str, lang: str, config: EngineConfig) -> list[Span]:
             spans.extend(_model_spans(recognizers, text, start, end))
         if lang == "auto" and not wants_gliner and config.gliner == "auto":
             spans.extend(_other_script_spans(text, start, end, config))
+        if lang == "auto":
+            spans.extend(_other_model_spans(text, start, end, piece_lang, config))
     return spans
+
+
+# The spaCy model for the other script of each spaCy language.
+_OTHER_MODEL = {"en": "ru", "ru": "en"}
+
+
+def _other_model_spans(
+    text: str, start: int, end: int, lang: str, config: EngineConfig
+) -> list[Span]:
+    """The other spaCy model on each line of an `en` or `ru` segment that holds a word in
+    its script: a Russian name in an English sentence, a Latin one in a Russian line
+    (ADR 0016 amended, 1d). Only the line goes, as for GLiNER.
+
+    The Russian model misses a Cyrillic name in an English line as often as it finds
+    it, so such a line also goes to GLiNER (with gliner="auto"), which reads it whole.
+    """
+    other = _OTHER_MODEL.get(lang)
+    lines = lines_with_words_of(text, start, end, other) if other else []
+    if not other or not lines:
+        return []
+    recognizers: list[Recognizer] = []
+    spacy = _ner_for(other, forced=False)
+    if spacy is not None:
+        recognizers.append(spacy)
+    gliner = _gliner(config) if other == "ru" and config.gliner == "auto" else None
+    if gliner is not None:
+        recognizers.append(gliner)
+    return [span for s, e in lines for span in _model_spans(recognizers, text, s, e)]
 
 
 def _other_script_spans(text: str, start: int, end: int, config: EngineConfig) -> list[Span]:

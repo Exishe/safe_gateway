@@ -206,3 +206,33 @@ Each test failed with `--runxfail` before its fix and passes after it.
    characters before each digit run to 8 after it, touching windows joined. On the
    1 MB test the recognizer went from 0.39 s (before 1d, eight patterns) to 0.01 s.
    A property test checks that the windows find exactly what the whole text gives.
+9. **Lines with words of the other model script also go to the other model**
+   (amends point 3 and 1c point 3). With `lang="auto"`, each line of an `en`
+   segment holding a Cyrillic word of two or more letters is also read by the
+   Russian spaCy model, and each line of a `ru` segment holding a Latin word by the
+   English one; e-mail addresses and links are not counted, and one letter (`N` in
+   a document number) is not a word. Measured on the 1d inputs: the Russian model
+   found `Зорват Квиллин` in one of the two English sentences and missed it in the
+   other (and missed the name alone), while GLiNER found it in both. So a line of an
+   English segment with Cyrillic words also goes to GLiNER (with `gliner="auto"`),
+   as lines in a third script already do. The other direction does not add GLiNER:
+   Latin brand names, codes and addresses are common in Russian text, and GLiNER
+   costs about a hundred times more per character than spaCy; the English model
+   found the Latin name in the Russian line. Over-masking: the English model may
+   tag a Cyrillic word of such a line, and the Russian one a Latin word.
+10. **Initials join a word in capitals** (amends 1c point 4). A run to title-case
+   for the models may also be one word in capitals of three letters or more with
+   initials before it (`З. КВИЛЛИН`, `S. M. QUILLIN`) or after it (`QUILLIN S.`).
+   An initial is one capital and a dot, not after a letter, digit or dot (`U.S.`
+   is not one). The initials stay as they are; only the word is title-cased.
+
+Consequences.
+
+- More over-masking: superscripts and circled digits now read as digits by every
+  recognizer; numbers with marks on them; two-digit-year and spaced dates; a
+  Cyrillic or Latin word in a line of the other script reaches both spaCy models.
+  The OpenPII deltas, precision included, are in `docs/BENCHMARKS.md`.
+- A line of an English segment with a Cyrillic word pays for a GLiNER pass on that
+  line, as a line with an Armenian word already did.
+- `detect()` on the 1 MB test of `test_detect.py` became faster, not slower (see
+  points 6 and 8).

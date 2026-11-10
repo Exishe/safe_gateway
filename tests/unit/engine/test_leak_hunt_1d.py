@@ -325,7 +325,6 @@ def test_known_value_with_an_invisible_character_misses_its_plain_repeat() -> No
 
 @pytest.mark.models
 @pytest.mark.usefixtures("real_models")
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_cyrillic_name_inside_an_english_line() -> None:
     """lines_in_other_scripts() sends a line to GLiNER only for a letter outside Latin
     and Cyrillic, and the line goes to the model of its dominant script. A Russian name
@@ -347,7 +346,6 @@ def test_cyrillic_name_inside_an_english_line() -> None:
 
 @pytest.mark.models
 @pytest.mark.usefixtures("real_models")
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_capitalised_russian_surname_after_an_initial() -> None:
     """_CAPS_RUN needs two neighbouring words of three or more capitals, so an initial and
     a surname in capitals ('Z. KVILLIN' in Cyrillic, the usual Russian form) stay in
