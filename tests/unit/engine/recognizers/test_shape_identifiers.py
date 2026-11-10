@@ -194,13 +194,30 @@ def test_luhn_invalid_numbers_of_an_exact_card_shape_are_cards(number: str) -> N
         "4111 11111111 1112",  # pragma: allowlist secret  (not grouped by four)
         "4111   1111   1111   1112",  # pragma: allowlist secret  (three spaces)
         "4111 -1111 1111 1112",  # pragma: allowlist secret  (two separators in one gap)
-        "12  4111 1111 1111 1112",  # pragma: allowlist secret  (part of a longer run)
-        "12 4111 1111 1111 1112",  # pragma: allowlist secret  (part of a longer run)
+        "1234 4111 1111 1111 1112",  # pragma: allowlist secret  (a 4-digit group before)
+        "4111 1111 1111 1112 1234",  # pragma: allowlist secret  (a 4-digit group after)
         "AB4111111111111112",  # pragma: allowlist secret  (glued to letters)
     ],
 )
 def test_other_lengths_prefixes_and_groupings_are_not_card_shapes(number: str) -> None:
     assert found(CREDIT_CARD_SHAPE, f"ref {number} here") == []
+
+
+@pytest.mark.parametrize(
+    ("text", "card"),
+    [
+        # Leak hunt 1d: a short group beside the card is a quantity or an expiry date, not
+        # part of it (ADR 0023 amended); before, the whole run was refused.
+        ("qty 12 4111 1111 1111 1112 ok", "4111 1111 1111 1112"),  # pragma: allowlist secret
+        ("qty 12  4111 1111 1111 1112 ok", "4111 1111 1111 1112"),  # pragma: allowlist secret
+        ("qty 2 4000-1234-5678-9010 ok", "4000-1234-5678-9010"),  # pragma: allowlist secret
+        ("card 4000 1234 5678 9010 12/29 ok", "4000 1234 5678 9010"),  # pragma: allowlist secret
+        ("card 4000 1234 5678 9010 12 29 ok", "4000 1234 5678 9010"),  # pragma: allowlist secret
+        ("card 4000 1234 5678 9010 123 ok", "4000 1234 5678 9010 123"),  # pragma: allowlist secret
+    ],
+)
+def test_a_short_group_beside_a_card_shape_is_left_out(text: str, card: str) -> None:
+    assert found(CREDIT_CARD_SHAPE, text) == [card]
 
 
 # ------------------------------------------------------------------ passport and ID card shapes

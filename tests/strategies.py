@@ -405,8 +405,8 @@ def dates(draw: st.DrawFn) -> str:
 # ------------------------------------------------------------------ shapes (ADR 0023)
 
 # Gaps a "+" phone may use (ADR 0023 amended in 1c): one space, dot, hyphen or slash,
-# two spaces, or a spaced hyphen.
-PLUS_PHONE_GAPS = (" ", "  ", ".", "-", "/", " - ")
+# two spaces, or a spaced hyphen; since 1d also tabs and a line break with spaces round it.
+PLUS_PHONE_GAPS = (" ", "  ", ".", "-", "/", " - ", "\t", "\t\t", "\n", " \n", "\n  ", "\r\n")
 # Gaps a card shape may use, mixed freely: one space, dot or hyphen, or two spaces.
 CARD_GAPS = (" ", "  ", ".", "-")
 _UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -422,7 +422,7 @@ def plus_phones(draw: st.DrawFn) -> str:
         groups.append(draw(_digits(size)))
         left -= size
     if len(groups) > 2 and draw(st.booleans()):
-        groups[1] = f"({groups[1]})"
+        groups[1] = f"( {groups[1]} )" if draw(st.booleans()) else f"({groups[1]})"
     value = "+" + groups[0]
     for group in groups[1:]:
         value += draw(st.sampled_from(PLUS_PHONE_GAPS)) + group
@@ -462,3 +462,38 @@ def card_shapes(draw: st.DrawFn) -> str:
     for group in groups[1:]:
         value += draw(st.sampled_from(CARD_GAPS)) + group
     return value
+
+
+# ------------------------------------------------------------------ leak hunt 1d (ADR 0023 amended)
+
+# Gaps a Luhn-valid card may also use: one to three characters that are neither letters
+# nor digits, nor a comma or semicolon (a list).
+LOOSE_CARD_GAPS = ("/", "\t", "   ", "- ", ". ", "\n ", " / ", "_", "|", " ", "-", "\n")
+
+
+@st.composite
+def loose_credit_cards(draw: st.DrawFn) -> str:
+    """A Luhn-valid card in its usual grouping, each gap drawn from LOOSE_CARD_GAPS."""
+    prefix, length = draw(st.sampled_from(_CARD_PREFIXES))
+    body = prefix + draw(_digits(length - len(prefix) - 1))
+    check = next(d for d in "0123456789" if luhn_valid(body + d))
+    groups, index = [], 0
+    for size in _CARD_GROUPS[length]:
+        groups.append((body + check)[index : index + size])
+        index += size
+    value = groups[0]
+    for group in groups[1:]:
+        value += draw(st.sampled_from(LOOSE_CARD_GAPS)) + group
+    return value
+
+
+@st.composite
+def card_shapes_beside_short_numbers(draw: st.DrawFn) -> tuple[str, str]:
+    """(text, card): a grouped card shape after a quantity or before an expiry date."""
+    card = draw(card_shapes().filter(lambda value: not value.isdigit()))
+    short = draw(_digits(draw(st.integers(1, 3))))
+    gap = draw(st.sampled_from(CARD_GAPS))
+    if draw(st.booleans()):
+        return f"Item qty {short}{gap}{card} charged.", card
+    month = draw(st.integers(1, 12))
+    return f"Please charge {card}{gap}{month:02d}/29 today.", card

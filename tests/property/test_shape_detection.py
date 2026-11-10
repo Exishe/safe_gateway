@@ -7,11 +7,19 @@ skip the Luhn check, and letter-digit codes are random.
 from hypothesis import given
 
 from gateway.engine.detect import EngineConfig, detect
-from gateway.engine.recognizers.credit_card import CREDIT_CARD_SHAPE
+from gateway.engine.recognizers.credit_card import CREDIT_CARD, CREDIT_CARD_SHAPE
 from gateway.engine.recognizers.id_documents import ID_CARD_SHAPE, PASSPORT_SHAPE
 from gateway.engine.recognizers.phone_shape import PHONE_SHAPE
 from gateway.engine.types import EntityType, Recognizer
-from tests.strategies import card_shapes, embedded, id_card_numbers, passport_numbers, plus_phones
+from tests.strategies import (
+    card_shapes,
+    card_shapes_beside_short_numbers,
+    embedded,
+    id_card_numbers,
+    loose_credit_cards,
+    passport_numbers,
+    plus_phones,
+)
 
 
 def assert_found(recognizer: Recognizer, sample: tuple[str, str], kind: EntityType) -> None:
@@ -55,5 +63,20 @@ def test_every_generated_id_card_shape_is_found(sample: tuple[str, str]) -> None
 def test_every_generated_card_shape_with_mixed_separators_is_found(
     sample: tuple[str, str],
 ) -> None:
+    assert_found(CREDIT_CARD_SHAPE, sample, EntityType.CREDIT_CARD)
+    assert_masked(sample)
+
+
+# ------------------------------------------------------------------ leak hunt 1d
+
+
+@given(embedded(loose_credit_cards()))
+def test_every_luhn_valid_card_with_loose_separators_is_found(sample: tuple[str, str]) -> None:
+    assert_found(CREDIT_CARD, sample, EntityType.CREDIT_CARD)
+    assert_masked(sample)
+
+
+@given(card_shapes_beside_short_numbers())
+def test_every_card_shape_beside_a_short_number_is_found(sample: tuple[str, str]) -> None:
     assert_found(CREDIT_CARD_SHAPE, sample, EntityType.CREDIT_CARD)
     assert_masked(sample)

@@ -26,9 +26,11 @@ KEYWORD_DISTANCE = 40
 # the separators are unambiguous, so the pattern does not backtrack.
 _DIGITS = r"\d(?:(?:[ .\-]|[ .\-]?\(|\)[ .\-]?)?\d)*"
 # After a "+" the number is a phone whatever its separators, so a gap may also be two
-# spaces (justified PDF text), a spaced hyphen or a slash: "+99  912 - 345/6789".
-_PLUS_GAP = r"(?: - |  ?|[./\-])"
-_PLUS_DIGITS = rf"\d(?:(?:{_PLUS_GAP}|{_PLUS_GAP}?\(|\){_PLUS_GAP}?)?\d)*"
+# spaces (justified PDF text), a spaced hyphen or a slash: "+99  912 - 345/6789"; one or
+# two tabs (table cells); or a line break with up to two spaces or tabs around it (a
+# wrapped PDF line). A bracket may have a space inside it: "+99 ( 912 ) 345 6789".
+_PLUS_GAP = r"(?: - |[ \t]{1,2}|[ \t]{0,2}\r?\n[ \t]{0,2}|[./\-])"
+_PLUS_DIGITS = rf"\d(?:(?:{_PLUS_GAP}|{_PLUS_GAP}?\( ?| ?\){_PLUS_GAP}?)?\d)*"
 _PLUS = re.compile(rf"(?<![\w+])\+\(?{_PLUS_DIGITS}")
 # Not inside a word or a "+" number, and not continuing a number ("1.555...").
 _BARE = re.compile(rf"(?<![\w+(])(?<!\d[ .\-/])\(?{_DIGITS}")

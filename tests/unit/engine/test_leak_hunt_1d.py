@@ -272,7 +272,6 @@ def test_passport_shape_with_a_cyrillic_homoglyph() -> None:
 # ------------------------------------------------------------ separators (ADR 0023 amended, 5-7)
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_luhn_valid_card_with_other_separators() -> None:
     """A Luhn-valid card must reach 100% (hard rule 4), but digits.py joins groups only
     by one space, dot or hyphen, ' - ' or a line break. A slash, a tab, three spaces, a
@@ -285,7 +284,6 @@ def test_luhn_valid_card_with_other_separators() -> None:
     assert leaks(cases) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_card_shape_beside_an_expiry_date_or_a_quantity() -> None:
     """_CARD_SHAPE refuses a card followed by ' 12' or preceded by '2 ', to keep it a
     whole run. A Luhn-invalid card written with its expiry ('... 9010 12/29') kept only
@@ -300,7 +298,6 @@ def test_card_shape_beside_an_expiry_date_or_a_quantity() -> None:
     assert leaks(cases) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_plus_phone_split_by_a_tab_a_line_break_or_a_spaced_bracket() -> None:
     """_PLUS_GAP takes one or two spaces, ' - ', '.', '/' or '-'. A tab (table cells), a
     line break (a wrapped PDF line) and spaces inside the brackets end the number: []

@@ -120,3 +120,38 @@ Consequences.
   precision included, are in `docs/BENCHMARKS.md`.
 - A digit glued to a word after a `+` number (`+99 912 345 678 9ab`) is now
   masked with the phone: one extra digit masked rather than one left.
+
+## Amended 2026-11-09: leak hunt 1d
+
+The fourth leak-hunter round (`tests/unit/engine/test_leak_hunt_1d.py`) found
+inputs among its 21 where a document code, a card or a `+` phone leaked through
+its shape or keyword rule. Decisions (the clean view, dates and routing are in ADR
+0016, the known-value sweep in ADR 0014):
+
+1. **Luhn-valid cards with other separators** (`credit_card`). Besides the digit
+   runs of ADR 0013, a card in its usual grouping (groups of four with a last group
+   of one to four digits; Amex 4-6-5; 4-4-5) may use any gap of one to three
+   characters that are neither letters nor digits: a slash, a tab, three spaces,
+   `- `, `. `, a line break and the next line's indent. Luhn and the issuer digit
+   keep this precise, as hard rule 4 requires 100% here. Two limits are chosen,
+   not offered: the grouping is required with these gaps, so a table of small
+   numbers joined by tabs is not read as one run; and a comma or semicolon is never
+   such a gap, because it separates a list (a list of four years starting with 2
+   is Luhn-valid one time in ten). A card written with a comma between its groups is
+   therefore still found only by the models, if at all.
+2. **A short group beside a card shape is left out** (`credit_card_shape`, amends
+   1c point 5). The shape used to refuse a card next to any digit group, to keep
+   it a whole run, so `... 9010 12/29` (an expiry date) and `qty 2 4000-...` (a
+   quantity) leaked. The recognizer now reads a whole run of digit groups and,
+   when it is not a card shape, drops the fewest groups of one to three digits at
+   either end until it is one. A neighbouring group of four or more digits still
+   makes the whole run a longer number, refused. A quantity before a test card, a
+   negative case in 1c, is now masked as a card plus `12` left over: more masking.
+3. **`+` phones** (amends 1c point 6). A gap may also be one or two tabs (table
+   cells), or a line break with up to two spaces or tabs on each side (a wrapped
+   PDF line); a bracket may have one space inside it (`+99 ( 912 ) 345 6789`). The
+   `+` still gates the rule; the 15-digit limit cuts a number joined to the next
+   line's digits.
+4. **Property tests** generate Luhn-valid cards with each loose gap, card shapes
+   after a quantity or before an expiry month, and `+` phones with tabs, line
+   breaks and spaced brackets (`tests/property/test_shape_detection.py`).
