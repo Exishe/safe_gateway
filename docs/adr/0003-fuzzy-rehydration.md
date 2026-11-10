@@ -54,20 +54,35 @@ document chose. The same works with links, autolinks and HTML.
    left to right as the client will see it, restored values included (a
    restored URL followed by a placeholder makes one URL on the client's screen):
    - a bare URL: from `//` (so any `scheme://` and protocol-relative `//host`),
-     or from a `www.` that starts a word, up to the next whitespace;
+     from a `www.` that starts a word, in any case, or from the colon after a
+     scheme (`[A-Za-z][A-Za-z0-9+.-]*`, any case) when a non-space follows it,
+     so `https:host` (which WHATWG resolves), `javascript:`, `data:` and
+     `mailto:` too. It runs up to the next ASCII whitespace (space, tab, line
+     feed, carriage return, form feed): a no-break space, an ideographic space
+     or a control character does not end it. A word, a colon and then a space
+     (`Note: ...`) is prose;
    - a Markdown link or image target: from `](` to its closing `)`, counting
      nested parentheses and `<...>` destinations, or to a blank line;
-   - a link reference definition: the destination after `[label]:` at the
-     start of a line (indented at most three spaces), on that line or the next;
-   - an autolink: `<scheme:` up to `>` or whitespace;
+   - a link reference definition: the destination after `]:` anywhere on a
+     line, so inside a block quote (`> [r]: ...`) or a list item
+     (`- [r]: ...`) and after a label split over a line break, on that line or
+     the next;
+   - an autolink: `<scheme:` up to `>` or ASCII whitespace;
    - an HTML attribute value of any attribute inside a tag, quoted or not. A
      quoted value runs to its closing quote, across blank lines, as a browser
-     reads it.
+     reads it;
+   - CSS, as in `<style>`: from `url(` (any case) to its closing `)` outside
+     quotes, and the string or word after `@import` (any case).
+
+   The scheme rule, `]:` anywhere, CSS, ASCII-only whitespace and `www.` in
+   any case were added on 2026-11-10 (security review 2, I-1, M-a and M-b),
+   after the reviewer found a leak in each through CommonMark rendering.
 3. Each rule errs towards "inside". A false positive leaves a placeholder
    visible, which ADR 0003 already treats as the honest failure; a false
-   negative can send a value off the machine.
+   negative can send a value off the machine. `Re:[EMAIL_1]` and a
+   `mailto:` link to a client therefore keep their placeholders.
 4. The decision depends only on text to the left of the token, and the tracker
-   keeps a few flags and the last five characters. Streaming therefore feeds it
+   keeps a few flags and the last eight characters. Streaming therefore feeds it
    exactly what it has emitted and gives the same output and the same
    unresolved list as non-streaming for every chunking; the property test in
    `tests/property/test_streaming.py` mixes link fragments into its texts and
@@ -75,6 +90,20 @@ document chose. The same works with links, autolinks and HTML.
 5. ADR 0014's round trip `rehydrate(mask(x)) == x` now holds for text in which
    no placeholder lands inside a link; `tests/property/test_mask_roundtrip.py`
    discards the other examples, and the link rule has its own tests.
+6. One link context per message (2026-11-10, security review 2, I-2). Clients
+   join a reply's content blocks, so a link one block opens runs on into the
+   next: `![s](https://x.example/p.png?d=` in one block and `[EMAIL_1])` in
+   the next is one image. Every Anthropic text block and every OpenAI choice is
+   read in one context for the whole message, carried across blocks and
+   choices in order, and also in a context of its own (so a choice that a
+   client shows apart is never let out of its own link by another), streamed
+   and not (`rehydrate_message`, `Rehydrators` in `gateway/proxy/shape.py`).
+   A block or choice closed by `content_block_stop` or a `finish_reason` stays
+   closed: later text on that index passes as written and is counted as
+   unresolved. Anthropic blocks follow one another, so text for a new block
+   closes the open one first, flushing what it held. Streamed, a message of
+   blocks gives the same text as non-streamed (property test
+   `test_a_message_of_blocks_streams_as_it_rehydrates`).
 
 ### Consequences
 
@@ -84,3 +113,15 @@ document chose. The same works with links, autolinks and HTML.
   the audit log counts unresolved tokens per request.
 - Plain relative paths in prose (`/p.png?d=EMAIL_1` with no link syntax) are not
   links to a client and are restored.
+- Not covered, by design: text that is not a link once rendered, such as
+  `&lt;img src=x?[EMAIL_1]>` (an escaped tag) or a target cut by a blank line;
+  a value that GFM turns into a `mailto:` link of its own (`[EMAIL_1]@x.example`),
+  which sends nothing without a click.
+- Not covered: an upstream that breaks the stream protocol by sending text for
+  an earlier Anthropic block after a later block's restored text went out. That
+  text passes as written, but a client that orders blocks by index can put it
+  in front of the restored value. A provider following the Messages protocol
+  never sends it.
+- With several interleaved OpenAI choices (`n` > 1) the message context reads
+  chunks in arrival order, so streamed and non-streamed answers can differ in
+  which placeholders stay; each choice's own context keeps both safe.

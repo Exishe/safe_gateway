@@ -228,3 +228,30 @@ checker; it allows nothing new.
    pieces. A line, or an event's joined data, over 1 MiB of decoded text
    (`MAX_LINE_CHARS`) ends the stream with an error event, as an upstream
    failure does (decision point 8), and is audited as `upstream_error`.
+
+## Amendment 2, 2026-11-10: delta security review 2
+
+1. **Identifiers in short fields (M-c).** The character rule of amendment 1
+   point 1 lets an SSN-shaped number through (`gpt-4o-NNN-NN-NNNN`), and the
+   short tokens (`json_schema.name`, `service_tier`, `reasoning_effort`,
+   `verbosity`, `thinking.type`) likewise. The chosen model id (configured or
+   the client's) and each of these is now read by `detect` with every model
+   off, the gazetteer kept (`refuse_identifiers`, `gateway/proxy/payload.py`).
+   Any span is a 400 that names the field and the entity kinds, never the
+   value; DATE alone is allowed, because snapshots carry one
+   (`gpt-4o-2024-08-06`, `o3-mini-2025-01-31`). Refusing rather than masking
+   keeps the id the provider expects. The check runs before the `_Forward` is
+   built, so the audit `model` column only holds a checked id; a rejected
+   request is audited without a model.
+2. **Session deletes (M-d).** `DELETE /session/{id}` takes `session_lock`, so
+   it waits for a `/mask` or chat request that is still adding to that
+   session's mapping instead of clearing it mid-request.
+3. **Session store off the event loop (M-e).** `get`, `create`, `delete`,
+   `purge_expired` and `len` on the store read and write encrypted files and
+   the keychain. They now run in the thread pool, as `save` already did, so
+   holding the lock no longer blocks the loop.
+4. **Dev UI warning (M-g).** With `[proxy] allow_dev_ui = true`, `serve`
+   logs a warning before it binds: any local app on port 5173 can read
+   session maps through `/mask`.
+5. **`GET /audit` (M-f).** It still verifies the whole chain on each call.
+   Left as is and listed in `docs/SECURITY.md`; retention bounds the cost.
