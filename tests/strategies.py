@@ -497,3 +497,21 @@ def card_shapes_beside_short_numbers(draw: st.DrawFn) -> tuple[str, str]:
         return f"Item qty {short}{gap}{card} charged.", card
     month = draw(st.integers(1, 12))
     return f"Please charge {card}{gap}{month:02d}/29 today.", card
+
+
+# Cyrillic capitals with a Latin look-alike: A, VE, IE, KA, EM, EN, O, ER, ES, TE, HA.
+_CYRILLIC_CODES = (0x410, 0x412, 0x415, 0x41A, 0x41C, 0x41D, 0x41E, 0x420, 0x421, 0x422, 0x425)
+_CYRILLIC_LOOK_ALIKES = dict(zip("ABEKMHOPCTX", map(chr, _CYRILLIC_CODES), strict=True))
+
+
+@st.composite
+def disguised_passport_numbers(draw: st.DrawFn) -> tuple[str, str]:
+    """(text, value): two capitals and seven digits, each letter perhaps its Cyrillic
+    look-alike, perhaps glued to a file name by underscores."""
+    letters = draw(st.text(alphabet=sorted(_CYRILLIC_LOOK_ALIKES), min_size=2, max_size=2))
+    value = "".join(_CYRILLIC_LOOK_ALIKES[c] if draw(st.booleans()) else c for c in letters) + draw(
+        _digits(7)
+    )
+    if draw(st.booleans()):
+        return f"Attached scan_passport_{value}.pdf for review.", value
+    return draw(embedded(st.just(value)))

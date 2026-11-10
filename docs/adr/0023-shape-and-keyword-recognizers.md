@@ -152,6 +152,47 @@ its shape or keyword rule. Decisions (the clean view, dates and routing are in A
    PDF line); a bracket may have one space inside it (`+99 ( 912 ) 345 6789`). The
    `+` still gates the rule; the 15-digit limit cuts a number joined to the next
    line's digits.
-4. **Property tests** generate Luhn-valid cards with each loose gap, card shapes
-   after a quantity or before an expiry month, and `+` phones with tabs, line
-   breaks and spaced brackets (`tests/property/test_shape_detection.py`).
+4. **Russian series and number** (amends 1c point 1). Both words are read in any
+   case (`ПАСПОРТ СЕРИЯ ... НОМЕР ...`); the word for "series" also in the
+   instrumental, accusative and genitive plural (`серией`, `серию`, `серий`);
+   "and" may stand before the word for number (`и номер`); `N.`, `Nr.` and `#`
+   join `№`, `N`, `No` and `номер`. The number may come first (`номер 012345 серия
+   4599`): the span runs from the number to the series, both words inside it, and
+   both words are the gate. Type as before: PASSPORT after a passport keyword,
+   else NATIONAL_ID.
+5. **Cyrillic letters in document codes** (`id_document_context`). A code part may
+   use Cyrillic letters as well as Latin ones, so a Russian driving licence (two
+   digits, two Cyrillic letters, six digits) and a passport number typed on a
+   Russian keyboard are codes after a keyword. A word in Cyrillic capitals is a
+   part too, as Latin ones were: a heading in capitals next to a code may be masked
+   with it (more over-masking, the trade 1c made for Latin).
+6. **Keyword distance.** Of the two fixes offered (a wider window, or the rest of
+   the line), neither is taken as such: both would let any keyword earlier in a
+   long chat line gate every code after it, and the 1c negative case `Passport
+   office hours are Monday to Friday; ref 123456789` would be masked. Instead the
+   window stays 40 characters, and becomes 80 when the code directly follows a
+   colon (a label: `Passport number (as printed on the data page): ...`).
+7. **An underscore is a boundary** for the passport and ID card shapes and for
+   keyword-gated codes, as in a file name (`scan_passport_AB1234567.pdf`). A hyphen
+   or a letter before or after the code still refuses it.
+8. **Look-alike letters** (`passport_shape`, `id_card_shape`). Before matching,
+   Cyrillic and Greek letters that look like Latin ones are folded to them one for
+   one (Cyrillic А В Е К М Н О Р С Т У Х І Ј Ѕ and their small look-alikes, Greek
+   capitals and small omicron; the table is built from code points, and a test
+   checks each entry's Unicode name). Only these two shapes read the fold: the
+   clean view and the NER models keep the letters as written, because folding them
+   everywhere would turn Russian words into Latin nonsense for the Russian model.
+9. **Property tests** generate Luhn-valid cards with each loose gap, card shapes
+   after a quantity or before an expiry month, `+` phones with tabs, line breaks
+   and spaced brackets, and passport shapes with Cyrillic look-alike letters or
+   glued to a file name by underscores (`tests/property/test_shape_detection.py`).
+
+Consequences.
+
+- More over-masking: Luhn-valid numbers in card grouping with unusual gaps; a short
+  number beside a 16-digit block; Cyrillic codes and capitals after a document
+  keyword; codes 41 to 80 characters after a keyword when a colon precedes them;
+  two-letter, seven-digit tokens after an underscore or with Greek or Cyrillic
+  letters. The OpenPII deltas, precision included, are in `docs/BENCHMARKS.md`.
+- Left out on purpose: a card with commas between its groups, a code further than
+  40 characters from its keyword without a colon before it.

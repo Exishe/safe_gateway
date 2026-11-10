@@ -204,7 +204,6 @@ def test_date_forms_left_out_of_the_named_and_numeric_patterns() -> None:
 # ------------------------------------------------------------ documents (ADR 0023 amended, 1-4)
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_russian_series_and_number_in_capitals_or_other_wording() -> None:
     """_RU_SERIES_NUMBER makes only the word for 'series' case-insensitive; the word for
     'number' must be lower case, and the series word nominative or genitive (or its
@@ -223,7 +222,6 @@ def test_russian_series_and_number_in_capitals_or_other_wording() -> None:
     assert leaks(cases) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_document_codes_with_cyrillic_letters() -> None:
     """_CODE_PART and PASSPORT_SHAPE read [A-Za-z] only. A Russian driving licence (two
     digits, two Cyrillic letters, six digits) and passport letters typed on a Russian
@@ -239,7 +237,6 @@ def test_document_codes_with_cyrillic_letters() -> None:
     assert leaks(cases) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_document_keyword_just_outside_the_window() -> None:
     """A parenthesis after the keyword ('Passport number (as printed on the data page):')
     puts the code 47 characters after the keyword's start, beyond KEYWORD_DISTANCE (40).
@@ -249,7 +246,6 @@ def test_document_keyword_just_outside_the_window() -> None:
     assert leaks([(f"Passport number (as printed on the data page): {code}", code)]) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_passport_shape_glued_to_a_file_name() -> None:
     """PASSPORT_SHAPE and _RUN refuse a word character or hyphen before the code, so a
     scan named 'scan_passport_AB1234567.pdf' leaks the number even with the keyword in
@@ -259,7 +255,6 @@ def test_passport_shape_glued_to_a_file_name() -> None:
     assert leaks([(f"Attached scan_passport_{code}.pdf for review.", code)]) == []
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_passport_shape_with_a_cyrillic_homoglyph() -> None:
     """A Cyrillic capital A (U+0410) for the first letter looks the same and is not
     folded, so '[A-Z]{2}' fails: []."""

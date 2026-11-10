@@ -14,6 +14,7 @@ from gateway.engine.types import EntityType, Recognizer
 from tests.strategies import (
     card_shapes,
     card_shapes_beside_short_numbers,
+    disguised_passport_numbers,
     embedded,
     id_card_numbers,
     loose_credit_cards,
@@ -79,4 +80,12 @@ def test_every_luhn_valid_card_with_loose_separators_is_found(sample: tuple[str,
 @given(card_shapes_beside_short_numbers())
 def test_every_card_shape_beside_a_short_number_is_found(sample: tuple[str, str]) -> None:
     assert_found(CREDIT_CARD_SHAPE, sample, EntityType.CREDIT_CARD)
+    assert_masked(sample)
+
+
+@given(disguised_passport_numbers())
+def test_every_passport_shape_with_look_alikes_or_underscores_is_found(
+    sample: tuple[str, str],
+) -> None:
+    assert_found(PASSPORT_SHAPE, sample, EntityType.PASSPORT)
     assert_masked(sample)

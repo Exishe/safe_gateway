@@ -5,14 +5,18 @@ one they have. All are invalid by construction: unassigned country codes (+99x),
 Luhn-invalid card numbers, and letter-digit codes that belong to no one.
 """
 
+import unicodedata
+
 import pytest
 
 from gateway.engine.checksums import luhn_valid
 from gateway.engine.recognizers.credit_card import CREDIT_CARD_SHAPE
 from gateway.engine.recognizers.id_documents import (
+    _LOOK_ALIKES,
     ID_CARD_SHAPE,
     ID_DOCUMENT_CONTEXT,
     PASSPORT_SHAPE,
+    latin_look_alikes,
 )
 from gateway.engine.recognizers.phone_shape import PHONE_CONTEXT, PHONE_SHAPE
 from gateway.engine.types import EntityType as E
@@ -410,3 +414,77 @@ def test_russian_series_and_number_are_masked_together(text: str, value: str, ki
 )
 def test_russian_series_and_number_need_the_keyword_and_the_shape(text: str) -> None:
     assert found(ID_DOCUMENT_CONTEXT, text) == []
+
+
+# ------------------------------------------------------------------ leak hunt 1d (ADR 0023)
+
+CYRILLIC_A, CYRILLIC_VE = chr(0x0410), chr(0x0412)
+
+
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [
+        ("ПАСПОРТ СЕРИЯ 4599 НОМЕР 012345 ВЫДАН", "4599 НОМЕР 012345"),  # pragma: allowlist secret
+        ("паспорт серией 4599 № 012345, выдан", "4599 № 012345"),  # pragma: allowlist secret
+        ("паспорт серию 45 99 и номер 012345", "45 99 и номер 012345"),  # pragma: allowlist secret
+        ("паспорт серия 4599 N. 012345 выдан", "4599 N. 012345"),  # pragma: allowlist secret
+        ("паспорт номер 012345 серия 4599 выдан", "012345 серия 4599"),  # pragma: allowlist secret
+        ("паспорт № 012345, серии 45 99", "012345, серии 45 99"),  # pragma: allowlist secret
+    ],
+)
+def test_russian_series_and_number_in_other_cases_wordings_and_orders(
+    text: str, value: str
+) -> None:
+    assert typed(ID_DOCUMENT_CONTEXT, text)[0] == (value, E.PASSPORT, 0.75, "id_document_context")
+
+
+def test_a_number_without_the_word_for_series_is_not_a_series_and_number() -> None:
+    assert found(ID_DOCUMENT_CONTEXT, "заказ номер 012345 от 4599") == []
+
+
+def test_document_codes_may_have_cyrillic_letters() -> None:
+    licence = f"77 {CYRILLIC_A}{CYRILLIC_VE} 123456"  # pragma: allowlist secret
+    text = f"Водительское удостоверение {licence} выдано"
+    assert typed(ID_DOCUMENT_CONTEXT, text) == [
+        (licence, E.DRIVER_LICENSE, 0.75, "id_document_context")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("text", "found_codes"),
+    [
+        ("Passport number (as printed on the data page): X12345678", ["X12345678"]),
+        ("Passport number (as printed on the data page; see below) X12345678", []),
+    ],
+)
+def test_a_code_after_a_label_colon_may_stand_further_from_the_keyword(
+    text: str, found_codes: list[str]
+) -> None:
+    assert found(ID_DOCUMENT_CONTEXT, text) == found_codes
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "scan_passport_AB1234567.pdf",  # pragma: allowlist secret
+        "AB1234567_scan.pdf",  # pragma: allowlist secret
+        f"ref {CYRILLIC_A}B1234567 on file",  # pragma: allowlist secret
+        f"ref {CYRILLIC_A}{CYRILLIC_VE}1234567 on file",  # pragma: allowlist secret
+    ],
+)
+def test_passport_shapes_beside_an_underscore_or_with_look_alike_letters(text: str) -> None:
+    [span] = PASSPORT_SHAPE.find(text)
+    assert text[span.start : span.end].endswith("1234567")
+    assert span.end - span.start == len("AB1234567")
+
+
+def test_a_passport_shape_after_a_hyphen_or_inside_a_word_is_still_refused() -> None:
+    assert found(PASSPORT_SHAPE, "scan-AB1234567 xAB1234567") == []  # pragma: allowlist secret
+
+
+def test_every_look_alike_folds_to_the_latin_letter_of_its_name() -> None:
+    for code, latin in _LOOK_ALIKES.items():
+        name = unicodedata.name(chr(code))
+        assert name.startswith(("CYRILLIC", "GREEK")), name
+        assert (latin.isupper()) == ("CAPITAL" in name), name
+        assert latin_look_alikes(chr(code)) == latin
