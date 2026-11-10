@@ -56,6 +56,15 @@ export interface DomPass {
   restored: number;
   /** Tokens left as written, once each, in order, with why. Deferred ones are not listed. */
   unresolved: Map<string, Reason>;
+  /** Where each restored value and each visible token sits, in the text as written now. */
+  marks: Mark[];
+}
+
+export interface Mark {
+  kind: "restored" | "unresolved";
+  node: Text;
+  start: number;
+  end: number;
 }
 
 export class DomRehydrator {
@@ -78,15 +87,19 @@ export class DomRehydrator {
     const unresolved = new Map<string, Reason>();
     const map = this.map();
     let restored = 0;
+    const marks: Mark[] = [];
 
     const overlapping = (from: number, to: number): number[] =>
       pieces.flatMap((p, i) => (p.start < to && p.end > from ? [i] : []));
-    const plain = (from: number, to: number): void => {
+    const plain = (from: number, to: number, mark = false): void => {
       for (const i of overlapping(from, to)) {
         const piece = pieces[i] as Piece;
         const text = masked.slice(Math.max(from, piece.start), Math.min(to, piece.end));
         const target = out[i];
         if (target === undefined) continue;
+        if (mark && text !== "") {
+          marks.push({ kind: "unresolved", node: piece.node, start: target.length, end: target.length + text.length });
+        }
         target.parts.push(text);
         target.length += text.length;
       }
@@ -98,6 +111,9 @@ export class DomRehydrator {
         if (target === undefined) return;
         const stood = masked.slice(Math.max(from, piece.start), Math.min(to, piece.end));
         const written = n === 0 ? original : "";
+        if (n === 0) {
+          marks.push({ kind: "restored", node: piece.node, start: target.length, end: target.length + written.length });
+        }
         target.segments.push({ start: target.length, end: target.length + written.length, original: stood });
         target.parts.push(written);
         target.length += written.length;
@@ -118,7 +134,7 @@ export class DomRehydrator {
       const original = inLink || deferred ? undefined : originalOf(map, token, canonicalOf(match));
       if (original === undefined) {
         if (!deferred && !unresolved.has(token)) unresolved.set(token, inLink ? "inside_link" : "not_in_mapping");
-        plain(start, end);
+        plain(start, end, !deferred);
         links.feed(token);
       } else {
         value(start, end, original);
@@ -137,7 +153,7 @@ export class DomRehydrator {
       if (target.segments.length > 0) this.records.set(piece.node, { data, segments: target.segments });
       else this.records.delete(piece.node);
     });
-    return { restored, unresolved };
+    return { restored, unresolved, marks };
   }
 
   /** The text under `root` as the site wrote it (placeholders, not restored values). */

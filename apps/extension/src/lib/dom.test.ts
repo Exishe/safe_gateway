@@ -66,6 +66,21 @@ describe("text nodes", () => {
   });
 });
 
+describe("marks, for highlighting without touching the DOM", () => {
+  it("gives the text ranges of restored values and of tokens left visible", () => {
+    const p = document.createElement("p");
+    for (const piece of ["Hi [PERSON_1] and [PERS", "ON_9]."]) p.append(document.createTextNode(piece));
+    root.append(p);
+    const pass = rehydrator.run(root);
+    const shown = pass.marks.map((m) => [m.kind, m.node.data.slice(m.start, m.end)]);
+    expect(shown).toEqual([
+      ["restored", "Anna Petrova"],
+      ["unresolved", "[PERS"],
+      ["unresolved", "ON_9]"],
+    ]);
+  });
+});
+
 describe("the link rule (ADR 0003 amendment 1)", () => {
   it("never restores inside an <a>, its text or its href", () => {
     html('<p>Mail <a href="https://attacker.example/?d=[EMAIL_1]">[EMAIL_1]</a> or [PERSON_1]</p>');
