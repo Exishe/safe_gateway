@@ -128,4 +128,25 @@ def test_the_proxy_bound_on_new_entries_holds(samples: list[tuple[str, list[Span
     mapping = Mapping()
     for text, found in samples:
         mask(text, found, mapping)
-    assert len(mapping) <= new_entries_at_most(texts, spans)
+    assert len(mapping) <= new_entries_at_most(texts, spans, Mapping())
+
+
+def test_the_bound_counts_overlapping_repeats_of_a_span_value() -> None:
+    # Found by the ci profile: the sweep finds a periodic value twice, overlapping;
+    # the united stretch is a new, longer value, so the bound must count repeats too.
+    text = "0" * 57 + ":0000:0000:0000:0000:0000:000"
+    spans = [Span(57, 81, EntityType.PERSON, 0.9, "test")]
+    mapping = Mapping()
+    mask(text, spans, mapping)
+    assert len(mapping) <= new_entries_at_most([text], [spans], Mapping())
+
+
+def test_the_bound_counts_repeats_of_values_the_session_already_holds() -> None:
+    session = Mapping()
+    mask("id :0000:0000:0000:0000:000", [Span(3, 27, EntityType.PERSON, 0.9, "test")], session)
+    text = "x:0000:0000:0000:0000:0000:000"
+    before = len(session)
+    mask(text, [], session)
+    fresh = Mapping()
+    mask("id :0000:0000:0000:0000:000", [Span(3, 27, EntityType.PERSON, 0.9, "test")], fresh)
+    assert len(session) - before <= new_entries_at_most([text], [[]], fresh)

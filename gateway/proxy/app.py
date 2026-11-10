@@ -29,6 +29,7 @@ from gateway.cloud.providers import ApiShape
 from gateway.cloud.upstream import Upstream, UpstreamError, UpstreamReply, UpstreamStream
 from gateway.config import ProxyConfig
 from gateway.engine.detect import EngineConfig, detect
+from gateway.engine.known import KnownValues
 from gateway.engine.mask import Mapping, mask_detected_messages, mask_messages
 from gateway.engine.placeholders import TOKEN
 from gateway.engine.session import SessionNotFound, SessionStore
@@ -156,16 +157,27 @@ def _detect_texts(texts: Sequence[str], config: EngineConfig) -> list[list[Span]
     return [detect(text, config=config) for text in texts]
 
 
-def new_entries_at_most(texts: Sequence[str], spans: Sequence[list[Span]]) -> int:
-    """How many entries masking can add at most: one per span, one per literal token.
+def new_entries_at_most(texts: Sequence[str], spans: Sequence[list[Span]], mapping: Mapping) -> int:
+    """How many entries masking into `mapping` can add at most.
 
-    Mask adds a value for each united span and a `[LITERAL_n]` for each placeholder-
-    shaped token outside them (ADR 0014 point 4); the known-value sweep adds nothing.
-    The bracket mask reads at a seam only disqualifies tokens, so the stretches
-    between spans hold no more tokens than the whole text does.
+    Every stretch mask replaces starts at a span, a placeholder-shaped token (a
+    `[LITERAL_n]`, ADR 0014 point 4) or a repeat the known-value sweep finds, so each
+    new entry is paid for by one of them. The sweep counts: two repeats of one value
+    can overlap (a periodic value), and their united stretch is a new, longer value.
+    Repeats are counted for the session's values and for this request's spans.
     """
+    values = mapping.known_values()
+    for text, found in zip(texts, spans, strict=True):
+        for span in found:
+            values.setdefault(text[span.start : span.end], span.entity_type)
+    known = KnownValues(values)
+    repeats = 0
+    for text, found in zip(texts, spans, strict=True):
+        # A repeat that is exactly a span is that span, already counted.
+        exact = {(span.start, span.end) for span in found}
+        repeats += sum(1 for r in known.spans(text) if (r.start, r.end) not in exact)
     tokens = sum(1 for text in texts for _ in TOKEN.finditer(text))
-    return sum(len(found) for found in spans) + tokens
+    return sum(len(found) for found in spans) + tokens + repeats
 
 
 def _mask_request(texts: list[str], config: EngineConfig) -> tuple[list[str], Mapping]:
@@ -477,7 +489,7 @@ class _RelayResponse(StreamingResponse):
 
 
 def _check_room(mapping: Mapping, texts: Sequence[str], spans: Sequence[list[Span]]) -> None:
-    if len(mapping) + new_entries_at_most(texts, spans) > MAX_SESSION_ENTRIES:
+    if len(mapping) + new_entries_at_most(texts, spans, mapping) > MAX_SESSION_ENTRIES:
         # Refused before anything is added: the session stays as it was (review M12).
         msg = (
             f"this session would hold more than {MAX_SESSION_ENTRIES} values; "
