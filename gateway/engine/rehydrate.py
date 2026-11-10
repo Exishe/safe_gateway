@@ -1,5 +1,6 @@
 """Put the original values back into a model's answer (ADR 0003, ADR 0004 point 3)."""
 
+from collections.abc import Sequence
 from enum import StrEnum
 
 from gateway.engine.links import LinkContext
@@ -17,6 +18,18 @@ class UnresolvedReason(StrEnum):
 
 
 Unresolved = dict[str, UnresolvedReason]
+# The contexts a text is read in: its own, and the message's when it is one block of
+# several that a client joins (security review 2, I-2). Inside any one means inside.
+Contexts = Sequence[LinkContext]
+
+
+def _inside(links: Contexts) -> bool:
+    return any(context.inside for context in links)
+
+
+def _feed(links: Contexts, text: str) -> None:
+    for context in links:
+        context.feed(text)
 
 
 def _restore(  # noqa: PLR0913  (the scan's whole state, passed in by both callers)
@@ -26,7 +39,7 @@ def _restore(  # noqa: PLR0913  (the scan's whole state, passed in by both calle
     *,
     mapping: Mapping,
     unresolved: Unresolved,
-    links: LinkContext,
+    links: Contexts,
 ) -> str:
     """text[start:stop] with its tokens restored; tokens left as written go to `unresolved`.
 
@@ -41,25 +54,25 @@ def _restore(  # noqa: PLR0913  (the scan's whole state, passed in by both calle
         if match.start() >= stop:
             break
         plain = text[cursor : match.start()]
-        links.feed(plain)
+        _feed(links, plain)
         pieces.append(plain)
         token = match.group()
         restored = _restore_token(token, canonical_of(match), mapping, links)
         if restored is None:
             unresolved.setdefault(token, _reason(links))
             restored = token
-        links.feed(restored)
+        _feed(links, restored)
         pieces.append(restored)
         cursor = match.end()
     tail = text[cursor:stop]
-    links.feed(tail)
+    _feed(links, tail)
     pieces.append(tail)
     return "".join(pieces)
 
 
-def _restore_token(token: str, key: str, mapping: Mapping, links: LinkContext) -> str | None:
+def _restore_token(token: str, key: str, mapping: Mapping, links: Contexts) -> str | None:
     """The original value of a token, or None when it stays as written."""
-    if links.inside:
+    if _inside(links):
         return None
     # ADR 0003, first rule that matches wins. TOKEN only matches the three shapes:
     # rule 1 is an exact key; rules 2 (bracketed, any case, `_`/space/`-`) and 3
@@ -68,22 +81,34 @@ def _restore_token(token: str, key: str, mapping: Mapping, links: LinkContext) -
     return original if original is not None else mapping.original(key)
 
 
-def _reason(links: LinkContext) -> UnresolvedReason:
-    return UnresolvedReason.INSIDE_LINK if links.inside else UnresolvedReason.NOT_IN_MAPPING
+def _reason(links: Contexts) -> UnresolvedReason:
+    return UnresolvedReason.INSIDE_LINK if _inside(links) else UnresolvedReason.NOT_IN_MAPPING
 
 
-def rehydrate_explained(text: str, mapping: Mapping) -> tuple[str, Unresolved]:
-    """(restored text, each token left as written -> why), tokens once each, in order."""
+def _contexts(message: LinkContext | None) -> tuple[LinkContext, ...]:
+    own = LinkContext()
+    return (own,) if message is None else (own, message)
+
+
+def rehydrate_explained(
+    text: str, mapping: Mapping, *, message: LinkContext | None = None
+) -> tuple[str, Unresolved]:
+    """(restored text, each token left as written -> why), tokens once each, in order.
+
+    `message`, when given, is the context of the whole message that `text` is one
+    block of: it has read the blocks before, and reads this one too.
+    """
     unresolved: Unresolved = {}
-    restored = _restore(
-        text, 0, len(text), mapping=mapping, unresolved=unresolved, links=LinkContext()
-    )
+    links = _contexts(message)
+    restored = _restore(text, 0, len(text), mapping=mapping, unresolved=unresolved, links=links)
     return restored, unresolved
 
 
-def rehydrate(text: str, mapping: Mapping) -> tuple[str, list[str]]:
+def rehydrate(
+    text: str, mapping: Mapping, *, message: LinkContext | None = None
+) -> tuple[str, list[str]]:
     """(restored text, placeholder-shaped tokens left as written, each once, in order)."""
-    restored, unresolved = rehydrate_explained(text, mapping)
+    restored, unresolved = rehydrate_explained(text, mapping, message=message)
     return restored, list(unresolved)
 
 
@@ -106,12 +131,13 @@ class StreamingRehydrator:
     Emitted text is never wrong, only delayed by at most MAX_PARTIAL characters.
     """
 
-    def __init__(self, mapping: Mapping) -> None:
+    def __init__(self, mapping: Mapping, *, message: LinkContext | None = None) -> None:
         self._mapping = mapping
         self._pending = ""
         self._before = ""  # the last character already emitted, for rule 3's left edge
         self._unresolved: Unresolved = {}
-        self._links = LinkContext()  # fed exactly what has been emitted
+        # Fed exactly what has been emitted; `message` as in rehydrate_explained().
+        self._links = _contexts(message)
 
     @property
     def unresolved(self) -> list[str]:

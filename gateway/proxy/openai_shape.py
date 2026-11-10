@@ -6,7 +6,6 @@ from typing import Any
 
 from gateway.cloud.providers import ApiShape
 from gateway.engine.mask import Mapping
-from gateway.engine.rehydrate import rehydrate
 from gateway.proxy.errors import invalid, unsupported
 from gateway.proxy.payload import (
     PLACEHOLDER_INSTRUCTION,
@@ -19,7 +18,15 @@ from gateway.proxy.payload import (
     number,
     token,
 )
-from gateway.proxy.shape import Body, Rehydrators, collect, replace, rewrite_values, stream_key
+from gateway.proxy.shape import (
+    Body,
+    Rehydrators,
+    collect,
+    rehydrate_message,
+    replace,
+    rewrite_values,
+    stream_key,
+)
 from gateway.proxy.sse import SSEEvent
 
 # Parameters that carry no text of the user's, or whose text is masked (stop).
@@ -212,7 +219,11 @@ def _rewrite_message(message: Body, fn: Callable[[str], str]) -> Body:
 
 
 class OpenAIStreamRewriter:
-    """Rehydrates `delta.content` per choice; flushes when a choice finishes."""
+    """Rehydrates `delta.content` per choice; flushes when a choice finishes.
+
+    The choices are read in one link context as well as each in its own (security
+    review 2, I-2); content for a choice after its finish_reason passes as written.
+    """
 
     def __init__(self, mapping: Mapping) -> None:
         self._rehydrators = Rehydrators(mapping)
@@ -308,14 +319,19 @@ class OpenAIShape:
         return {**body, "messages": [instruction, *body["messages"]]}
 
     def rehydrate_reply(self, payload: Body, mapping: Mapping) -> list[str]:
-        unresolved: dict[str, None] = {}
         choices = payload.get("choices")
-        for choice in choices if isinstance(choices, list) else []:
-            message = choice.get("message") if isinstance(choice, dict) else None
-            if isinstance(message, dict) and isinstance(message.get("content"), str):
-                message["content"], tokens = rehydrate(message["content"], mapping)
-                unresolved.update(dict.fromkeys(tokens))
-        return list(unresolved)
+        messages = [
+            message
+            for message in (
+                choice.get("message") if isinstance(choice, dict) else None
+                for choice in (choices if isinstance(choices, list) else [])
+            )
+            if isinstance(message, dict) and isinstance(message.get("content"), str)
+        ]
+        restored, unresolved = rehydrate_message([m["content"] for m in messages], mapping)
+        for message, text in zip(messages, restored, strict=True):
+            message["content"] = text
+        return unresolved
 
     def stream_rewriter(self, mapping: Mapping) -> OpenAIStreamRewriter:
         return OpenAIStreamRewriter(mapping)

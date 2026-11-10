@@ -7,7 +7,6 @@ from typing import Any
 
 from gateway.cloud.providers import ApiShape
 from gateway.engine.mask import Mapping
-from gateway.engine.rehydrate import rehydrate
 from gateway.proxy.errors import invalid, unsupported
 from gateway.proxy.payload import (
     PLACEHOLDER_INSTRUCTION,
@@ -18,7 +17,14 @@ from gateway.proxy.payload import (
     number,
     token,
 )
-from gateway.proxy.shape import Body, Rehydrators, collect, replace, stream_key
+from gateway.proxy.shape import (
+    Body,
+    Rehydrators,
+    collect,
+    rehydrate_message,
+    replace,
+    stream_key,
+)
 from gateway.proxy.sse import SSEEvent
 
 _FORWARDED = frozenset(
@@ -181,10 +187,14 @@ def _text_holder(payload: Body) -> Body | None:
 
 
 class AnthropicStreamRewriter:
-    """Rehydrates text deltas per content block; flushes when a block stops."""
+    """Rehydrates text deltas per content block; flushes when a block stops.
+
+    The blocks are one message, read in one link context (security review 2, I-2):
+    a block is closed by its stop, or by text for another block, and stays closed.
+    """
 
     def __init__(self, mapping: Mapping) -> None:
-        self._rehydrators = Rehydrators(mapping)
+        self._rehydrators = Rehydrators(mapping, sequential=True)
 
     @property
     def unresolved(self) -> list[str]:
@@ -207,8 +217,13 @@ class AnthropicStreamRewriter:
         holder = _text_holder(payload)
         if holder is None:
             return [event]
+        before = [
+            self._delta(other, tail)
+            for other, tail in self._rehydrators.close_others(index)
+            if tail
+        ]
         holder["text"] = self._rehydrators.feed(index, holder["text"])
-        return [self._encode(payload, event)]
+        return [*before, self._encode(payload, event)]
 
     @staticmethod
     def _encode(payload: Body, event: SSEEvent) -> SSEEvent:
@@ -275,17 +290,18 @@ class AnthropicShape:
         return {**body, "system": instruction}
 
     def rehydrate_reply(self, payload: Body, mapping: Mapping) -> list[str]:
-        unresolved: dict[str, None] = {}
         content = payload.get("content")
-        for block in content if isinstance(content, list) else []:
-            if (
-                isinstance(block, dict)
-                and block.get("type") == "text"
-                and isinstance(block.get("text"), str)
-            ):
-                block["text"], tokens = rehydrate(block["text"], mapping)
-                unresolved.update(dict.fromkeys(tokens))
-        return list(unresolved)
+        blocks = [
+            block
+            for block in (content if isinstance(content, list) else [])
+            if isinstance(block, dict)
+            and block.get("type") == "text"
+            and isinstance(block.get("text"), str)
+        ]
+        restored, unresolved = rehydrate_message([block["text"] for block in blocks], mapping)
+        for block, text in zip(blocks, restored, strict=True):
+            block["text"] = text
+        return unresolved
 
     def stream_rewriter(self, mapping: Mapping) -> AnthropicStreamRewriter:
         return AnthropicStreamRewriter(mapping)
