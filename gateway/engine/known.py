@@ -1,14 +1,17 @@
 """Find values a mapping already holds wherever they recur (ADR 0014, amendment 1).
 
 Detection can miss a value it found elsewhere: `ref123-45-6780.pdf` glues an SSN to
-a file name. Mask therefore also replaces every exact occurrence of a known value.
-All values go into one regular expression shaped as a prefix tree, so a search costs
-about the length of the text, not the text times the number of values.
+a file name. Mask therefore also replaces every occurrence of a known value. Values
+and text are compared in the clean view (ADR 0013), so a value detected with an
+invisible character or a no-break space inside also matches its plain repeat, and the
+other way round. All values go into one regular expression shaped as a prefix tree, so a
+search costs about the length of the text, not the text times the number of values.
 """
 
 import re
 from collections.abc import Mapping, Sequence
 
+from gateway.engine.textview import clean_view
 from gateway.engine.types import EntityType, Span
 
 RECOGNIZER = "known_value"
@@ -97,10 +100,15 @@ def _compile_uncached(pattern: str) -> re.Pattern[str]:
 
 
 class KnownValues:
-    """Surface -> type for the values to find, compiled once."""
+    """Surface -> type for the values to find, compiled once, as the clean view reads them."""
 
     def __init__(self, values: Mapping[str, EntityType]) -> None:
-        self._types = dict(values)
+        self._types: dict[str, EntityType] = {}
+        for surface, entity_type in values.items():
+            # Two spellings with one clean form: the first one's type is kept.
+            cleaned = clean_view(surface).text
+            if cleaned:
+                self._types.setdefault(cleaned, entity_type)
         by_edge: dict[str | None, list[str]] = {}
         for value in self._types:
             by_edge.setdefault(_edge_class(value[0]), []).append(value)
@@ -121,10 +129,11 @@ class KnownValues:
         """
         if self._pattern is None:
             return []
+        view = clean_view(text)
         found = []
         position = 0
-        while (match := self._pattern.search(text, position)) is not None:
-            surface = match.group()
-            found.append(Span(match.start(), match.end(), self._types[surface], 1.0, RECOGNIZER))
+        while (match := self._pattern.search(view.text, position)) is not None:
+            start, end = view.original_span(match.start(), match.end())
+            found.append(Span(start, end, self._types[match.group()], 1.0, RECOGNIZER))
             position = match.start() + 1
         return found

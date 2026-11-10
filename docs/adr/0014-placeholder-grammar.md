@@ -80,3 +80,25 @@ a bound on how long a token can be.
    requests on one session never share a number. `from_dict` refuses a counter
    gap and a `[LITERAL_n]` that does not hold a placeholder-shaped token, as mask
    never writes either.
+
+## Amendment 2, 2026-11-09: the sweep compares the clean view (leak hunt 1d)
+
+Amends point 1 of amendment 1. An SSN detected with a zero-width space inside was
+swept only in that spelling, and its plain repeat glued to a file name, the case the
+sweep exists for, went out unmasked (`test_leak_hunt_1d.py`; also the known limit
+`test_zero_width_space_inside_a_known_value_glued_to_a_word` of leak hunt 2b, now
+passing).
+
+1. **Values and text are compared as the clean view reads them** (ADR 0013, ADR 0016
+   amended): `KnownValues` compiles the clean form of each surface, searches the
+   clean view of the text, and maps each match back, so `text[start:end]` is the
+   occurrence as written. A value stored with an invisible character, a no-break
+   space, a typographic dash or non-ASCII digits matches its plain repeat, and the
+   other way round. Matching stays case-sensitive; NFC and NFD forms of a name are
+   still two spellings (the 2b known limit for them stays).
+2. Two surfaces with one clean form share one pattern entry; the first one's type
+   is used for the sweep. Each occurrence still gets the placeholder of its own
+   surface (ADR 0001 point 3), so a plain repeat of a value stored with a zero-width
+   space gets a new number of the same type. A surface that cleans to nothing is
+   not swept.
+3. The boundary rule of point 2 is applied to the clean view's characters.

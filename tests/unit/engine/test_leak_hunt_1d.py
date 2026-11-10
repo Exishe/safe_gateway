@@ -319,7 +319,6 @@ def test_plus_phone_split_by_a_tab_a_line_break_or_a_spaced_bracket() -> None:
 # ------------------------------------------------------------------ known-value sweep (ADR 0014)
 
 
-@pytest.mark.xfail(strict=True, reason=REASON)
 def test_known_value_with_an_invisible_character_misses_its_plain_repeat() -> None:
     """The mapping keeps the surface as written, so an SSN detected with a zero-width
     space inside is swept only in that spelling. Its plain repeat glued to a file name,

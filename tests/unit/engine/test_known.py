@@ -170,3 +170,27 @@ def test_the_compiled_values_are_reused_until_a_value_is_added() -> None:
     assert mapping.known() is not first
     mapping.clear()
     assert len(mapping.known()) == 0
+
+
+# ------------------------------------------------------------------ clean view (leak hunt 1d)
+
+ZWSP, NBSP = chr(0x200B), chr(0x00A0)
+
+
+@pytest.mark.parametrize(
+    ("stored", "written"),
+    [
+        (SSN[:4] + ZWSP + SSN[4:], SSN),  # stored with an invisible character, written plain
+        (SSN, SSN[:4] + ZWSP + SSN[4:]),  # and the other way round
+        ("Selene" + NBSP + "Quillin", "Selene Quillin"),
+    ],
+)
+def test_known_values_match_in_the_clean_view_and_map_back(stored: str, written: str) -> None:
+    values = KnownValues({stored: EntityType.SSN})
+    text = f"file ({written}).pdf"
+    [span] = values.spans(text)
+    assert text[span.start : span.end] == written
+
+
+def test_a_value_that_cleans_to_nothing_is_not_swept() -> None:
+    assert KnownValues({ZWSP: P}).spans(f"a{ZWSP}b") == []

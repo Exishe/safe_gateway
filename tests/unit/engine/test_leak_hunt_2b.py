@@ -22,11 +22,10 @@ KNOWN_LIMIT = pytest.mark.xfail(
 )
 
 
-@KNOWN_LIMIT
 def test_zero_width_space_inside_a_known_value_glued_to_a_word() -> None:
     """The SSN is known as [SSN_1]; `ref123-<ZWSP>45-6780.pdf` went out with the digits
-    in clear: the zero-width space breaks the exact match, and detection does not see
-    an SSN glued to `ref`."""
+    in clear: the zero-width space broke the exact match. Fixed in leak hunt 1d: the
+    sweep compares the clean view (ADR 0014 amendment 2)."""
     hidden = SSN[:4] + ZERO_WIDTH_SPACE + SSN[4:]
     masked, _ = mask_messages([f"SSN {SSN}", f"Scan saved as ref{hidden}.pdf"], config=NO_NER)
     assert "45-6780" not in masked[1]
