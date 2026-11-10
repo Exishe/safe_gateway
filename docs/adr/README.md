@@ -32,3 +32,4 @@ never by editing history.
 | [0024](0024-web-ui.md) | Web UI: mask first, send through the gateway, restore in the browser | Accepted |
 | [0025](0025-session-aware-chat.md) | Session-aware chat routes: the model and the audit log keep the real types | Accepted |
 | [0026](0026-browser-extension.md) | Browser extension: mask at the textbox, restore in text nodes | Accepted |
+| [0027](0027-desktop-shell-and-sidecar.md) | Desktop shell (Tauri 2) and the Python sidecar | Accepted |

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="referrer" content="no-referrer" />
+    <title>SafeGuard Gateway</title>
+    <link rel="stylesheet" href="view.css" />
+  </head>
+  <body>
+    <main id="view" data-state="loading" aria-live="polite">
+      <div class="mark" aria-hidden="true"></div>
+      <h1 id="title">Starting SafeGuard Gateway</h1>
+      <p id="detail">Getting the privacy gateway ready on this computer. This can take a minute the first time.</p>
+      <p id="reason" hidden></p>
+      <p id="hint" hidden></p>
+    </main>
+    <noscript>SafeGuard Gateway is starting. This page needs JavaScript to show progress.</noscript>
+    <script src="view.js"></script>
+  </body>
+</html>

@@ -112,10 +112,54 @@ tests first.
 - E2E click-through passes with no console errors; screenshots at 390 and
   1280 px in both themes.
 
-## Part 2 (next)
+## Part 2: the desktop shell
 
-- `apps/desktop/`: Tauri 2 shell, tray icon, start-at-login option, Python
-  engine as a PyInstaller sidecar with start, health check and restart on crash.
-- CI builds unsigned `.dmg` and `.msi` on tags (ADR 0007). `docs/INSTALL.md`
-  documents first-run warnings. `THIRD_PARTY_NOTICES.md` (ADR 0008).
-- Exit: tag `v0.6.0`.
+Decisions are recorded in ADR 0027. Python tasks are test first; the shell's
+lifecycle rules are plain Rust functions behind a `Backend` trait, with unit tests
+written before the code and a fake clock and process.
+
+### 11. Frozen UI path (proxy)
+- Test: with `sys.frozen` and `sys._MEIPASS` set, `default_ui_dir()` is
+  `<_MEIPASS>/ui`.
+
+### 12. Sidecar build (`tools/build_sidecar.py`, `tools/sidecar_entry.py`)
+- Test: the PyInstaller command is one-folder, bundles `apps/web/dist` as `ui`,
+  copies the distribution metadata, writes under `apps/desktop/src-tauri/resources`,
+  bundles no models, and fails with a clear message when the UI build is missing.
+- Build: PyInstaller in its own uv group `sidecar`; run it, start the result with a
+  temporary `SAFEGUARD_HOME`, and read `/health`.
+
+### 13. Shell logic (Rust, `apps/desktop/src-tauri/src/`)
+- `health.rs`: parse `/health`; a std-only GET on loopback.
+- `supervisor.rs`: backoff 1, 2, 4 ... 30 s; ready on `/health`; restart on exit or
+  six missed checks; startup timeout; give up after 5 failed runs; a 60 s healthy run
+  resets the count; stopping during a backoff starts nothing.
+- `view.rs`: which view for each state, the tray line, percent-encoding of the reason,
+  and the navigation allow-list (own pages and `http://127.0.0.1:8787` only).
+- `sidecar.rs`: the real process backend (SIGTERM then kill; adopt a running
+  gateway; no console window on Windows).
+
+### 14. Tauri app
+- Window created in code with `on_navigation`; tray menu (Open dashboard, status,
+  Restart gateway, Start at login, Quit); closing the window hides it.
+- Config: CSP limited to `127.0.0.1:8787`, an empty capability, no updater, no shell,
+  fs or http plugin. Static pages `ui/` for loading, restarting and error.
+
+### 15. CI (`desktop` job)
+- On `v*` tags and `workflow_dispatch` only (ADR 0007): builds the sidecar and the
+  app on macos-14 (`.dmg`), windows-latest (`.msi`) and ubuntu (`.deb`); unsigned;
+  uploads artifacts. Actions pinned by SHA; `zizmor --offline` clean.
+
+### 16. Notices and docs
+- `tools/gen_notices.py` writes `THIRD_PARTY_NOTICES.md` from uv metadata, the web
+  lock file and `cargo metadata`; it fails on a crate with no permissive license.
+- `docs/INSTALL.md`: first-run warnings for unsigned apps, building from source.
+- ADR 0027 and the ADR README.
+
+## Exit criteria for part 2
+
+- Python gate green; `cargo test` green; `cargo check` of the app green where the
+  system libraries exist.
+- The frozen sidecar answers `/health` and serves the UI.
+- Tag `v0.6.0` (done by the owner after the tag build is looked at on macOS and
+  Windows).

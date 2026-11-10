@@ -81,6 +81,71 @@ a temporary `SAFEGUARD_HOME` and a test-only file keyring
 (`tests/e2e/web/file_keyring.py`), so it writes and verifies a real audit log
 without touching your keychain or `~/.safeguard`.
 
+### The desktop app (Phase 6)
+
+The desktop app is a Tauri 2 shell around the same gateway: it starts the engine
+(`safeguard serve`, built as a sidecar), shows the web UI in a window, and keeps a
+tray icon with **Open dashboard**, the gateway's status, **Restart gateway**, a
+**Start at login** switch and **Quit** (ADR 0027). Closing the window leaves it in
+the tray; **Quit** stops the gateway. Installers come from the `desktop` job in CI,
+which runs on `v*` tags and by hand (Actions, **ci**, **Run workflow**) and uploads a
+`.dmg`, an `.msi` and a `.deb` as workflow artifacts.
+
+The installers are **not signed**: a signing certificate costs money
+([APPROVAL_NEEDED.md](APPROVAL_NEEDED.md)). Your system will warn you the first time.
+Download only from your own build or from someone you trust, and check the warning
+below matches the name SafeGuard Gateway.
+
+- **macOS (Gatekeeper).** Open the `.dmg` and drag SafeGuard Gateway to Applications.
+  The first time, do not double-click it: right-click (or Control-click) the app and
+  choose **Open**, then **Open** again in the dialog. If macOS says the app "is
+  damaged", run `xattr -dr com.apple.quarantine "/Applications/SafeGuard Gateway.app"`
+  and open it again. Apple silicon (arm64) only.
+- **Windows (SmartScreen).** Run the `.msi`. When "Windows protected your PC" appears,
+  choose **More info**, then **Run anyway**. Windows 10 (1809) or later with the
+  WebView2 runtime, which Windows 11 and current Windows 10 already have.
+- **Linux (Debian, Ubuntu).** `sudo apt install ./safeguard-gateway_*.deb`. It needs
+  `libwebkit2gtk-4.1-0` and a system tray (on GNOME, the AppIndicator extension).
+  A keyring service (GNOME Keyring or KWallet) must be running: the audit log's key
+  lives there.
+
+**First run.** The installer carries the engine but not the language models. Pull
+them once from a terminal: the engine inside the app takes the same commands as the
+CLI (`safeguard-sidecar models pull`, run from the app's `safeguard-sidecar` resource
+folder), and a source checkout uses `uv run safeguard models pull` (about 900 MB,
+SHA-256 checked; the only step that needs the internet). A button for this in the app
+is a later step. Until then names and addresses are not detected; structured
+identifiers (SSN, card, IBAN, phone) work without models. Settings are the same file
+as before: `~/.safeguard/config.toml`. The sidecar's log is `sidecar.log` in the app's
+log folder (macOS `~/Library/Logs/com.safeguard.gateway`, Windows
+`%LOCALAPPDATA%\com.safeguard.gateway\logs`, Linux `~/.local/share/com.safeguard.gateway/logs`).
+
+**Build from source.** Install Rust (see above), Node 22.12 or later, and on Linux:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+  librsvg2-dev libssl-dev libxdo-dev patchelf build-essential
+```
+
+Then, from the repository root (the sidecar step takes several minutes and about
+1 GB of disk, mostly PyTorch):
+
+```bash
+(cd apps/web && npm ci --ignore-scripts && npm run build)        # the UI the sidecar carries
+uv run --group sidecar python -m tools.build_sidecar              # PyInstaller, no models
+cd apps/desktop && npm ci --ignore-scripts
+npx tauri build --bundles deb       # or dmg on macOS, msi on Windows; add --debug for a faster build
+```
+
+Installers land in `apps/desktop/src-tauri/target/release/bundle/`. Rust unit tests:
+`cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml -j 2`. To run the shell
+without bundling, build the sidecar once, then
+`SAFEGUARD_SIDECAR=$PWD/apps/desktop/src-tauri/resources/safeguard-sidecar/safeguard-sidecar npx tauri dev`
+(debug builds only).
+
+Regenerate the attributions after any dependency change:
+`uv run python -m tools.gen_notices` (writes `THIRD_PARTY_NOTICES.md`).
+
 ### The browser extension (Phase 7)
 
 The extension masks what you send to ChatGPT (chatgpt.com, chat.openai.com), Claude

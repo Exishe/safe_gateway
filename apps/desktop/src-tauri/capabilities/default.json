@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "No permissions. The windows run local pages and the gateway's own UI; neither calls the shell. The app's Rust code does the work.",
+  "windows": ["main"],
+  "permissions": []
+}

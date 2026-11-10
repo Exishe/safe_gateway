@@ -1,0 +1,88 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --fg: #1c2330;
+  --muted: #5b6575;
+  --accent: #1f6f5c;
+  --danger: #a3361f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11161d;
+    --fg: #e6e9ee;
+    --muted: #9aa5b4;
+    --accent: #5cc0a6;
+    --danger: #f09a86;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 34rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+h1 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+p {
+  margin: 0.5rem 0;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+#reason {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.mark {
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto;
+  border: 3px solid var(--accent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: turn 1.2s linear infinite;
+}
+
+[data-state="error"] .mark {
+  animation: none;
+  border-color: var(--danger);
+}
+
+[data-state="error"] h1 {
+  color: var(--danger);
+}
+
+@keyframes turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark {
+    animation: none;
+    border-top-color: var(--accent);
+  }
+}
