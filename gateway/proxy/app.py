@@ -279,7 +279,7 @@ class _Gateway:
         """
         spans = await run_in_threadpool(_detect_texts, texts, self.engine_config)
         async with self.session_lock:
-            mapping = self._session_mapping(session_id, _NO_SESSION)
+            mapping = await self._session_mapping(session_id, _NO_SESSION)
             _check_room(mapping, texts, spans)
             issued = frozenset(mapping.to_dict())
             masked = await run_in_threadpool(mask_detected_messages, texts, spans, mapping, issued)
@@ -287,9 +287,10 @@ class _Gateway:
                 await run_in_threadpool(self.sessions.save, session_id)
         return masked, mapping
 
-    def _session_mapping(self, session_id: str, message: str) -> Mapping:
+    async def _session_mapping(self, session_id: str, message: str) -> Mapping:
+        """The session's mapping (call under the lock); the store's disk work runs off the loop."""
         try:
-            return self.sessions.get(session_id)
+            return await run_in_threadpool(self.sessions.get, session_id)
         except SessionNotFound:
             # Never created under a client's id: it could be someone else's namespace.
             raise RequestRejected(404, "not_found", message) from None
@@ -396,21 +397,23 @@ class _Gateway:
     async def _mask_in_session(
         self, texts: list[str], spans: list[list[Span]], session_id: str | None
     ) -> tuple[str, Mapping, list[str], list[list[Detection]]]:
-        self.sessions.purge_expired()
+        # The store reads and writes encrypted files and the keychain: never on the
+        # event loop, which would stall every other request (security review 2, M-e).
+        await run_in_threadpool(self.sessions.purge_expired)
         if session_id is None:
-            if len(self.sessions) >= MAX_SESSIONS:
+            if await run_in_threadpool(len, self.sessions) >= MAX_SESSIONS:
                 msg = "too many open sessions; delete some with DELETE /session/{id}"
                 raise RequestRejected(503, "overloaded", msg)
             mapping = Mapping()
         else:
             msg = "no such session; omit session_id to start a new one"
-            mapping = self._session_mapping(session_id, msg)
+            mapping = await self._session_mapping(session_id, msg)
         _check_room(mapping, texts, spans)
         masked, found = await run_in_threadpool(
             mask_detected_with_detections, texts, spans, mapping
         )
         if session_id is None:
-            session_id = self.sessions.create(mapping)
+            session_id = await run_in_threadpool(self.sessions.create, mapping)
         else:
             # get() saved before masking; the entries just added must reach disk too (M11).
             with contextlib.suppress(SessionNotFound):  # expired meanwhile: 404 next time
@@ -419,7 +422,11 @@ class _Gateway:
 
     async def delete_session(self, session_id: str) -> Response:
         timer = _Timer("/session")
-        if self.sessions.delete(session_id):
+        # Under the lock: a delete in the middle of masking would clear the mapping
+        # that request is still adding to (security review 2, M-d).
+        async with self.session_lock:
+            deleted = await run_in_threadpool(self.sessions.delete, session_id)
+        if deleted:
             await self.record(timer.event("session_deleted", 204))
             return Response(status_code=status.HTTP_204_NO_CONTENT)
         await self.record(timer.event("session_not_found", 404))
