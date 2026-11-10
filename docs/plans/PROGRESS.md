@@ -25,16 +25,15 @@ local-first.
 
 ## In flight (agent worktrees under `.claude/worktrees/`)
 
-Merged on the branch so far: Phases 2, 3, 4 and 5 (at 29a019a), the M3/M4 model
-download hardening, the 7 Phase 2 red-team fixes, and the leak-hunt 1c tests
-(15 strict xfails). CI passed at 56d1eec.
+Merged on the branch (head 1afdaae, gate green: 2125 passed): Phases 2-5 and
+their integration (`safeguard serve` writes the audit log, `GET /audit`), the
+Phase 6 web UI, the security review fixes (I1-I4 and the minors), leak-hunt
+1c fixes, and the 1d tests (21 strict xfails).
 
 | Work | Status |
 |------|--------|
-| Fix 15 leak-hunt 1c findings, add shape property tests, re-run the benchmark | running |
-| Wire the proxy AuditSink to AuditLogSink; `GET /audit`; retention; proxy uses `mask_messages`; README status | running |
-| Security review of Phases 2–5 (`security-reviewer`, read-only) | running; fix its Critical and Important findings after |
-| Phase 6 web UI (`apps/web`), Playwright e2e, CI web job | running (`ui-builder`) |
+| Fix 21 leak-hunt 1d findings, then re-run the benchmark | running (resumed after the usage limit) |
+| Web UI e2e against the real audit log, with a test-only file keyring | running (resumed) |
 
 If an agent's worktree branch has commits but the agent is gone, merge what
 is there and finish the remainder yourself or with a new agent.
