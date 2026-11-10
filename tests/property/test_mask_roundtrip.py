@@ -2,10 +2,11 @@
 
 import re
 
-from hypothesis import assume, given
+from hypothesis import assume, example, given
 from hypothesis import strategies as st
 
 from gateway.engine.detect import EngineConfig, detect
+from gateway.engine.known import KnownValues
 from gateway.engine.mask import Mapping, mask, mask_messages
 from gateway.engine.placeholders import TOKEN
 from gateway.engine.rehydrate import UnresolvedReason, rehydrate, rehydrate_explained
@@ -67,12 +68,18 @@ def occurrences(text: str, value: str) -> set[int]:
 
 
 @given(plain_texts_and_spans())
+# Found by Hypothesis: `:\xad` and `:` are one value in the clean view.
+@example(("0000::\xad", [Span(5, 7, EntityType.PERSON, 0.9, "test")]))
 def test_text_outside_spans_is_unchanged_where_no_span_value_recurs(
     sample: tuple[str, list[Span]],
 ) -> None:
     # Mask also replaces other occurrences of a span's value (ADR 0014 amendment 1);
     # where there are none, nothing outside the spans changes.
     text, spans = sample
+    # Repeats are counted as the sweep finds them: in the clean view (ADR 0014
+    # amendment 2), where `:\xad` and `:` are the same value.
+    sweep = KnownValues({text[s.start : s.end]: s.entity_type for s in spans})
+    assume({(r.start, r.end) for r in sweep.spans(text)} <= {(s.start, s.end) for s in spans})
     for span in spans:
         surface = text[span.start : span.end]
         assume(
