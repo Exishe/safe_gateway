@@ -1,5 +1,8 @@
 """The GLiNER throughput benchmark's input: seeded, sized, in the asked alphabet."""
 
+import importlib
+import sys
+
 import pytest
 
 from gateway.engine.script import segments
@@ -17,3 +20,14 @@ def test_sample_text_is_seeded_sized_and_in_its_script(lang: str) -> None:
 def test_an_unknown_language_is_refused() -> None:
     with pytest.raises(SystemExit):
         main(["--lang", "de"])
+
+
+def test_the_benchmark_imports_where_resource_does_not_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Windows has no `resource` module; CI's Windows job could not even collect this file.
+    # None in sys.modules makes `import resource` raise ModuleNotFoundError.
+    monkeypatch.setitem(sys.modules, "resource", None)
+    monkeypatch.delitem(sys.modules, "tools.benchmark_gliner")
+    module = importlib.import_module("tools.benchmark_gliner")
+    assert module.peak_mib_text() == "n/a"

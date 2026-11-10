@@ -14,8 +14,12 @@ from `safeguard models pull`.
 
 import argparse
 import platform
-import resource
 import time
+
+try:
+    import resource
+except ModuleNotFoundError:  # Windows: no getrusage, so no peak figure there
+    resource = None
 
 from faker import Faker
 
@@ -38,9 +42,12 @@ def sample_text(lang: str, seed: int, target_bytes: int = TARGET_BYTES) -> str:
     return "\n\n".join(paragraphs)
 
 
-def _peak_mib() -> float:
+def peak_mib_text() -> str:
+    """Peak RSS of this process in MiB, or "n/a" where the OS does not report it."""
+    if resource is None:
+        return "n/a"
     # Linux reports ru_maxrss in KiB.
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    return f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.0f}"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -56,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     started = time.perf_counter()
     detect(text[:2000], lang="auto", config=config)  # loads and warms the models
     load_s = time.perf_counter() - started
-    rss_after_load = _peak_mib()
+    rss_after_load = peak_mib_text()
 
     started = time.perf_counter()
     spans = detect(text, lang="auto", config=config)
@@ -66,9 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     gliner = sum(1 for span in spans if span.recognizer == "gliner")
     print(f"lang={args.lang} config.gliner={config.gliner} text={size_kb:.1f} KB UTF-8")
     print(f"cpu={platform.processor() or platform.machine()} python={platform.python_version()}")
-    print(f"load+warm {load_s:.1f} s; peak RSS after load {rss_after_load:.0f} MiB")
+    print(f"load+warm {load_s:.1f} s; peak RSS after load {rss_after_load} MiB")
     print(
-        f"timed pass {run_s:.1f} s = {per_100kb:.1f} s per 100 KB; peak RSS {_peak_mib():.0f} MiB"
+        f"timed pass {run_s:.1f} s = {per_100kb:.1f} s per 100 KB; peak RSS {peak_mib_text()} MiB"
     )
     print(f"spans {len(spans)} (gliner {gliner})")
     return 0
