@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 
 from gateway.engine.mask import Mapping
 from gateway.engine.types import EntityType
-from gateway.proxy.audit import AuditEvent, AuditSink, NullAuditSink, entity_counts
+from gateway.proxy.audit import (
+    AuditEvent,
+    AuditSink,
+    NullAuditSink,
+    entity_counts,
+    entity_counts_present,
+)
 
 # The only string fields an event may have; none of them can hold request text.
 ALLOWED_STRING_FIELDS = {
@@ -15,6 +21,9 @@ ALLOWED_STRING_FIELDS = {
     "model",
     "request_sha256",
     "response_sha256",
+    # A server-issued id the proxy checked against [A-Za-z0-9_-]{1,128}; the log
+    # stores only its sha256 (ADR 0025).
+    "session_id",
 }
 
 
@@ -47,3 +56,13 @@ def test_null_sink_accepts_events() -> None:
     sink.record(event)
     assert event.entity_counts == {}
     assert event.stream is False
+
+
+def test_counts_present_are_the_mapping_placeholders_in_the_texts() -> None:
+    mapping = Mapping()
+    mapping.placeholder_for("a@example.org", EntityType.EMAIL)
+    mapping.placeholder_for("b@example.org", EntityType.EMAIL)
+    mapping.placeholder_for("Ann Example", EntityType.PERSON)
+    texts = ["[EMAIL_2] and [PERSON_1]", "again [EMAIL_2], not [EMAIL_9]"]
+    assert entity_counts_present(texts, mapping) == {"EMAIL": 1, "PERSON": 1}
+    assert entity_counts_present([], mapping) == {}

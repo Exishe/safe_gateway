@@ -59,7 +59,9 @@ class AuditLogSink:
         if event.request_sha256 is None:
             return  # nothing left the machine
         self._log.record(
-            session_id="",  # the chat routes keep no session (ADR 0002 point 1)
+            # "" without a session (ADR 0002 point 1); the log hashes a /mask session's
+            # id (ADR 0021 point 3, ADR 0025), so the id itself is never stored.
+            session_id=event.session_id or "",
             upstream_host=_host(event.upstream_host or ""),
             model=event.model or "",
             entity_counts=_plain(event.entity_counts),

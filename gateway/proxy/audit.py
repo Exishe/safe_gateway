@@ -6,7 +6,7 @@ field that can hold request or response text.
 """
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol, runtime_checkable
@@ -27,6 +27,9 @@ class AuditEvent:
     model: str | None = None
     stream: bool = False
     entity_counts: Mapping[str, int] = field(default_factory=dict)  # type -> distinct values
+    # The /mask session a chat request was masked in (ADR 0025). The audit log keeps
+    # only its sha256 (ADR 0021 point 3); it is never forwarded or logged.
+    session_id: str | None = None
     unresolved: int = 0
     request_sha256: str | None = None  # of the exact bytes sent upstream
     response_sha256: str | None = None  # of the exact bytes received from upstream
@@ -63,3 +66,18 @@ def entity_counts(mapping: PlaceholderMapping) -> dict[str, int]:
         if match is not None:
             counts[match.group("type")] += 1
     return dict(counts)
+
+
+def entity_counts_present(texts: Iterable[str], mapping: PlaceholderMapping) -> dict[str, int]:
+    """Distinct placeholders of `mapping` that appear in `texts`, per type (ADR 0025).
+
+    For a chat request masked in a session: the session holds more than the request
+    sent, and the audit row should count what left the machine.
+    """
+    present = {
+        match.group(): match.group("type")
+        for text in texts
+        for match in CANONICAL.finditer(text)
+        if match.group() in mapping
+    }
+    return dict(Counter(present.values()))

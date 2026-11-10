@@ -157,12 +157,15 @@ def _span_regions(text: str, spans: Iterable[Span]) -> list[_Region]:
     return regions
 
 
-def _literal_regions(text: str, start: int, end: int) -> list[_Region]:
+def _literal_regions(
+    text: str, start: int, end: int, keep: frozenset[str] = frozenset()
+) -> list[_Region]:
     """Placeholder-shaped tokens of text[start:end], an unmasked stretch (ADR 0001 point 4).
 
     Searched as the stretch will read in the masked text: a placeholder's bracket on
     each side that borders a masked region. So a label such as `SSN ` before a masked
     number stays, and nothing that would read as a token after masking slips through.
+    A token in `keep` (a placeholder the session issued, ADR 0025) stays as written.
     """
     left = "]" if start > 0 else ""
     probe = left + text[start:end] + ("[" if end < len(text) else "")
@@ -170,18 +173,32 @@ def _literal_regions(text: str, start: int, end: int) -> list[_Region]:
     return [
         _Region(m.start() + offset, m.end() + offset, EntityType.LITERAL)
         for m in TOKEN.finditer(probe, len(left))
+        if m.group() not in keep
     ]
 
 
-def _regions(text: str, spans: Iterable[Span]) -> list[_Region]:
+def _regions(text: str, spans: Iterable[Span], keep: frozenset[str]) -> list[_Region]:
     regions: list[_Region] = []
     cursor = 0
     for region in _span_regions(text, spans):
-        regions.extend(_literal_regions(text, cursor, region.start))
+        regions.extend(_literal_regions(text, cursor, region.start, keep))
         regions.append(region)
         cursor = region.end
-    regions.extend(_literal_regions(text, cursor, len(text)))
+    regions.extend(_literal_regions(text, cursor, len(text), keep))
     return regions
+
+
+def _outside_kept(text: str, spans: Iterable[Span], keep: frozenset[str]) -> list[Span]:
+    """The spans that do not lie wholly inside a kept placeholder (ADR 0025).
+
+    A kept placeholder is text the gateway wrote, not personal data, so a span inside
+    it is a false positive. A span that crosses its edge is kept, and unites with it.
+    """
+    spans = list(spans)
+    if not keep:
+        return spans
+    kept = [(m.start(), m.end()) for m in TOKEN.finditer(text) if m.group() in keep]
+    return [s for s in spans if not any(a <= s.start and s.end <= b for a, b in kept)]
 
 
 @dataclass(frozen=True)
@@ -193,30 +210,30 @@ class Replacement:
     placeholder: str
 
 
-def _remember(text: str, spans: Iterable[Span], mapping: Mapping) -> list[Span]:
+def _remember(
+    text: str, spans: Iterable[Span], mapping: Mapping, keep: frozenset[str] = frozenset()
+) -> list[Span]:
     """Give each span's value its placeholder now, so its repeats are found as known."""
-    spans = list(spans)
+    spans = _outside_kept(text, spans, keep)
     for region in _span_regions(text, spans):
         mapping.placeholder_for(text[region.start : region.end], region.entity_type)
     return spans
 
 
-def _replacements_remembered(text: str, spans: list[Span], mapping: Mapping) -> list[Replacement]:
+def _replacements_remembered(
+    text: str, spans: list[Span], mapping: Mapping, keep: frozenset[str] = frozenset()
+) -> list[Replacement]:
     # Every exact occurrence of a value the mapping holds is masked too, wherever
     # detection missed it (ADR 0014 amendment 1). Overlaps unite, never drop.
-    known = mapping.known().spans(text)
+    known = _outside_kept(text, mapping.known().spans(text), keep)
     return [
         Replacement(
             region.start,
             region.end,
             mapping.placeholder_for(text[region.start : region.end], region.entity_type),
         )
-        for region in _regions(text, [*spans, *known])
+        for region in _regions(text, [*spans, *known], keep)
     ]
-
-
-def _mask_remembered(text: str, spans: list[Span], mapping: Mapping) -> str:
-    return apply_replacements(text, _replacements_remembered(text, spans, mapping))
 
 
 def replacements(text: str, spans: Iterable[Span], mapping: Mapping) -> list[Replacement]:
@@ -259,6 +276,24 @@ def mask_messages(
     each value the same placeholder on every turn.
     """
     mapping = Mapping()
-    detected = [_remember(text, detect(text, lang=lang, config=config), mapping) for text in texts]
-    masked = [_mask_remembered(t, s, mapping) for t, s in zip(texts, detected, strict=True)]
-    return masked, mapping
+    spans = [detect(text, lang=lang, config=config) for text in texts]
+    return mask_detected_messages(texts, spans, mapping), mapping
+
+
+def mask_detected_messages(
+    texts: Sequence[str],
+    spans: Sequence[Iterable[Span]],
+    mapping: Mapping,
+    keep: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Mask already-detected texts as `mask_messages` does, extending `mapping` in place.
+
+    `keep` holds placeholders a session issued (ADR 0025): where one appears exactly
+    as issued it stays as written instead of becoming `[LITERAL_n]`, and spans wholly
+    inside it are ignored. Every other placeholder-shaped token is still a literal.
+    """
+    detected = [_remember(t, s, mapping, keep) for t, s in zip(texts, spans, strict=True)]
+    return [
+        apply_replacements(t, _replacements_remembered(t, s, mapping, keep))
+        for t, s in zip(texts, detected, strict=True)
+    ]

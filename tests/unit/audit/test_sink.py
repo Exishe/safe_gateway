@@ -57,7 +57,22 @@ def test_the_sink_implements_the_proxy_protocol(sink: AuditLogSink, tmp_path: Pa
     assert row["bytes_out"] == 321
     assert row["status"] == 200
     assert row["local"] == 0
-    assert row["session_id"] == ""  # chat requests have no session
+    assert row["session_id"] == ""  # a chat request without a session
+
+
+def test_a_session_request_stores_the_hash_of_its_session(
+    sink: AuditLogSink, tmp_path: Path
+) -> None:
+    session_id = "s" * 43  # the shape of a token_urlsafe(32) id
+    sink.record(forwarded(session_id=session_id))
+    assert sink.verify().ok
+    shown = sink.recent(1, None)
+    sink.close()
+    (row,) = all_rows(tmp_path / "audit.db")
+    assert row["session_id"] == hashlib.sha256(session_id.encode()).hexdigest()
+    assert session_id not in repr(row)
+    assert session_id not in repr(shown)
+    assert "session_id" not in shown[0]  # GET /audit never shows it
 
 
 def test_local_upstream_and_no_status(sink: AuditLogSink, tmp_path: Path) -> None:

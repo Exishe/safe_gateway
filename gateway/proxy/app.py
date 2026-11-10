@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
@@ -28,7 +29,7 @@ from gateway.cloud.providers import ApiShape
 from gateway.cloud.upstream import Upstream, UpstreamError, UpstreamReply, UpstreamStream
 from gateway.config import ProxyConfig
 from gateway.engine.detect import EngineConfig, detect
-from gateway.engine.mask import Mapping, mask_messages
+from gateway.engine.mask import Mapping, mask_detected_messages, mask_messages
 from gateway.engine.placeholders import TOKEN
 from gateway.engine.session import SessionNotFound, SessionStore
 from gateway.engine.types import Span
@@ -39,6 +40,7 @@ from gateway.proxy.audit import (
     AuditSink,
     NullAuditSink,
     entity_counts,
+    entity_counts_present,
 )
 from gateway.proxy.detections import Detection, mask_detected_with_detections
 from gateway.proxy.errors import RequestRejected, invalid
@@ -53,6 +55,10 @@ _log = logging.getLogger(__name__)
 
 CHAT_ROUTE = "/v1/chat/completions"
 MESSAGES_ROUTE = "/v1/messages"
+SESSION_HEADER = "x-safeguard-session"  # ADR 0025: a /mask session for the chat routes
+# What `secrets.token_urlsafe` writes, with room to spare; anything else cannot be an id.
+_SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+_NO_SESSION = "no such session, or it expired; check the text again with POST /mask"
 MAX_SESSIONS = 10_000  # a local client cannot grow the store without bound
 MAX_SESSION_ENTRIES = 50_000
 _ROUTE_FOR_SHAPE = {ApiShape.OPENAI: CHAT_ROUTE, ApiShape.ANTHROPIC: MESSAGES_ROUTE}
@@ -99,6 +105,13 @@ class _Forward:
     model: str
     stream: bool
     timer: _Timer
+    counts: dict[str, int]  # read when masked: a session's mapping grows afterwards
+    session_id: str | None = None  # the /mask session the request was masked in (ADR 0025)
+
+    def release(self) -> None:
+        """Drop a request's own mapping; a session's lives on until it is deleted or expires."""
+        if self.session_id is None:
+            self.mapping.clear()
 
     def event(
         self,
@@ -116,7 +129,8 @@ class _Forward:
             upstream_host=upstream.host,
             model=self.model,
             stream=self.stream,
-            entity_counts=entity_counts(self.mapping),
+            entity_counts=self.counts,
+            session_id=self.session_id,
             request_sha256=hashlib.sha256(self.payload).hexdigest(),
             bytes_out=len(self.payload),
             upstream_status=upstream_status,
@@ -220,23 +234,51 @@ class _Gateway:
                 f"{self.upstream.shape.value} API; use POST {_ROUTE_FOR_SHAPE[self.upstream.shape]}"
             )
             raise invalid(msg)
+        session_id = _session_header(request)
         body = shape.validate(parse_json_object(await request.body()))
         model = choose_model(self.model, body.get("model"))
-        masked, mapping = await run_in_threadpool(
-            _mask_request, shape.collect_texts(body), self.engine_config
-        )
+        texts = shape.collect_texts(body)
+        if session_id is None:
+            masked, mapping = await run_in_threadpool(_mask_request, texts, self.engine_config)
+            counts = entity_counts(mapping)
+        else:
+            masked, mapping = await self._mask_chat_in_session(texts, session_id)
+            counts = entity_counts_present(masked, mapping)
         outgoing = shape.with_instruction(shape.with_texts(body, masked))
         outgoing["model"] = model
-        return _Forward(
-            shape, mapping, encode_json(outgoing), model, bool(body.get("stream")), timer
-        )
+        payload = encode_json(outgoing)
+        stream = bool(body.get("stream"))
+        return _Forward(shape, mapping, payload, model, stream, timer, counts, session_id)
+
+    async def _mask_chat_in_session(
+        self, texts: list[str], session_id: str
+    ) -> tuple[list[str], Mapping]:
+        """Mask with the session's mapping; the placeholders it issued stay as written.
+
+        Values in clear are detected and added to the session, as /mask would.
+        """
+        spans = await run_in_threadpool(_detect_texts, texts, self.engine_config)
+        async with self.session_lock:
+            mapping = self._session_mapping(session_id, _NO_SESSION)
+            _check_room(mapping, texts, spans)
+            issued = frozenset(mapping.to_dict())
+            masked = await run_in_threadpool(mask_detected_messages, texts, spans, mapping, issued)
+            with contextlib.suppress(SessionNotFound):  # expired meanwhile: 404 next time
+                await run_in_threadpool(self.sessions.save, session_id)
+        return masked, mapping
+
+    def _session_mapping(self, session_id: str, message: str) -> Mapping:
+        try:
+            return self.sessions.get(session_id)
+        except SessionNotFound:
+            # Never created under a client's id: it could be someone else's namespace.
+            raise RequestRejected(404, "not_found", message) from None
 
     async def _upstream_failed(
         self, forward: _Forward, error: UpstreamError, upstream_status: int | None = None
     ) -> Response:
-        # The event first: its counts are read from the mapping the clear empties.
         event = forward.event("upstream_error", error.status, self.upstream, upstream_status)
-        forward.mapping.clear()
+        forward.release()
         await self.record(event)
         body = forward.shape.error_body("upstream_error", str(error))
         return JSONResponse(body, status_code=error.status)
@@ -254,7 +296,7 @@ class _Gateway:
         event = forward.event(
             "upstream_error", status_code, self.upstream, reply.status, response_sha256=digest
         )
-        forward.mapping.clear()
+        forward.release()
         await self.record(event)
         if passes_through:
             return Response(reply.body, status_code=reply.status, media_type="application/json")
@@ -286,7 +328,7 @@ class _Gateway:
             response_sha256=digest,
             unresolved=len(unresolved),
         )
-        forward.mapping.clear()
+        forward.release()
         await self.record(event)
         return JSONResponse(payload, status_code=reply.status, headers=_NO_STORE)
 
@@ -341,19 +383,9 @@ class _Gateway:
                 raise RequestRejected(503, "overloaded", msg)
             mapping = Mapping()
         else:
-            try:
-                mapping = self.sessions.get(session_id)
-            except SessionNotFound:
-                # Never created under a client's id: it could be someone else's namespace.
-                msg = "no such session; omit session_id to start a new one"
-                raise RequestRejected(404, "not_found", msg) from None
-        if len(mapping) + new_entries_at_most(texts, spans) > MAX_SESSION_ENTRIES:
-            # Refused before anything is added: the session stays as it was (review M12).
-            msg = (
-                f"this session would hold more than {MAX_SESSION_ENTRIES} values; "
-                "start a new session by omitting session_id"
-            )
-            raise RequestRejected(status.HTTP_413_CONTENT_TOO_LARGE, "session_full", msg)
+            msg = "no such session; omit session_id to start a new one"
+            mapping = self._session_mapping(session_id, msg)
+        _check_room(mapping, texts, spans)
         masked, found = await run_in_threadpool(
             mask_detected_with_detections, texts, spans, mapping
         )
@@ -428,7 +460,7 @@ class _Relay:
                 response_sha256=self._digest.hexdigest(),
                 unresolved=len(self._rewriter.unresolved),
             )
-            self._forward.mapping.clear()
+            self._forward.release()
             await self._gateway.record(event)
 
 
@@ -442,6 +474,29 @@ class _RelayResponse(StreamingResponse):
             await super().__call__(scope, receive, send)
         finally:
             await self._relay.close()
+
+
+def _check_room(mapping: Mapping, texts: Sequence[str], spans: Sequence[list[Span]]) -> None:
+    if len(mapping) + new_entries_at_most(texts, spans) > MAX_SESSION_ENTRIES:
+        # Refused before anything is added: the session stays as it was (review M12).
+        msg = (
+            f"this session would hold more than {MAX_SESSION_ENTRIES} values; "
+            "start a new session by omitting session_id"
+        )
+        raise RequestRejected(status.HTTP_413_CONTENT_TOO_LARGE, "session_full", msg)
+
+
+def _session_header(request: Request) -> str | None:
+    """The chat request's session id (ADR 0025); None when the header is absent.
+
+    A value that cannot be an id is refused like an unknown one, and never echoed.
+    """
+    value = request.headers.get(SESSION_HEADER)
+    if value is None:
+        return None
+    if not _SESSION_ID.fullmatch(value):
+        raise RequestRejected(404, "not_found", _NO_SESSION)
+    return value
 
 
 def _mask_request_fields(data: Body) -> tuple[list[str], str | None]:
@@ -598,7 +653,13 @@ def create_app(  # noqa: PLR0913  (keyword-only options, each with a safe defaul
             CORSMiddleware,
             allow_origins=list(origins),
             allow_methods=["GET", "POST", "DELETE"],
-            allow_headers=["content-type", "authorization", "x-api-key", "anthropic-version"],
+            allow_headers=[
+                "content-type",
+                "authorization",
+                "x-api-key",
+                "anthropic-version",
+                SESSION_HEADER,
+            ],
         )
     # Added last, so it runs first: nothing reaches a route, a file or CORS before it.
     app.add_middleware(
