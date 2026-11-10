@@ -2,6 +2,29 @@
 
 What was checked before a tag, when, and what it found. Newest first.
 
+## 2026-11-10, tags v0.0.0 to v0.3.0 on 1855771
+
+CI run 42765143614 on 1855771 was green for the Ubuntu checks, the Windows tests,
+the web UI, the extension, and the desktop `.deb` and `.msi` builds. In both
+desktop builds the sidecar answered `/health`. The macOS jobs were cancelled before
+they started; see "Needs the owner" in `docs/plans/PROGRESS.md`.
+
+| Tag | Phase | Exit criteria | Tagged |
+|-----|-------|---------------|--------|
+| v0.0.0 | 0 | repository, guards, CI | yes |
+| v0.1.0 | 1 | detection tests green, recall measured in BENCHMARKS.md, red-team rounds fixed | yes |
+| v0.2.0 | 2 | mask, rehydrate and sessions; red-team round 2 fixed | yes |
+| v0.3.0 | 3 | round trips, OCR skipped when absent, CLI copies reopened and checked, red-team round on the parsers fixed | yes |
+| v0.4.0 | 4 | security review done; the manual check against local Ollama has not been run | no: the owner runs the Ollama check |
+| v0.5.0 | 5 | its own criteria are met; it builds on v0.4.0 | no: waits for v0.4.0 |
+| v0.6.0 | 6 | the plan has the owner tag it after looking at the macOS build | no: needs macOS CI (billing) and the owner |
+| v0.7.0 | 7 | fixture e2e green, sideload docs written; the live-site check is open | no: the owner tries it on the live sites |
+
+All four tags point at one commit, because every phase was verified together
+there. They were pushed in a single push of four tags, so GitHub created no tag
+workflow runs (it skips them for more than three tags at once). The commit was
+already verified by the run above.
+
 ## 2026-11-10, branch head 70a48f4 (candidate for v0.1.0 to v0.7.0)
 
 ### Supply chain
