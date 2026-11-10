@@ -168,6 +168,12 @@ test = [
 tools = [
     "packaging>=26.3",
 ]
+# Build time only (ADR 0027). Not part of `dev`, so `uv sync` and the license check of
+# the runtime closure never see it. PyInstaller is GPL-2.0-or-later with a bootloader
+# exception that lets the frozen app carry any license; hard rule 1 allows tooling.
+sidecar = [
+    "pyinstaller>=6.20.0",
+]
 # `uv sync` installs the dev group by default; it pulls in everything above.
 dev = [
     { include-group = "lint" },

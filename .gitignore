@@ -40,3 +40,8 @@ Thumbs.db
 
 # Browser test screenshots (tests/e2e/test_web_ui.py)
 tests/e2e/artifacts/
+
+# Desktop shell (ADR 0027): Rust build output, generated schemas, the frozen sidecar
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/resources/safeguard-sidecar/

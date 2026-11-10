@@ -1,0 +1,22 @@
+## regex
+
+Approved as a license exception on 2026-11-09 (ADR 0012,
+`tools/license_policy.toml`). Pulled in by presidio-analyzer.
+
+- License: Apache-2.0 AND CNRI-Python.
+- The parts derived from CPython's `re` module are under the CNRI license for
+  Python 1.6, which requires keeping its copyright notice and license text with
+  any distribution. The full license text ships in the package's `LICENSE.txt`
+  and must be included verbatim in the installers' notices.
+
+## torch (PyTorch)
+
+Approved as a license exception on 2026-11-09 (precedent: regex). License
+expression: Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause,
+BSD-3-Clause, BSL-1.0, ISC, MIT, Zlib. Each bundled component's notice must be
+included in the installers' notices. Pulled in by GLiNER.
+
+## spaCy models
+
+`en_core_web_lg` and `ru_core_news_lg` 3.8.0 by Explosion AI, MIT license,
+downloaded by `safeguard models pull` (not bundled).

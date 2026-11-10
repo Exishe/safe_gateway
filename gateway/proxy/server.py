@@ -7,6 +7,7 @@ when that fails, `serve` does not start unless the user chose `--no-audit`.
 
 import logging
 import sqlite3
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -111,7 +112,10 @@ def _check_and_purge(sink: AuditLogSink, path: Path, retention_days: int | None)
 
 
 def default_ui_dir() -> Path:
-    """The web UI as `npm run build` writes it in a source checkout (ADR 0024)."""
+    """The web UI: bundled beside a frozen sidecar (ADR 0027), else the source build (ADR 0024)."""
+    bundle = getattr(sys, "_MEIPASS", None)
+    if getattr(sys, "frozen", False) and bundle:
+        return Path(bundle) / "ui"
     return Path(__file__).resolve().parents[2] / "apps" / "web" / "dist"
 
 

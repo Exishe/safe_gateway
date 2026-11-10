@@ -10,6 +10,8 @@ names = [
     "MIT", "MIT-0", "MIT-CMU", "0BSD", "BSD-2-Clause", "BSD-3-Clause",
     "Apache-2.0", "PSF-2.0", "Python-2.0", "MPL-2.0", "ISC", "Unlicense",
     "CC0-1.0", "Zlib", "HPND", "CC-BY-4.0",
+    # Unicode-3.0: the ICU crates' license, permissive and OSI-approved (ADR 0027)
+    "Unicode-3.0",
     # Classifier names
     "MIT License", "MIT No Attribution License (MIT-0)", "BSD License",
     "Apache Software License", "Python Software Foundation License",

@@ -1,4 +1,5 @@
 import logging
+import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -127,6 +128,15 @@ def test_gazetteer_is_loaded(tmp_path: Path) -> None:
 def test_the_repository_web_build_is_the_default_ui() -> None:
     expected = Path(server.__file__).resolve().parents[2] / "apps" / "web" / "dist"
     assert server.default_ui_dir() == expected
+
+
+def test_a_frozen_sidecar_serves_the_ui_bundled_beside_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # PyInstaller unpacks data under sys._MEIPASS and sets sys.frozen (ADR 0027).
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    assert server.default_ui_dir() == tmp_path / "ui"
 
 
 def test_build_app_serves_the_ui_dir_it_is_given(tmp_path: Path) -> None:
