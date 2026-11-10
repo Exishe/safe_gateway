@@ -186,6 +186,11 @@ def test_engine_finding_text_never_contains_the_value() -> None:
 def test_lock_files_keep_shape_checks_but_skip_the_engine_pass() -> None:
     assert find_pii(f"pay {IBAN}", "uv.lock") == []
     assert [f.kind for f in find_pii(f"ssn {SSN}", "sub/uv.lock")] == ["ssn"]
+    # npm's lock files are the same kind of page; a sha512 integrity hash can hold an
+    # IBAN-shaped run (apps/extension/package-lock.json did).
+    assert find_pii(f"pay {IBAN}", "apps/extension/package-lock.json") == []
+    assert [f.kind for f in find_pii(f"ssn {SSN}", "package-lock.json")] == ["ssn"]
+    assert [f.kind for f in find_pii(f"pay {IBAN}", "package.json")] == ["iban"]
 
 
 # ---- Office files (zip containers with XML parts)

