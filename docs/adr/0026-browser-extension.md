@@ -62,8 +62,9 @@ Web Store costs a fee (`docs/APPROVAL_NEEDED.md`), so pilots sideload.
    `rehydrate.ts` port the engine's grammar, link context and rules as written,
    including the link rule (ADR 0003 amendment 1) over the text of the message, with
    a line break between blocks. `tests/unit/test_extension_parity.py` writes the
-   engine's output for 458 answers (58 written by hand, the link-rule examples and
-   Unicode edges among them, and 400 fuzzed ones) to `rehydrate.parity.json`, fails if the file is stale, and the
+   engine's output for 496 answers (96 written by hand, the link-rule examples and
+   Unicode edges among them, the widened rule of security review 2 included, and 400
+   fuzzed ones) to `rehydrate.parity.json`, fails if the file is stale, and the
    vitest suite checks the port against it.
 8. **Unresolved placeholders stay visible** and are highlighted with the CSS Custom
    Highlight API (no DOM change); restored values get a dotted underline the same
