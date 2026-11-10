@@ -190,6 +190,9 @@ def test_lock_files_keep_shape_checks_but_skip_the_engine_pass() -> None:
     # IBAN-shaped run (apps/extension/package-lock.json did).
     assert find_pii(f"pay {IBAN}", "apps/extension/package-lock.json") == []
     assert [f.kind for f in find_pii(f"ssn {SSN}", "package-lock.json")] == ["ssn"]
+    # Cargo.lock holds sha256 checksums of crates, shaped the same way.
+    assert find_pii(f"pay {IBAN}", "apps/desktop/src-tauri/Cargo.lock") == []
+    assert [f.kind for f in find_pii(f"ssn {SSN}", "Cargo.lock")] == ["ssn"]
     assert [f.kind for f in find_pii(f"pay {IBAN}", "package.json")] == ["iban"]
 
 

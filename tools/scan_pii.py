@@ -48,8 +48,8 @@ _STRUCTURED_ONLY = EngineConfig(
 )
 # Generated lock files are pages of hashes and versions (uv.lock is 450 KB, about 5 s
 # in the engine, 90% of a full scan). They keep the shape checks, not the engine pass.
-# npm's package-lock.json is the same: its sha512 integrity hashes hold IBAN-shaped runs.
-_SHAPE_ONLY_FILES = frozenset({"uv.lock", "package-lock.json"})
+# npm's package-lock.json and Cargo.lock are the same: their hashes hold IBAN-shaped runs.
+_SHAPE_ONLY_FILES = frozenset({"uv.lock", "package-lock.json", "Cargo.lock"})
 
 # Office files are zip containers of XML. Caps keep a zip bomb from eating the commit.
 _OFFICE_PART = re.compile(r"^(?:word|xl|ppt)/.+\.xml$")
