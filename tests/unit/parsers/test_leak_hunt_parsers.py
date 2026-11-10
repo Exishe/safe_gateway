@@ -49,7 +49,7 @@ def test_docx_attribute_value_smuggling(tmp_path: Path) -> None:
     run_properties = run._element.get_or_add_rPr()  # noqa: SLF001
     run_properties.append(run_properties.makeelement(qn("w:lang"), {qn("w:val"): email}))
     source = tmp_path / "in.docx"
-    document.save(source)
+    document.save(str(source))
 
     out = tmp_path / "out.docx"
     mask_file(source, out, _STRUCTURED)
@@ -74,7 +74,7 @@ def test_docx_numbering_label_digit_value(tmp_path: Path) -> None:
     )
     numbering.insert(0, abstract)
     source = tmp_path / "in.docx"
-    document.save(source)
+    document.save(str(source))
 
     out = tmp_path / "out.docx"
     mask_file(source, out, _STRUCTURED)
