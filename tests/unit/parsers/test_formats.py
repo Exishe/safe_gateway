@@ -28,13 +28,13 @@ def test_only_text_can_go_to_stdout() -> None:
 
 def test_mask_file_writes_the_copy_and_returns_text_and_mapping(tmp_path: Path) -> None:
     source = tmp_path / "note.txt"
-    source.write_text(f"mail {EMAIL}\n", encoding="utf-8")
+    source.write_text(f"mail {EMAIL}\n", encoding="utf-8", newline="")
     out = tmp_path / "out.txt"
 
     result = formats.mask_file(source, out, STRUCTURED)
 
     assert result.text == "mail [EMAIL_1]\n"
-    assert out.read_text(encoding="utf-8") == result.text
+    assert out.read_bytes().decode("utf-8") == result.text
     assert rehydrate(result.text, result.mapping) == (f"mail {EMAIL}\n", [])
     assert result.notes == []
     assert txt.parse(out).text == result.text

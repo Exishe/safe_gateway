@@ -20,6 +20,7 @@ from gateway.audit.store import (
 from gateway.engine.session_disk import InMemoryKeyProvider
 from gateway.secrets import AUDIT_KEY_ID
 from tests.audit_support import Clock, all_rows, fill, record_request, tamper
+from tests.posix import assert_mode, posix_only
 
 ZEROS = "0" * 64
 
@@ -55,11 +56,12 @@ def test_default_path_follows_safeguard_home(
 def test_a_new_log_is_0600_in_a_0700_directory(log: AuditLog, db: Path) -> None:
     record_request(log)
     log.close()
-    assert mode(db.parent) == 0o700
-    assert mode(db) == 0o600
+    assert_mode(db.parent, 0o700)
+    assert_mode(db, 0o600)
     assert [p.name for p in db.parent.iterdir()] == ["audit.db"]  # no journal left behind
 
 
+@posix_only  # Windows cannot hold a 0644 file to tighten
 def test_an_existing_file_is_tightened_to_0600(db: Path, keys: InMemoryKeyProvider) -> None:
     db.parent.mkdir(mode=0o700)
     db.touch(mode=0o644)
@@ -78,9 +80,10 @@ def test_a_file_that_is_not_an_audit_log_keeps_its_mode(
     other = tmp_path / "notes.txt"
     other.write_text("not a database, and not ours to chmod\n", encoding="utf-8")
     other.chmod(0o644)
+    before = mode(other)
     with pytest.raises(NotAnAuditLog):
         AuditLog(other, keys)
-    assert mode(other) == 0o644
+    assert mode(other) == before
     assert other.read_text(encoding="utf-8").startswith("not a database")
 
 
@@ -91,9 +94,10 @@ def test_another_sqlite_database_keeps_its_mode(tmp_path: Path, keys: InMemoryKe
     connection.commit()
     connection.close()
     other.chmod(0o644)
+    before = mode(other)
     with pytest.raises(NotAnAuditLog):
         AuditLog(other, keys)
-    assert mode(other) == 0o644
+    assert mode(other) == before
 
 
 def test_a_symlink_is_refused_and_its_target_untouched(
@@ -102,14 +106,16 @@ def test_a_symlink_is_refused_and_its_target_untouched(
     target = tmp_path / "elsewhere.db"
     target.touch()
     target.chmod(0o644)
+    before = mode(target)
     link = tmp_path / "audit.db"
     link.symlink_to(target)
     with pytest.raises(NotAnAuditLog, match="symbolic link"):
         AuditLog(link, keys)
-    assert mode(target) == 0o644
+    assert mode(target) == before
     assert target.stat().st_size == 0
 
 
+@posix_only  # umask and directory mode bits
 def test_every_directory_it_creates_is_0700(tmp_path: Path, keys: InMemoryKeyProvider) -> None:
     tmp_path.chmod(0o755)
     previous = os.umask(0o022)

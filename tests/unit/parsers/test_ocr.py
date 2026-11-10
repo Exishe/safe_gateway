@@ -11,6 +11,7 @@ from gateway.engine.detect import EngineConfig, detect
 from gateway.parsers import ocr, pdf
 from gateway.parsers.document import PagePosition
 from gateway.parsers.redact import mask_units
+from tests.posix import assert_mode_bits
 
 EMAIL = "anna.petrova@example.org"
 CARD = "4111 1111 1111 1111"  # pragma: allowlist secret
@@ -125,7 +126,7 @@ def test_ocr_writes_only_to_an_owner_only_directory_that_is_removed(
     directory, mode = seen[0]
     assert str(directory) != default
     assert directory.name.startswith("safeguard-ocr-")
-    assert mode == 0o700
+    assert_mode_bits(mode, 0o700)
     assert not directory.exists()
     assert tempfile.gettempdir() == default
 
@@ -160,5 +161,5 @@ def test_real_tesseract_files_land_in_the_private_directory(
     assert len(outputs) == 1
     directory, mode = outputs[0]
     assert directory.name.startswith("safeguard-ocr-")
-    assert mode == 0o700
+    assert_mode_bits(mode, 0o700)
     assert not directory.exists()

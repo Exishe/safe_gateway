@@ -1,6 +1,7 @@
 """The `safeguard` command line: `scan`, `mask`, `models`, `audit` and `serve`."""
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -176,11 +177,23 @@ def _write_private(path: Path, content: str) -> None:
     """
     descriptor = os.open(path, _NEW_PRIVATE_FILE, 0o600)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        # newline="" keeps the bytes exact: Windows would otherwise turn \n into \r\n.
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
             handle.write(content)
     except BaseException:
+        # fdopen may fail before it owns the descriptor; Windows cannot delete an open file.
+        with contextlib.suppress(OSError):
+            os.close(descriptor)
         path.unlink(missing_ok=True)
         raise
+
+
+def _write_stdout(text: str) -> None:
+    """Print `text` unchanged: Windows text mode would turn each \\n into \\r\\n."""
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(newline="")
+    sys.stdout.write(text)
 
 
 def _mask_targets_conflict(args: argparse.Namespace) -> str | None:
@@ -246,7 +259,7 @@ def _mask(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     if args.output is None:
-        print(masked, end="")
+        _write_stdout(masked)
     return 0
 
 
