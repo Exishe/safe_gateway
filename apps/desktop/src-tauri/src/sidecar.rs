@@ -96,6 +96,8 @@ pub struct ProcessBackend {
     exe: PathBuf,
     log: Option<PathBuf>,
     stop: Arc<AtomicBool>,
+    /// Set on every spawn: whether the gateway is one the shell found and did not start.
+    adopted: Arc<AtomicBool>,
     started: Instant,
     on_state: Box<dyn FnMut(&State) + Send>,
 }
@@ -105,12 +107,14 @@ impl ProcessBackend {
         exe: PathBuf,
         log: Option<PathBuf>,
         stop: Arc<AtomicBool>,
+        adopted: Arc<AtomicBool>,
         on_state: Box<dyn FnMut(&State) + Send>,
     ) -> Self {
         Self {
             exe,
             log,
             stop,
+            adopted,
             started: Instant::now(),
             on_state,
         }
@@ -127,6 +131,7 @@ impl Backend for ProcessBackend {
 
     fn spawn(&mut self) -> io::Result<SidecarChild> {
         if health::fetch(gateway_addr(), PROBE_TIMEOUT).is_ok() {
+            self.adopted.store(true, Ordering::SeqCst);
             return Ok(SidecarChild {
                 running: Running::Adopted(Adopted),
             });
@@ -147,6 +152,7 @@ impl Backend for ProcessBackend {
             command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
         }
         let process = command.spawn()?;
+        self.adopted.store(false, Ordering::SeqCst);
         Ok(SidecarChild {
             running: Running::Spawned(process),
         })
@@ -200,6 +206,7 @@ mod tests {
             PathBuf::from("/nonexistent/sidecar"),
             None,
             stop,
+            Arc::new(AtomicBool::new(false)),
             Box::new(|_| {}),
         );
         // Nothing listens on 8787 in the test run, or the shell would adopt it.

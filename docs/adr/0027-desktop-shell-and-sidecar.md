@@ -107,10 +107,20 @@ money, so the installers ship unsigned (hard rule 2).
   `torch/include` and no `*.a` files; those patterns only matter for other builds.
   spaCy's language data is 3 MB, so it was kept (a document can be in any language).
   The `.deb` size was measured before pruning only (458 MiB).
-- Known limits of the shell: a SIGTERM to the app itself (a session logout on Linux)
-  does not stop the sidecar, which the next start then adopts; Quit and Cmd+Q do stop
-  it. Only the sidecar's own SIGTERM and the restart after a SIGKILL were exercised
-  end to end here; the tray Quit path is unit-tested through the fake backend only.
+- Stop requests from the system (amended 2026-11-10). The shell used to ignore a
+  SIGTERM (a Linux logout), which left the sidecar for the next start to adopt. Now
+  `os_signals.rs` receives SIGTERM, SIGINT and SIGHUP on Unix (`signal-hook`) and the
+  console, close, logoff and shutdown events on Windows (`SetConsoleCtrlHandler`), and
+  `shutdown::plan` decides, as a pure function with unit tests: start the same quit as
+  the tray's Quit; stop the sidecar only if the shell started it (`stop_sidecar` is false
+  for an adopted gateway); a second trigger during a quit starts nothing; and a Windows
+  close, logoff or shutdown handler waits (up to 8 s) for the stop, because Windows ends
+  the process when the handler returns. Checked end to end on Linux under Xvfb with the
+  debug build: SIGTERM to a shell that had started the gateway stopped both, and
+  SIGTERM to a shell that had adopted a gateway stopped only the shell. The Windows
+  path compiles only on Windows and is not exercised here; the tag build and a person on
+  Windows must check it. Quit and Cmd+Q were exercised only through the fake backend, as
+  before.
 - Unsigned apps trigger Gatekeeper and SmartScreen warnings on first run. This is
   documented, not hidden, and revisited if the owner approves a signing certificate
   (`docs/APPROVAL_NEEDED.md`).

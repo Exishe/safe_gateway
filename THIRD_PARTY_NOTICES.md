@@ -153,7 +153,7 @@ The runtime closure of `safeguard-gateway`. The sidecar build (PyInstaller) is a
 | scheduler | 0.28.0 | MIT |
 | tailwind-merge | 3.7.0 | MIT |
 
-## Rust crates in the desktop shell (408)
+## Rust crates in the desktop shell (411)
 
 Normal dependencies of `apps/desktop/src-tauri`, for all platforms.
 
@@ -236,6 +236,7 @@ Normal dependencies of `apps/desktop/src-tauri`, for all platforms.
 | embed_plist | 1.2.2 | MIT OR Apache-2.0 |
 | equivalent | 1.0.3 | Apache-2.0 OR MIT |
 | erased-serde | 0.4.11 | MIT OR Apache-2.0 |
+| errno | 0.3.14 | MIT OR Apache-2.0 |
 | fastrand | 2.5.0 | Apache-2.0 OR MIT |
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 |
 | field-offset | 0.3.6 | MIT OR Apache-2.0 |
@@ -439,6 +440,8 @@ Normal dependencies of `apps/desktop/src-tauri`, for all platforms.
 | servo_arc | 0.4.3 | MIT OR Apache-2.0 |
 | servo_arc | 0.5.0 | MIT OR Apache-2.0 |
 | sha2 | 0.10.9 | MIT OR Apache-2.0 |
+| signal-hook | 0.3.18 | Apache-2.0/MIT |
+| signal-hook-registry | 1.4.8 | MIT OR Apache-2.0 |
 | simd-adler32 | 0.3.10 | MIT |
 | siphasher | 1.0.4 | MIT OR Apache-2.0 |
 | slab | 0.4.12 | MIT |

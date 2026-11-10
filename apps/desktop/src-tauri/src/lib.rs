@@ -6,6 +6,8 @@
 //! personal data and makes no network request except to that loopback address.
 
 mod health;
+mod os_signals;
+mod shutdown;
 mod sidecar;
 mod supervisor;
 mod view;
@@ -14,6 +16,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -22,6 +25,7 @@ use tauri::{
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
+use crate::shutdown::Trigger;
 use crate::sidecar::{executable_in, ProcessBackend, GATEWAY_URL};
 use crate::supervisor::{Policy, State};
 use crate::view::{navigation_allowed, tray_text, view_for, View};
@@ -38,6 +42,10 @@ struct Running {
 struct Sidecar {
     running: Mutex<Option<Running>>,
     quitting: AtomicBool,
+    /// Whether the gateway in use was found running, not started by the shell.
+    adopted: Arc<AtomicBool>,
+    /// Set once the quit has finished stopping the sidecar (or decided not to).
+    stopped: AtomicBool,
 }
 
 impl Sidecar {
@@ -52,6 +60,14 @@ impl Sidecar {
             supervisor::run(&mut backend, &Policy::default());
         });
         *slot = Some(Running { stop, handle });
+    }
+
+    /// Wait for a quit in progress to finish stopping the sidecar, up to `limit`.
+    fn wait_stopped(&self, limit: Duration) {
+        let deadline = Instant::now() + limit;
+        while !self.stopped.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 
     /// Ask the supervisor to stop, and wait until the sidecar process is gone.
@@ -100,6 +116,7 @@ fn show(window: &WebviewWindow, local: &Url, view: View) {
 fn start_sidecar(app: &AppHandle, window: WebviewWindow, local: Url, status: MenuItem<tauri::Wry>) {
     let exe = sidecar_path(app);
     let log = sidecar_log(app);
+    let adopted = app.state::<Sidecar>().adopted.clone();
     app.state::<Sidecar>().start(move |stop| {
         let quiet = stop.clone();
         let on_state = move |state: &State| {
@@ -111,7 +128,7 @@ fn start_sidecar(app: &AppHandle, window: WebviewWindow, local: Url, status: Men
             let _ = status.set_text(tray_text(state));
             show(&window, &local, view_for(state));
         };
-        ProcessBackend::new(exe, log, stop, Box::new(on_state))
+        ProcessBackend::new(exe, log, stop, adopted, Box::new(on_state))
     });
 }
 
@@ -126,22 +143,51 @@ fn open_dashboard(app: &AppHandle) {
 fn toggle_autostart(app: &AppHandle, item: &CheckMenuItem<tauri::Wry>) {
     let manager = app.autolaunch();
     let enabled = manager.is_enabled().unwrap_or(false);
-    let _ = if enabled { manager.disable() } else { manager.enable() };
+    let _ = if enabled {
+        manager.disable()
+    } else {
+        manager.enable()
+    };
     // Show what the system now says, not what we hoped for.
     let _ = item.set_checked(manager.is_enabled().unwrap_or(false));
 }
 
 /// Stop the sidecar, then exit. Done on a thread of its own: the main thread must stay
 /// free to run the window and tray calls the supervisor makes while it winds down.
-fn quit(app: &AppHandle) {
+/// `stop_sidecar` is false for a gateway the shell adopted, which it never stops.
+fn begin_quit(app: &AppHandle, stop_sidecar: bool) {
     if app.state::<Sidecar>().quitting.swap(true, Ordering::SeqCst) {
         return;
     }
     let app = app.clone();
     std::thread::spawn(move || {
-        app.state::<Sidecar>().stop();
+        if stop_sidecar {
+            app.state::<Sidecar>().stop();
+        }
+        app.state::<Sidecar>().stopped.store(true, Ordering::SeqCst);
         app.exit(0);
     });
+}
+
+fn quit(app: &AppHandle) {
+    begin_quit(app, true);
+}
+
+/// The system asked the shell to stop (SIGTERM, Ctrl+C, a Windows logoff, ...). The
+/// decision is `shutdown::plan`; this only carries it out.
+fn on_trigger(app: &AppHandle, trigger: Trigger) {
+    let sidecar = app.state::<Sidecar>();
+    let plan = shutdown::plan(
+        trigger,
+        sidecar.quitting.load(Ordering::SeqCst),
+        sidecar.adopted.load(Ordering::SeqCst),
+    );
+    if plan.start_quit {
+        begin_quit(app, plan.stop_sidecar);
+    }
+    if plan.wait {
+        sidecar.wait_stopped(shutdown::WAIT_LIMIT);
+    }
 }
 
 fn restart(app: &AppHandle, window: WebviewWindow, local: Url, status: MenuItem<tauri::Wry>) {
@@ -175,13 +221,28 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let status = MenuItem::with_id(app, "status", "Starting...", false, None::<&str>)?;
     let restart_item = MenuItem::with_id(app, "restart", "Restart gateway", true, None::<&str>)?;
     let login_on = app.autolaunch().is_enabled().unwrap_or(false);
-    let login = CheckMenuItem::with_id(app, "autostart", "Start at login", true, login_on, None::<&str>)?;
+    let login = CheckMenuItem::with_id(
+        app,
+        "autostart",
+        "Start at login",
+        true,
+        login_on,
+        None::<&str>,
+    )?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit SafeGuard Gateway", true, None::<&str>)?;
     let first_line = PredefinedMenuItem::separator(app)?;
     let second_line = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
         app,
-        &[&open, &status, &first_line, &restart_item, &login, &second_line, &quit_item],
+        &[
+            &open,
+            &status,
+            &first_line,
+            &restart_item,
+            &login,
+            &second_line,
+            &quit_item,
+        ],
     )?;
 
     let login_item = login.clone();
@@ -196,7 +257,12 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             "open" => open_dashboard(app),
             "autostart" => toggle_autostart(app, &login_item),
             "restart" => {
-                restart(app, restart_window.clone(), restart_local.clone(), restart_status.clone());
+                restart(
+                    app,
+                    restart_window.clone(),
+                    restart_local.clone(),
+                    restart_status.clone(),
+                );
             }
             "quit" => quit(app),
             _ => {}
@@ -207,12 +273,17 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     builder.build(app)?;
 
     start_sidecar(&handle, window, local, status);
+    let for_signals = handle.clone();
+    os_signals::install(move |trigger| on_trigger(&for_signals, trigger));
     Ok(())
 }
 
 pub fn run() {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
         .manage(Sidecar::default())
         .setup(setup)
         .build(tauri::generate_context!())
